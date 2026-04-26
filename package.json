@@ -1,0 +1,49 @@
+{
+  "name": "stagereview",
+  "version": "0.1.0",
+  "description": "Chapter-style code review against your local git branch.",
+  "keywords": [
+    "code-review",
+    "cli",
+    "chapters",
+    "git",
+    "claude-code",
+    "cursor",
+    "codex",
+    "gemini",
+    "opencode"
+  ],
+  "homepage": "https://github.com/ReviewStage/stage-cli#readme",
+  "bugs": {
+    "url": "https://github.com/ReviewStage/stage-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ReviewStage/stage-cli.git"
+  },
+  "license": "MIT",
+  "author": "Stage",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "stage-cli": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "web-dist",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "echo \"build script\" && exit 1",
+    "test": "echo \"test script\" && exit 1",
+    "lint": "biome lint .",
+    "format": "biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "typescript": "^5.6.3"
+  }
+}
