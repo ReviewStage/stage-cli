@@ -141,3 +141,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Stage CLI SPA build output (shipped via npm `files`)
+web-dist/
