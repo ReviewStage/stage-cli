@@ -144,3 +144,6 @@ vite.config.ts.timestamp-*
 
 # Stage CLI SPA build output (shipped via npm `files`)
 web-dist/
+
+# claude
+.claude/scheduled_tasks.lock
