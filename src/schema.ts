@@ -22,15 +22,14 @@ export type WorkingTreeRef = (typeof WORKING_TREE_REF)[keyof typeof WORKING_TREE
 const fullShaSchema = z.string().regex(/^[0-9a-f]{40}$/i, "Expected a full commit SHA");
 
 export const hunkReferenceSchema = z
-  .object({
+  .strictObject({
     filePath: z.string().min(1),
     oldStart: z.number().int().nonnegative(),
-  })
-  .strict();
+  });
 export type HunkReference = z.infer<typeof hunkReferenceSchema>;
 
 export const lineRefSchema = z
-  .object({
+  .strictObject({
     filePath: z.string().min(1),
     side: z.nativeEnum(DIFF_SIDE),
     startLine: z.number().int().positive(),
@@ -39,50 +38,45 @@ export const lineRefSchema = z
   .refine((v) => v.startLine <= v.endLine, {
     message: "endLine must be greater than or equal to startLine",
     path: ["endLine"],
-  })
-  .strict();
+  });
 export type LineRef = z.infer<typeof lineRefSchema>;
 
 export const keyChangeSchema = z
-  .object({
+  .strictObject({
     /** A judgment-call question for a human reviewer, not source code. */
     content: z.string().min(1),
     lineRefs: z.array(lineRefSchema).min(1),
-  })
-  .strict();
+  });
 export type KeyChange = z.infer<typeof keyChangeSchema>;
 
 export const chapterSchema = z
-  .object({
+  .strictObject({
     id: z.string().min(1),
     order: z.number().int().positive(),
     title: z.string().min(1),
     summary: z.string().min(1),
     hunkRefs: z.array(hunkReferenceSchema),
     keyChanges: z.array(keyChangeSchema),
-  })
-  .strict();
+  });
 export type Chapter = z.infer<typeof chapterSchema>;
 
 export const committedScopeSchema = z
-  .object({
+  .strictObject({
     kind: z.literal(SCOPE_KIND.COMMITTED),
     baseSha: fullShaSchema,
     headSha: fullShaSchema,
     mergeBaseSha: fullShaSchema,
-  })
-  .strict();
+  });
 export type CommittedScope = z.infer<typeof committedScopeSchema>;
 
 export const workingTreeScopeSchema = z
-  .object({
+  .strictObject({
     kind: z.literal(SCOPE_KIND.WORKING_TREE),
     ref: z.nativeEnum(WORKING_TREE_REF),
     baseSha: fullShaSchema,
     headSha: fullShaSchema,
     mergeBaseSha: fullShaSchema,
-  })
-  .strict();
+  });
 export type WorkingTreeScope = z.infer<typeof workingTreeScopeSchema>;
 
 export const scopeSchema = z.discriminatedUnion("kind", [
@@ -92,10 +86,9 @@ export const scopeSchema = z.discriminatedUnion("kind", [
 export type Scope = z.infer<typeof scopeSchema>;
 
 export const ChaptersFileSchema = z
-  .object({
+  .strictObject({
     scope: scopeSchema,
     chapters: z.array(chapterSchema),
     generatedAt: z.string().datetime(),
-  })
-  .strict();
+  });
 export type ChaptersFile = z.infer<typeof ChaptersFileSchema>;
