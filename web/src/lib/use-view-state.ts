@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 const STORAGE_PREFIX = "stage-view-state-";
 
@@ -77,6 +77,17 @@ function withRemoved(set: Set<string>, id: string): Set<string> {
 export function useViewState(storageKey: string): UseViewStateApi {
   const [state, setState] = useState<ViewState>(() => readState(storageKey));
 
+  // Re-hydrate from localStorage when the storage key changes. Adjusting state
+  // during render (https://react.dev/learn/you-might-not-need-an-effect) keeps
+  // the new render and any persist call against it in sync — without this,
+  // mutations after a key change would write the prior key's state under the
+  // new key.
+  const lastKeyRef = useRef(storageKey);
+  if (lastKeyRef.current !== storageKey) {
+    lastKeyRef.current = storageKey;
+    setState(readState(storageKey));
+  }
+
   const persist = useCallback(
     (updater: (prev: ViewState) => ViewState) => {
       setState((prev) => {
@@ -90,12 +101,20 @@ export function useViewState(storageKey: string): UseViewStateApi {
   );
 
   const markChapterViewed = useCallback(
-    (id: string) => persist((prev) => ({ ...prev, chapterIds: withAdded(prev.chapterIds, id) })),
+    (id: string) =>
+      persist((prev) => {
+        const chapterIds = withAdded(prev.chapterIds, id);
+        return chapterIds === prev.chapterIds ? prev : { ...prev, chapterIds };
+      }),
     [persist],
   );
 
   const unmarkChapterViewed = useCallback(
-    (id: string) => persist((prev) => ({ ...prev, chapterIds: withRemoved(prev.chapterIds, id) })),
+    (id: string) =>
+      persist((prev) => {
+        const chapterIds = withRemoved(prev.chapterIds, id);
+        return chapterIds === prev.chapterIds ? prev : { ...prev, chapterIds };
+      }),
     [persist],
   );
 
@@ -103,13 +122,19 @@ export function useViewState(storageKey: string): UseViewStateApi {
 
   const markKeyChangeChecked = useCallback(
     (id: string) =>
-      persist((prev) => ({ ...prev, keyChangeIds: withAdded(prev.keyChangeIds, id) })),
+      persist((prev) => {
+        const keyChangeIds = withAdded(prev.keyChangeIds, id);
+        return keyChangeIds === prev.keyChangeIds ? prev : { ...prev, keyChangeIds };
+      }),
     [persist],
   );
 
   const unmarkKeyChangeChecked = useCallback(
     (id: string) =>
-      persist((prev) => ({ ...prev, keyChangeIds: withRemoved(prev.keyChangeIds, id) })),
+      persist((prev) => {
+        const keyChangeIds = withRemoved(prev.keyChangeIds, id);
+        return keyChangeIds === prev.keyChangeIds ? prev : { ...prev, keyChangeIds };
+      }),
     [persist],
   );
 

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useViewState } from "../use-view-state";
 
 const STORAGE_PREFIX = "stage-view-state-";
@@ -100,5 +100,60 @@ describe("useViewState", () => {
     const raw = window.localStorage.getItem(`${STORAGE_PREFIX}repo-a`);
     const parsed = JSON.parse(raw ?? "");
     expect(parsed.chapterIds).toEqual(["ch-1"]);
+  });
+
+  it("does not write to localStorage on no-op mutations", () => {
+    const { result } = renderHook(() => useViewState("repo-a"));
+    act(() => result.current.markChapterViewed("ch-1"));
+    act(() => result.current.markKeyChangeChecked("ch-1-kc-0"));
+
+    const setItem = vi.spyOn(window.localStorage, "setItem");
+    try {
+      act(() => result.current.markChapterViewed("ch-1"));
+      act(() => result.current.markKeyChangeChecked("ch-1-kc-0"));
+      act(() => result.current.unmarkChapterViewed("ch-2"));
+      act(() => result.current.unmarkKeyChangeChecked("ch-9-kc-0"));
+      expect(setItem).not.toHaveBeenCalled();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it("rehydrates state when storageKey changes", () => {
+    window.localStorage.setItem(
+      `${STORAGE_PREFIX}repo-a`,
+      JSON.stringify({ chapterIds: ["a-1"], keyChangeIds: [] }),
+    );
+    window.localStorage.setItem(
+      `${STORAGE_PREFIX}repo-b`,
+      JSON.stringify({ chapterIds: ["b-1"], keyChangeIds: [] }),
+    );
+
+    const { result, rerender } = renderHook(({ key }: { key: string }) => useViewState(key), {
+      initialProps: { key: "repo-a" },
+    });
+
+    expect(result.current.isChapterViewed("a-1")).toBe(true);
+    expect(result.current.isChapterViewed("b-1")).toBe(false);
+
+    rerender({ key: "repo-b" });
+
+    expect(result.current.isChapterViewed("b-1")).toBe(true);
+    expect(result.current.isChapterViewed("a-1")).toBe(false);
+  });
+
+  it("writes mutations to the new key after a storageKey change", () => {
+    const { result, rerender } = renderHook(({ key }: { key: string }) => useViewState(key), {
+      initialProps: { key: "repo-a" },
+    });
+    act(() => result.current.markChapterViewed("ch-old"));
+
+    rerender({ key: "repo-b" });
+    act(() => result.current.markChapterViewed("ch-new"));
+
+    const a = JSON.parse(window.localStorage.getItem(`${STORAGE_PREFIX}repo-a`) ?? "");
+    const b = JSON.parse(window.localStorage.getItem(`${STORAGE_PREFIX}repo-b`) ?? "");
+    expect(a.chapterIds).toEqual(["ch-old"]);
+    expect(b.chapterIds).toEqual(["ch-new"]);
   });
 });
