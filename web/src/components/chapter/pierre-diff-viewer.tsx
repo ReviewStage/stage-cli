@@ -53,8 +53,9 @@ function useAppTheme(override?: AppTheme): AppTheme {
  * rendered in the diff DOM. Lines between hunks are collapsed and don't have
  * DOM nodes, so we must use real hunk boundaries.
  *
- * Returns `null` when hunks are non-contiguous because Pierre cannot resolve
- * a selection range that spans collapsed (non-rendered) lines between hunks.
+ * Returns `null` when hunks are non-contiguous (Pierre cannot resolve a range
+ * that spans collapsed lines between hunks) or when the addition side has no
+ * lines (deletion-only hunks, e.g. fully-deleted files).
  */
 export function getVisibleLineRange(
   hunks: Hunk[],
@@ -73,6 +74,7 @@ export function getVisibleLineRange(
   const firstHunk = hunks[0];
   const lastHunk = hunks[hunks.length - 1];
   if (!firstHunk || !lastHunk) return null;
+  if (firstHunk.additionCount === 0 || lastHunk.additionCount === 0) return null;
   return {
     first: firstHunk.additionStart,
     last: lastHunk.additionStart + lastHunk.additionCount - 1,
