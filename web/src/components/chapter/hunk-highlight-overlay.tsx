@@ -114,9 +114,9 @@ function measureLineRange(
 }
 
 /**
- * Matching by ref identity preserves prior measurements when the current
- * measurement fails (shadow root missing, line not yet rendered) and avoids
- * index-aliasing bugs when the refs array changes between renders.
+ * Matching by coordinates (not object identity) preserves prior measurements
+ * even when the parent recreates LineRef objects between renders, while still
+ * avoiding the index-aliasing bugs you'd get from matching by array position.
  */
 function measureAll(
   refs: readonly LineRef[],
@@ -130,7 +130,14 @@ function measureAll(
       ? measureLineRange(shadowRoot, ref, container, containerRect)
       : null;
     if (measured) return { ref, box: measured };
-    const prevBox = prev.find((p) => p.ref === ref)?.box ?? null;
+    const prevBox =
+      prev.find(
+        (p) =>
+          p.ref.filePath === ref.filePath &&
+          p.ref.side === ref.side &&
+          p.ref.startLine === ref.startLine &&
+          p.ref.endLine === ref.endLine,
+      )?.box ?? null;
     return { ref, box: prevBox };
   });
 }

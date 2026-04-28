@@ -118,17 +118,15 @@ export function PierreDiffViewer({
 
   const diffContainerRef = useRef<HTMLDivElement>(null);
 
-  const isHoveringRef = useRef(false);
-
-  // Suppress onLineSelected during hover — Pierre fires it when the selectedLines
-  // prop changes, but hover highlights shouldn't trigger any selection logic.
   const guardedOnLineSelected = useCallback(
     (range: SelectedLineRange | null) => {
-      if (isHoveringRef.current) return;
       if (!range) {
         onLineSelected?.(null);
         return;
       }
+      // Pierre's drag-to-select emits `{ start: anchor, end: currentLine }`
+      // without ordering them, so dragging upward produces a range where
+      // start > end — normalize so downstream consumers see ascending bounds.
       const normalized: SelectedLineRange =
         range.start <= range.end
           ? range

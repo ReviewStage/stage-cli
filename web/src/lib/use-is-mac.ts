@@ -18,7 +18,7 @@ function getSnapshot() {
 }
 
 function getServerSnapshot() {
-  return true;
+  return false;
 }
 
 export function useIsMac() {

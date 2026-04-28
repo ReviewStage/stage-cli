@@ -12,7 +12,7 @@ const SAMPLE_PATCH = `diff --git a/src/greet.ts b/src/greet.ts
 index 1111111..2222222 100644
 --- a/src/greet.ts
 +++ b/src/greet.ts
-@@ -1,5 +1,7 @@
+@@ -1,3 +1,6 @@
 -export function greet(name: string) {
 -  return "Hello, " + name + "!";
 +export function greet(name: string): string {
