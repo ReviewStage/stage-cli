@@ -2,8 +2,12 @@
  * Wire-format types for `/api/data.json`. Mirrors the runtime schema in
  * `src/schema.ts`; the CLI (`stage-cli show`) validates with Zod before
  * serving, so the SPA can trust the shape and only treats parse failures as
- * errors.
+ * errors. `DIFF_SIDE` / `LineRef` are reused from `diff-types.ts` rather than
+ * duplicated — the on-the-wire shape and the diff-rendering shape happen to
+ * agree, so a single source of truth keeps them from drifting.
  */
+
+import type { LineRef } from "./diff-types";
 
 export const SCOPE_KIND = {
   COMMITTED: "committed",
@@ -17,12 +21,6 @@ export const WORKING_TREE_REF = {
   UNSTAGED: "unstaged",
 } as const;
 export type WorkingTreeRef = (typeof WORKING_TREE_REF)[keyof typeof WORKING_TREE_REF];
-
-export const DIFF_SIDE = {
-  ADDITIONS: "additions",
-  DELETIONS: "deletions",
-} as const;
-export type DiffSide = (typeof DIFF_SIDE)[keyof typeof DIFF_SIDE];
 
 export interface CommittedScope {
   kind: typeof SCOPE_KIND.COMMITTED;
@@ -44,13 +42,6 @@ export type Scope = CommittedScope | WorkingTreeScope;
 export interface HunkReference {
   filePath: string;
   oldStart: number;
-}
-
-export interface LineRef {
-  filePath: string;
-  side: DiffSide;
-  startLine: number;
-  endLine: number;
 }
 
 export interface KeyChange {
