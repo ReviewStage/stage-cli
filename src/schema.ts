@@ -30,7 +30,7 @@ export type HunkReference = z.infer<typeof hunkReferenceSchema>;
 export const lineRefSchema = z
   .strictObject({
     filePath: z.string().min(1),
-    side: z.nativeEnum(DIFF_SIDE),
+    side: z.enum(DIFF_SIDE),
     startLine: z.number().int().positive(),
     endLine: z.number().int().positive(),
   })
@@ -67,7 +67,7 @@ export type CommittedScope = z.infer<typeof committedScopeSchema>;
 
 export const workingTreeScopeSchema = z.strictObject({
   kind: z.literal(SCOPE_KIND.WORKING_TREE),
-  ref: z.nativeEnum(WORKING_TREE_REF),
+  ref: z.enum(WORKING_TREE_REF),
   baseSha: fullShaSchema,
   headSha: fullShaSchema,
   mergeBaseSha: fullShaSchema,
