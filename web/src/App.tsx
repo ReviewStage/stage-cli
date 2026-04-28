@@ -1,3 +1,4 @@
+import { useCallback, useMemo, useState } from "react";
 import { FileHeader, PierreDiffViewer } from "@/components/chapter";
 import {
   type AnnotatedLineRef,
@@ -6,7 +7,7 @@ import {
   type LineRef,
   type PullRequestFile,
 } from "@/lib/diff-types";
-import { useCallback, useMemo, useState } from "react";
+import { DiffSettingsProvider } from "@/lib/use-diff-settings";
 
 const SAMPLE_PATCH = `diff --git a/src/greet.ts b/src/greet.ts
 index 1111111..2222222 100644
@@ -49,11 +50,11 @@ const ALL_LINE_REFS_BY_FILE: Map<string, AnnotatedLineRef[]> = new Map([
   [SAMPLE_FILE.path, FIXTURE_LINE_REFS],
 ]);
 
-export function App() {
+function ChapterFixture() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isViewed, setIsViewed] = useState(false);
-  const [viewedKeyChangeIds, setViewedKeyChangeIds] = useState<Set<string>>(new Set());
+  const [checkedKeyChangeIds, setCheckedKeyChangeIds] = useState<Set<string>>(new Set());
   const [focusedKeyChangeId, setFocusedKeyChangeId] = useState<string | null>(null);
 
   const focusedLineRefsByFile = useMemo<Map<string, LineRef[]> | null>(() => {
@@ -73,26 +74,35 @@ export function App() {
     ]);
   }, [focusedKeyChangeId]);
 
-  const onToggleKeyChangeViewed = useCallback((keyChangeId: string) => {
-    setViewedKeyChangeIds((prev) => {
+  const isKeyChangeChecked = useCallback(
+    (id: string) => checkedKeyChangeIds.has(id),
+    [checkedKeyChangeIds],
+  );
+
+  const onMarkKeyChangeChecked = useCallback((id: string) => {
+    setCheckedKeyChangeIds((prev) => {
+      if (prev.has(id)) return prev;
       const next = new Set(prev);
-      if (next.has(keyChangeId)) {
-        next.delete(keyChangeId);
-      } else {
-        next.add(keyChangeId);
-      }
+      next.add(id);
       return next;
     });
   }, []);
 
-  const onFocusKeyChange = useCallback((keyChangeId: string | null) => {
-    setFocusedKeyChangeId(keyChangeId);
+  const onUnmarkKeyChangeChecked = useCallback((id: string) => {
+    setCheckedKeyChangeIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }, []);
+
+  const onFocusKeyChange = useCallback((id: string | null) => setFocusedKeyChangeId(id), []);
 
   return (
     <div className="min-h-screen bg-background p-6 text-foreground">
       <div className="mx-auto max-w-4xl space-y-4">
-        <h1 className="text-2xl font-semibold">Chapter UI fixture</h1>
+        <h1 className="font-semibold text-2xl">Chapter UI fixture</h1>
         <p className="text-muted-foreground text-sm">
           Hand-crafted prop data exercising the vendored chapter components.
         </p>
@@ -116,13 +126,22 @@ export function App() {
               allLineRefsByFile={ALL_LINE_REFS_BY_FILE}
               focusedLineRefsByFile={focusedLineRefsByFile}
               focusedKeyChangeId={focusedKeyChangeId}
-              viewedKeyChangeIds={viewedKeyChangeIds}
-              onToggleKeyChangeViewed={onToggleKeyChangeViewed}
+              isKeyChangeChecked={isKeyChangeChecked}
+              onMarkKeyChangeChecked={onMarkKeyChangeChecked}
+              onUnmarkKeyChangeChecked={onUnmarkKeyChangeChecked}
               onFocusKeyChange={onFocusKeyChange}
             />
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <DiffSettingsProvider>
+      <ChapterFixture />
+    </DiffSettingsProvider>
   );
 }

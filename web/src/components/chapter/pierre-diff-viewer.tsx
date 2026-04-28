@@ -1,24 +1,23 @@
 import {
+  type FileDiffMetadata,
+  getSingularPatch,
+  type Hunk,
+  type SelectedLineRange,
+} from "@pierre/diffs";
+import { FileDiff, PatchDiff } from "@pierre/diffs/react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
   type AnnotatedLineRef,
   COMMENT_SIDE,
   DIFF_SIDE,
   type LineRef,
   SIDE_TO_DIFF,
 } from "@/lib/diff-types";
-import {
-  type FileDiffMetadata,
-  type Hunk,
-  type SelectedLineRange,
-  getSingularPatch,
-} from "@pierre/diffs";
-import { FileDiff, PatchDiff } from "@pierre/diffs/react";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { resolveSyntaxTheme } from "@/lib/syntax-themes";
+import { useDiffSettings } from "@/lib/use-diff-settings";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
 
 type AppTheme = "light" | "dark";
-
-const DEFAULT_SYNTAX_THEME_LIGHT = "pierre-light";
-const DEFAULT_SYNTAX_THEME_DARK = "pierre-dark";
 
 function detectAppTheme(): AppTheme {
   if (typeof document === "undefined") return "light";
@@ -85,20 +84,21 @@ type PierreDiffViewerProps = {
   filePath?: string;
   selectedLines?: SelectedLineRange | null;
   expandUnchanged?: boolean;
-  onLineSelected?: (range: SelectedLineRange | null) => void;
   /** All key change line refs grouped by file path. */
   allLineRefsByFile?: Map<string, AnnotatedLineRef[]> | null;
   /** Currently focused key change line refs grouped by file path. */
   focusedLineRefsByFile?: Map<string, LineRef[]> | null;
   focusedKeyChangeId?: string | null;
-  viewedKeyChangeIds?: Set<string>;
-  onToggleKeyChangeViewed?: (keyChangeId: string) => void;
+  isKeyChangeChecked?: (keyChangeId: string) => boolean;
+  onMarkKeyChangeChecked?: (keyChangeId: string) => void;
+  onUnmarkKeyChangeChecked?: (keyChangeId: string) => void;
   onFocusKeyChange?: (keyChangeId: string | null, scrollTarget?: LineRef | null) => void;
   /** Force a specific theme. Defaults to detecting `.dark` on `<html>`. */
   appTheme?: AppTheme;
 } & ({ patch: string; fileDiff?: never } | { patch?: never; fileDiff: FileDiffMetadata });
 
 const noop = () => {};
+const noopChecked = () => false;
 
 export function PierreDiffViewer({
   patch,
@@ -106,42 +106,31 @@ export function PierreDiffViewer({
   filePath,
   selectedLines: selectedLinesProp,
   expandUnchanged = false,
-  onLineSelected,
   allLineRefsByFile,
   focusedLineRefsByFile,
   focusedKeyChangeId = null,
-  viewedKeyChangeIds,
-  onToggleKeyChangeViewed,
+  isKeyChangeChecked,
+  onMarkKeyChangeChecked,
+  onUnmarkKeyChangeChecked,
   onFocusKeyChange,
   appTheme: appThemeProp,
 }: PierreDiffViewerProps) {
   const appTheme = useAppTheme(appThemeProp);
+  const { viewMode, diffIndicators, lineDiffType, backgrounds, wrap, lineNumbers, syntaxTheme } =
+    useDiffSettings();
+
+  // Defer settings so UI controls update instantly while the expensive diff
+  // re-renders at lower priority.
+  const deferredViewMode = useDeferredValue(viewMode);
+  const deferredIndicators = useDeferredValue(diffIndicators);
+  const deferredLineDiffType = useDeferredValue(lineDiffType);
+  const deferredBackgrounds = useDeferredValue(backgrounds);
+  const deferredWrap = useDeferredValue(wrap);
+  const deferredLineNumbers = useDeferredValue(lineNumbers);
+  const deferredSyntaxTheme = useDeferredValue(syntaxTheme);
   const deferredExpandUnchanged = useDeferredValue(expandUnchanged);
 
   const diffContainerRef = useRef<HTMLDivElement>(null);
-
-  const guardedOnLineSelected = useCallback(
-    (range: SelectedLineRange | null) => {
-      if (!range) {
-        onLineSelected?.(null);
-        return;
-      }
-      // Pierre's drag-to-select emits `{ start: anchor, end: currentLine }`
-      // without ordering them, so dragging upward produces a range where
-      // start > end — normalize so downstream consumers see ascending bounds.
-      const normalized: SelectedLineRange =
-        range.start <= range.end
-          ? range
-          : {
-              start: range.end,
-              side: range.endSide ?? range.side,
-              end: range.start,
-              endSide: range.side,
-            };
-      onLineSelected?.(normalized);
-    },
-    [onLineSelected],
-  );
 
   const focusedLineRefs = useMemo(() => {
     if (!focusedLineRefsByFile || !filePath) return undefined;
@@ -155,18 +144,31 @@ export function PierreDiffViewer({
 
   const options = useMemo(
     () => ({
-      theme: appTheme === "dark" ? DEFAULT_SYNTAX_THEME_DARK : DEFAULT_SYNTAX_THEME_LIGHT,
+      theme: resolveSyntaxTheme(deferredSyntaxTheme, appTheme),
       themeType: appTheme,
-      diffStyle: "split" as const,
+      diffStyle: deferredViewMode,
+      diffIndicators: deferredIndicators,
+      lineDiffType: deferredLineDiffType,
+      disableBackground: !deferredBackgrounds,
       disableFileHeader: true,
+      disableLineNumbers: !deferredLineNumbers,
       expandUnchanged: deferredExpandUnchanged,
       expansionLineCount: 20,
-      overflow: "wrap" as const,
+      overflow: deferredWrap ? ("wrap" as const) : ("scroll" as const),
       enableLineSelection: true,
       enableHoverUtility: false,
-      onLineSelected: guardedOnLineSelected,
     }),
-    [appTheme, deferredExpandUnchanged, guardedOnLineSelected],
+    [
+      appTheme,
+      deferredSyntaxTheme,
+      deferredViewMode,
+      deferredIndicators,
+      deferredLineDiffType,
+      deferredBackgrounds,
+      deferredWrap,
+      deferredLineNumbers,
+      deferredExpandUnchanged,
+    ],
   );
 
   const sharedProps = {
@@ -179,18 +181,18 @@ export function PierreDiffViewer({
   // mount, so leaving it on for every diff (e.g. plain /files view, chapter
   // files with no key changes) adds unnecessary work per file.
   const hasLineRefs = (allAnnotatedLineRefs?.length ?? 0) > 0 || (focusedLineRefs?.length ?? 0) > 0;
-  const overlay =
-    hasLineRefs && viewedKeyChangeIds ? (
-      <LineHighlightOverlay
-        allLineRefs={allAnnotatedLineRefs}
-        focusedLineRefs={focusedLineRefs}
-        focusedKeyChangeId={focusedKeyChangeId}
-        viewedKeyChangeIds={viewedKeyChangeIds}
-        onToggleKeyChangeViewed={onToggleKeyChangeViewed ?? noop}
-        onFocusKeyChange={onFocusKeyChange ?? noop}
-        containerRef={diffContainerRef}
-      />
-    ) : null;
+  const overlay = hasLineRefs ? (
+    <LineHighlightOverlay
+      allLineRefs={allAnnotatedLineRefs}
+      focusedLineRefs={focusedLineRefs}
+      focusedKeyChangeId={focusedKeyChangeId}
+      isKeyChangeChecked={isKeyChangeChecked ?? noopChecked}
+      onMarkKeyChangeChecked={onMarkKeyChangeChecked ?? noop}
+      onUnmarkKeyChangeChecked={onUnmarkKeyChangeChecked ?? noop}
+      onFocusKeyChange={onFocusKeyChange ?? noop}
+      containerRef={diffContainerRef}
+    />
+  ) : null;
 
   if (fileDiff) {
     return (

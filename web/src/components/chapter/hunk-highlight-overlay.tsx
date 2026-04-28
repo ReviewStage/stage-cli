@@ -307,8 +307,9 @@ interface LineHighlightOverlayProps {
   allLineRefs: AnnotatedLineRef[] | undefined;
   focusedLineRefs: LineRef[] | undefined;
   focusedKeyChangeId: string | null;
-  viewedKeyChangeIds: Set<string>;
-  onToggleKeyChangeViewed: (keyChangeId: string) => void;
+  isKeyChangeChecked: (keyChangeId: string) => boolean;
+  onMarkKeyChangeChecked: (keyChangeId: string) => void;
+  onUnmarkKeyChangeChecked: (keyChangeId: string) => void;
   onFocusKeyChange: (keyChangeId: string | null, scrollTarget?: LineRef | null) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
@@ -317,8 +318,9 @@ export function LineHighlightOverlay({
   allLineRefs,
   focusedLineRefs,
   focusedKeyChangeId,
-  viewedKeyChangeIds,
-  onToggleKeyChangeViewed,
+  isKeyChangeChecked,
+  onMarkKeyChangeChecked,
+  onUnmarkKeyChangeChecked,
   onFocusKeyChange,
   containerRef,
 }: LineHighlightOverlayProps) {
@@ -456,11 +458,11 @@ export function LineHighlightOverlay({
             side: ref.side,
             startLine: ref.startLine,
             endLine: ref.endLine,
-            isChecked: viewedKeyChangeIds.has(ref.keyChangeId),
+            isChecked: isKeyChangeChecked(ref.keyChangeId),
           },
         ];
       }) ?? [],
-    [allBoxByRef, allLineRefs, focusedKeyChangeId, viewedKeyChangeIds],
+    [allBoxByRef, allLineRefs, focusedKeyChangeId, isKeyChangeChecked],
   );
 
   const focusedInteractiveBoxes = useMemo<InteractiveHighlightBox[]>(
@@ -476,11 +478,11 @@ export function LineHighlightOverlay({
             side: ref.side,
             startLine: ref.startLine,
             endLine: ref.endLine,
-            isChecked: viewedKeyChangeIds.has(focusedKeyChangeId),
+            isChecked: isKeyChangeChecked(focusedKeyChangeId),
           },
         ];
       }) ?? [],
-    [focusedBoxByRef, focusedKeyChangeId, focusedLineRefs, viewedKeyChangeIds],
+    [focusedBoxByRef, focusedKeyChangeId, focusedLineRefs, isKeyChangeChecked],
   );
 
   // Keep interactive-box state and callbacks in a ref so the click/move effect
@@ -492,14 +494,18 @@ export function LineHighlightOverlay({
     focusedInteractiveBoxes,
     focusedKeyChangeId,
     onFocusKeyChange,
-    onToggleKeyChangeViewed,
+    isKeyChangeChecked,
+    onMarkKeyChangeChecked,
+    onUnmarkKeyChangeChecked,
   });
   handlerStateRef.current = {
     allInteractiveBoxes,
     focusedInteractiveBoxes,
     focusedKeyChangeId,
     onFocusKeyChange,
-    onToggleKeyChangeViewed,
+    isKeyChangeChecked,
+    onMarkKeyChangeChecked,
+    onUnmarkKeyChangeChecked,
   };
 
   useEffect(() => {
@@ -538,7 +544,11 @@ export function LineHighlightOverlay({
         badge &&
         isPointInReviewStateBadge(x, y, badge.node.getBoundingClientRect(), containerRect)
       ) {
-        state.onToggleKeyChangeViewed(box.keyChangeId);
+        if (state.isKeyChangeChecked(box.keyChangeId)) {
+          state.onUnmarkKeyChangeChecked(box.keyChangeId);
+        } else {
+          state.onMarkKeyChangeChecked(box.keyChangeId);
+        }
         return;
       }
 
@@ -676,7 +686,7 @@ export function LineHighlightOverlay({
               }}
             >
               <ReviewStateBadge
-                isChecked={viewedKeyChangeIds.has(ref.keyChangeId)}
+                isChecked={isKeyChangeChecked(ref.keyChangeId)}
                 keyChangeId={ref.keyChangeId}
                 filePath={ref.filePath}
                 side={ref.side}
@@ -719,7 +729,7 @@ export function LineHighlightOverlay({
               }}
             >
               <ReviewStateBadge
-                isChecked={viewedKeyChangeIds.has(focusedKeyChangeId)}
+                isChecked={isKeyChangeChecked(focusedKeyChangeId)}
                 keyChangeId={focusedKeyChangeId}
                 filePath={ref.filePath}
                 side={ref.side}
