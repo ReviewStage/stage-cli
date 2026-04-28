@@ -3,7 +3,7 @@ import type { Chapter, ChaptersFile } from "@/lib/chapters-types";
 import { type UseViewStateApi, useViewState } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
 import { Circle, CircleCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type FetchState =
   | { status: "loading" }
@@ -62,7 +62,10 @@ export function App() {
 
 function ChaptersView({ file }: { file: ChaptersFile }) {
   const view = useViewState(file.scope.headSha);
-  const sortedChapters = [...file.chapters].sort((a, b) => a.order - b.order);
+  const sortedChapters = useMemo(
+    () => [...file.chapters].sort((a, b) => a.order - b.order),
+    [file.chapters],
+  );
 
   return (
     <div className="min-h-screen bg-background p-6 text-foreground">
@@ -104,7 +107,7 @@ function uniqueFilePaths(chapter: Chapter): string[] {
 
 function ChapterCard({ chapter, index, view }: ChapterCardProps) {
   const isViewed = view.isChapterViewed(chapter.id);
-  const filePaths = uniqueFilePaths(chapter);
+  const filePaths = useMemo(() => uniqueFilePaths(chapter), [chapter]);
 
   return (
     <li

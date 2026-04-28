@@ -77,6 +77,14 @@ function withRemoved(set: Set<string>, id: string): Set<string> {
 export function useViewState(storageKey: string): UseViewStateApi {
   const [state, setState] = useState<ViewState>(() => readState(storageKey));
 
+  // Mirror state in a ref so persist can compute the next value and write to
+  // localStorage in the event handler, not inside a setState updater. State
+  // updaters must be pure (https://react.dev/learn/keeping-components-pure),
+  // and React may invoke them more than once under Strict Mode / concurrent
+  // rendering — keeping writeState out of them avoids the redundant writes.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
   // Re-hydrate from localStorage when the storage key changes. Adjusting state
   // during render (https://react.dev/learn/you-might-not-need-an-effect) keeps
   // the new render and any persist call against it in sync — without this,
@@ -85,17 +93,19 @@ export function useViewState(storageKey: string): UseViewStateApi {
   const lastKeyRef = useRef(storageKey);
   if (lastKeyRef.current !== storageKey) {
     lastKeyRef.current = storageKey;
-    setState(readState(storageKey));
+    const fresh = readState(storageKey);
+    stateRef.current = fresh;
+    setState(fresh);
   }
 
   const persist = useCallback(
     (updater: (prev: ViewState) => ViewState) => {
-      setState((prev) => {
-        const next = updater(prev);
-        if (next === prev) return prev;
-        writeState(storageKey, next);
-        return next;
-      });
+      const prev = stateRef.current;
+      const next = updater(prev);
+      if (next === prev) return;
+      stateRef.current = next;
+      setState(next);
+      writeState(storageKey, next);
     },
     [storageKey],
   );
