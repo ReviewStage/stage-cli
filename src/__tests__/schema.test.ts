@@ -133,6 +133,14 @@ describe("ChaptersFileSchema", () => {
       makeFixture({ scope: makeCommittedScope({ headSha: SHA.head.slice(0, 7) }) }),
       "scope.headSha",
     );
+    expectInvalidAt(
+      makeFixture({
+        scope: makeCommittedScope({
+          headSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".toUpperCase(),
+        }),
+      }),
+      "scope.headSha",
+    );
     expectInvalidAt(makeFixture({ scope: makeWorkingTreeScope({ ref: "tracked" }) }), "scope.ref");
   });
 

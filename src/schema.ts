@@ -19,13 +19,12 @@ export const WORKING_TREE_REF = {
 } as const;
 export type WorkingTreeRef = (typeof WORKING_TREE_REF)[keyof typeof WORKING_TREE_REF];
 
-const fullShaSchema = z.string().regex(/^[0-9a-f]{40}$/i, "Expected a full commit SHA");
+const fullShaSchema = z.string().regex(/^[0-9a-f]{40}$/, "Expected a full commit SHA");
 
-export const hunkReferenceSchema = z
-  .strictObject({
-    filePath: z.string().min(1),
-    oldStart: z.number().int().nonnegative(),
-  });
+export const hunkReferenceSchema = z.strictObject({
+  filePath: z.string().min(1),
+  oldStart: z.number().int().nonnegative(),
+});
 export type HunkReference = z.infer<typeof hunkReferenceSchema>;
 
 export const lineRefSchema = z
@@ -41,42 +40,38 @@ export const lineRefSchema = z
   });
 export type LineRef = z.infer<typeof lineRefSchema>;
 
-export const keyChangeSchema = z
-  .strictObject({
-    /** A judgment-call question for a human reviewer, not source code. */
-    content: z.string().min(1),
-    lineRefs: z.array(lineRefSchema).min(1),
-  });
+export const keyChangeSchema = z.strictObject({
+  /** A judgment-call question for a human reviewer, not source code. */
+  content: z.string().min(1),
+  lineRefs: z.array(lineRefSchema).min(1),
+});
 export type KeyChange = z.infer<typeof keyChangeSchema>;
 
-export const chapterSchema = z
-  .strictObject({
-    id: z.string().min(1),
-    order: z.number().int().positive(),
-    title: z.string().min(1),
-    summary: z.string().min(1),
-    hunkRefs: z.array(hunkReferenceSchema),
-    keyChanges: z.array(keyChangeSchema),
-  });
+export const chapterSchema = z.strictObject({
+  id: z.string().min(1),
+  order: z.number().int().positive(),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  hunkRefs: z.array(hunkReferenceSchema),
+  keyChanges: z.array(keyChangeSchema),
+});
 export type Chapter = z.infer<typeof chapterSchema>;
 
-export const committedScopeSchema = z
-  .strictObject({
-    kind: z.literal(SCOPE_KIND.COMMITTED),
-    baseSha: fullShaSchema,
-    headSha: fullShaSchema,
-    mergeBaseSha: fullShaSchema,
-  });
+export const committedScopeSchema = z.strictObject({
+  kind: z.literal(SCOPE_KIND.COMMITTED),
+  baseSha: fullShaSchema,
+  headSha: fullShaSchema,
+  mergeBaseSha: fullShaSchema,
+});
 export type CommittedScope = z.infer<typeof committedScopeSchema>;
 
-export const workingTreeScopeSchema = z
-  .strictObject({
-    kind: z.literal(SCOPE_KIND.WORKING_TREE),
-    ref: z.nativeEnum(WORKING_TREE_REF),
-    baseSha: fullShaSchema,
-    headSha: fullShaSchema,
-    mergeBaseSha: fullShaSchema,
-  });
+export const workingTreeScopeSchema = z.strictObject({
+  kind: z.literal(SCOPE_KIND.WORKING_TREE),
+  ref: z.nativeEnum(WORKING_TREE_REF),
+  baseSha: fullShaSchema,
+  headSha: fullShaSchema,
+  mergeBaseSha: fullShaSchema,
+});
 export type WorkingTreeScope = z.infer<typeof workingTreeScopeSchema>;
 
 export const scopeSchema = z.discriminatedUnion("kind", [
@@ -85,10 +80,9 @@ export const scopeSchema = z.discriminatedUnion("kind", [
 ]);
 export type Scope = z.infer<typeof scopeSchema>;
 
-export const ChaptersFileSchema = z
-  .strictObject({
-    scope: scopeSchema,
-    chapters: z.array(chapterSchema),
-    generatedAt: z.string().datetime(),
-  });
+export const ChaptersFileSchema = z.strictObject({
+  scope: scopeSchema,
+  chapters: z.array(chapterSchema),
+  generatedAt: z.iso.datetime(),
+});
 export type ChaptersFile = z.infer<typeof ChaptersFileSchema>;
