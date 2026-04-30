@@ -1,5 +1,6 @@
 import { Checkbox } from "@/components/ui/checkbox";
-import type { Chapter, ChaptersFile } from "@stage/schema";
+import type { Chapter, ChaptersFile, Scope } from "@stage/schema";
+import { SCOPE_KIND } from "@stage/schema";
 import { type UseViewStateApi, useViewState } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
 import { Circle, CircleCheck } from "lucide-react";
@@ -60,8 +61,19 @@ export function App() {
   return <ChaptersView file={state.data} />;
 }
 
+// Identify the diff by what determines its content. headSha alone collides
+// across different bases that share a tip (e.g. two PRs targeting the same
+// commit). For working-tree scopes the identity is necessarily coarser —
+// uncommitted edits aren't captured here, so view state collapses across
+// successive runs against the same baseline.
+function storageKeyForScope(scope: Scope): string {
+  return scope.kind === SCOPE_KIND.COMMITTED
+    ? `committed:${scope.baseSha}..${scope.headSha}`
+    : `workingTree:${scope.ref}:${scope.baseSha}..${scope.headSha}`;
+}
+
 function ChaptersView({ file }: { file: ChaptersFile }) {
-  const view = useViewState(file.scope.headSha);
+  const view = useViewState(storageKeyForScope(file.scope));
   const sortedChapters = useMemo(
     () => [...file.chapters].sort((a, b) => a.order - b.order),
     [file.chapters],
@@ -147,10 +159,6 @@ function ChapterCard({ chapter, index, view }: ChapterCardProps) {
   );
 }
 
-function keyChangeId(chapterId: string, index: number): string {
-  return `${chapterId}-kc-${index}`;
-}
-
 function KeyChangesList({ chapter, view }: { chapter: Chapter; view: UseViewStateApi }) {
   return (
     <div>
@@ -158,16 +166,15 @@ function KeyChangesList({ chapter, view }: { chapter: Chapter; view: UseViewStat
         What to Review
       </h3>
       <ul className="space-y-2">
-        {chapter.keyChanges.map((kc, kcIndex) => {
-          const id = keyChangeId(chapter.id, kcIndex);
-          const checked = view.isKeyChangeChecked(id);
+        {chapter.keyChanges.map((kc) => {
+          const checked = view.isKeyChangeChecked(kc.id);
           return (
-            <li key={id} className="flex items-start gap-2.5">
+            <li key={kc.id} className="flex items-start gap-2.5">
               <Checkbox
                 checked={checked}
                 onCheckedChange={(next) => {
-                  if (next === true) view.markKeyChangeChecked(id);
-                  else view.unmarkKeyChangeChecked(id);
+                  if (next === true) view.markKeyChangeChecked(kc.id);
+                  else view.unmarkKeyChangeChecked(kc.id);
                 }}
                 className="mt-0.5"
                 aria-label="Mark key change as reviewed"

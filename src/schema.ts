@@ -50,6 +50,11 @@ export const lineRefSchema = z
 export type LineRef = z.infer<typeof lineRefSchema>;
 
 export const keyChangeSchema = z.strictObject({
+  /** Unique within the ChaptersFile. The SPA uses it as a stable storage key
+   * for "checked" state, so the generator must keep it stable across re-runs
+   * of the same diff (e.g. derive it from content). Index-based ids would
+   * migrate state onto whichever item lands at the same position. */
+  id: z.string().min(1),
   /** A judgment-call question for a human reviewer, not source code. */
   content: z.string().min(1),
   lineRefs: z.array(lineRefSchema).min(1),

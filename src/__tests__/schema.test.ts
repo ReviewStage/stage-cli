@@ -23,6 +23,7 @@ function makeHunkRef(over: Record<string, unknown> = {}) {
 
 function makeKeyChange(over: Record<string, unknown> = {}) {
   return {
+    id: "kc-0",
     content: "Should orgId fall back to the user's primary org when not provided?",
     lineRefs: [makeLineRef()],
     ...over,
@@ -146,6 +147,25 @@ describe("ChaptersFileSchema", () => {
 
   it("rejects unparseable generatedAt timestamps", () => {
     expectInvalidAt(makeFixture({ generatedAt: "yesterday" }), "generatedAt");
+  });
+
+  it("rejects key changes without a stable id", () => {
+    expectInvalidAt(
+      makeFixture({
+        chapters: [
+          makeChapter({
+            keyChanges: [{ content: "x", lineRefs: [makeLineRef()] }],
+          }),
+        ],
+      }),
+      "chapters.0.keyChanges.0.id",
+    );
+    expectInvalidAt(
+      makeFixture({
+        chapters: [makeChapter({ keyChanges: [makeKeyChange({ id: "" })] })],
+      }),
+      "chapters.0.keyChanges.0.id",
+    );
   });
 
   it("rejects line references the UI cannot anchor safely", () => {
