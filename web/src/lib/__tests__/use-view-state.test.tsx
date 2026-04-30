@@ -79,6 +79,7 @@ describe("useViewState", () => {
     expect(parsed).toEqual({
       chapterIds: ["ch-1"],
       keyChangeIds: ["ch-1-kc-0"],
+      updatedAt: expect.any(Number),
     });
   });
 
@@ -120,13 +121,14 @@ describe("useViewState", () => {
   });
 
   it("rehydrates state when storageKey changes", () => {
+    const now = Date.now();
     window.localStorage.setItem(
       `${STORAGE_PREFIX}repo-a`,
-      JSON.stringify({ chapterIds: ["a-1"], keyChangeIds: [] }),
+      JSON.stringify({ chapterIds: ["a-1"], keyChangeIds: [], updatedAt: now }),
     );
     window.localStorage.setItem(
       `${STORAGE_PREFIX}repo-b`,
-      JSON.stringify({ chapterIds: ["b-1"], keyChangeIds: [] }),
+      JSON.stringify({ chapterIds: ["b-1"], keyChangeIds: [], updatedAt: now }),
     );
 
     const { result, rerender } = renderHook(({ key }: { key: string }) => useViewState(key), {
@@ -155,5 +157,73 @@ describe("useViewState", () => {
     const b = JSON.parse(window.localStorage.getItem(`${STORAGE_PREFIX}repo-b`) ?? "");
     expect(a.chapterIds).toEqual(["ch-old"]);
     expect(b.chapterIds).toEqual(["ch-new"]);
+  });
+
+  it("evicts stale entries from other keys on read", () => {
+    const ninetyOneDaysMs = 91 * 24 * 60 * 60 * 1000;
+    window.localStorage.setItem(
+      `${STORAGE_PREFIX}repo-old`,
+      JSON.stringify({
+        chapterIds: ["x"],
+        keyChangeIds: [],
+        updatedAt: Date.now() - ninetyOneDaysMs,
+      }),
+    );
+
+    renderHook(() => useViewState("repo-a"));
+
+    expect(window.localStorage.getItem(`${STORAGE_PREFIX}repo-old`)).toBeNull();
+  });
+
+  it("evicts entries with no updatedAt (legacy format) on read", () => {
+    window.localStorage.setItem(
+      `${STORAGE_PREFIX}repo-legacy`,
+      JSON.stringify({ chapterIds: ["x"], keyChangeIds: [] }),
+    );
+
+    renderHook(() => useViewState("repo-a"));
+
+    expect(window.localStorage.getItem(`${STORAGE_PREFIX}repo-legacy`)).toBeNull();
+  });
+
+  it("keeps entries written within the TTL window", () => {
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    window.localStorage.setItem(
+      `${STORAGE_PREFIX}repo-fresh`,
+      JSON.stringify({
+        chapterIds: ["x"],
+        keyChangeIds: [],
+        updatedAt: Date.now() - oneDayMs,
+      }),
+    );
+
+    renderHook(() => useViewState("repo-a"));
+
+    expect(window.localStorage.getItem(`${STORAGE_PREFIX}repo-fresh`)).not.toBeNull();
+  });
+
+  it("does not touch keys outside the stage-view-state prefix", () => {
+    window.localStorage.setItem("unrelated-key", "keep me");
+
+    renderHook(() => useViewState("repo-a"));
+
+    expect(window.localStorage.getItem("unrelated-key")).toBe("keep me");
+  });
+
+  it("returns empty state when the current key is itself expired", () => {
+    const ninetyOneDaysMs = 91 * 24 * 60 * 60 * 1000;
+    window.localStorage.setItem(
+      `${STORAGE_PREFIX}repo-a`,
+      JSON.stringify({
+        chapterIds: ["ch-stale"],
+        keyChangeIds: [],
+        updatedAt: Date.now() - ninetyOneDaysMs,
+      }),
+    );
+
+    const { result } = renderHook(() => useViewState("repo-a"));
+
+    expect(result.current.isChapterViewed("ch-stale")).toBe(false);
+    expect(window.localStorage.getItem(`${STORAGE_PREFIX}repo-a`)).toBeNull();
   });
 });

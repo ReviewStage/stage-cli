@@ -1,10 +1,12 @@
 import { useCallback, useRef, useState } from "react";
 
 const STORAGE_PREFIX = "stage-view-state-";
+const TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
 interface StoredViewState {
   chapterIds: string[];
   keyChangeIds: string[];
+  updatedAt: number;
 }
 
 interface ViewState {
@@ -25,8 +27,53 @@ function emptyState(): ViewState {
   return { chapterIds: new Set<string>(), keyChangeIds: new Set<string>() };
 }
 
+// Bound localStorage growth: each storageKey is per-diff, so a user who runs
+// stage-cli on many branches would otherwise accumulate state for SHAs they'll
+// never revisit. Sweeping on read is enough — readState runs on mount and on
+// key change, both rare. Entries written before updatedAt existed are treated
+// as expired so legacy data also gets cleaned up.
+function sweepExpired(now: number): void {
+  if (typeof window === "undefined") return;
+  const keys: string[] = [];
+  try {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (key?.startsWith(STORAGE_PREFIX)) keys.push(key);
+    }
+  } catch {
+    return;
+  }
+  for (const key of keys) {
+    let updatedAt: unknown;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw === null) continue;
+      const parsed: unknown = JSON.parse(raw);
+      updatedAt =
+        parsed && typeof parsed === "object"
+          ? (parsed as { updatedAt?: unknown }).updatedAt
+          : undefined;
+    } catch {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        /* noop */
+      }
+      continue;
+    }
+    if (typeof updatedAt !== "number" || now - updatedAt > TTL_MS) {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        /* noop */
+      }
+    }
+  }
+}
+
 function readState(storageKey: string): ViewState {
   if (typeof window === "undefined") return emptyState();
+  sweepExpired(Date.now());
   let raw: string | null;
   try {
     raw = window.localStorage.getItem(STORAGE_PREFIX + storageKey);
@@ -52,6 +99,7 @@ function writeState(storageKey: string, state: ViewState): void {
   const stored: StoredViewState = {
     chapterIds: [...state.chapterIds],
     keyChangeIds: [...state.keyChangeIds],
+    updatedAt: Date.now(),
   };
   try {
     window.localStorage.setItem(STORAGE_PREFIX + storageKey, JSON.stringify(stored));
