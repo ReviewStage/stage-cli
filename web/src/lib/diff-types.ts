@@ -1,5 +1,4 @@
-import type { DiffSide, LineRef } from "@stage/schema";
-import { DIFF_SIDE } from "@stage/schema";
+import { DIFF_SIDE, type DiffSide, type LineRef } from "@stage/types";
 
 export const COMMENT_SIDE = {
   LEFT: "LEFT",
