@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const STORAGE_PREFIX = "stage-view-state-";
 const TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -27,11 +27,39 @@ function emptyState(): ViewState {
   return { chapterIds: new Set<string>(), keyChangeIds: new Set<string>() };
 }
 
+// Read-only: returns the parsed entry for a single key, or empty state if the
+// entry is missing, malformed, or past TTL. TTL is checked here so the hook
+// returns fresh data on render even before the post-commit sweep runs.
+function readEntry(storageKey: string, now: number): ViewState {
+  if (typeof window === "undefined") return emptyState();
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(STORAGE_PREFIX + storageKey);
+  } catch {
+    return emptyState();
+  }
+  if (raw === null) return emptyState();
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return emptyState();
+    const candidate = parsed as Partial<StoredViewState>;
+    if (typeof candidate.updatedAt !== "number" || now - candidate.updatedAt > TTL_MS) {
+      return emptyState();
+    }
+    return {
+      chapterIds: new Set(Array.isArray(candidate.chapterIds) ? candidate.chapterIds : []),
+      keyChangeIds: new Set(Array.isArray(candidate.keyChangeIds) ? candidate.keyChangeIds : []),
+    };
+  } catch {
+    return emptyState();
+  }
+}
+
 // Bound localStorage growth: each storageKey is per-diff, so a user who runs
 // stage-cli on many branches would otherwise accumulate state for SHAs they'll
-// never revisit. Sweeping on read is enough — readState runs on mount and on
-// key change, both rare. Entries written before updatedAt existed are treated
-// as expired so legacy data also gets cleaned up.
+// never revisit. Sweep is a side effect, so it runs in useEffect (not render),
+// once on mount and on key change. Entries written before updatedAt existed
+// are treated as expired so legacy data also gets cleaned up.
 function sweepExpired(now: number): void {
   if (typeof window === "undefined") return;
   const keys: string[] = [];
@@ -71,29 +99,6 @@ function sweepExpired(now: number): void {
   }
 }
 
-function readState(storageKey: string): ViewState {
-  if (typeof window === "undefined") return emptyState();
-  sweepExpired(Date.now());
-  let raw: string | null;
-  try {
-    raw = window.localStorage.getItem(STORAGE_PREFIX + storageKey);
-  } catch {
-    return emptyState();
-  }
-  if (raw === null) return emptyState();
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return emptyState();
-    const candidate = parsed as Partial<StoredViewState>;
-    return {
-      chapterIds: new Set(Array.isArray(candidate.chapterIds) ? candidate.chapterIds : []),
-      keyChangeIds: new Set(Array.isArray(candidate.keyChangeIds) ? candidate.keyChangeIds : []),
-    };
-  } catch {
-    return emptyState();
-  }
-}
-
 function writeState(storageKey: string, state: ViewState): void {
   if (typeof window === "undefined") return;
   const stored: StoredViewState = {
@@ -123,7 +128,7 @@ function withRemoved(set: Set<string>, id: string): Set<string> {
 }
 
 export function useViewState(storageKey: string): UseViewStateApi {
-  const [state, setState] = useState<ViewState>(() => readState(storageKey));
+  const [state, setState] = useState<ViewState>(() => readEntry(storageKey, Date.now()));
 
   // Mirror state in a ref so persist can compute the next value and write to
   // localStorage in the event handler, not inside a setState updater. State
@@ -137,14 +142,21 @@ export function useViewState(storageKey: string): UseViewStateApi {
   // during render (https://react.dev/learn/you-might-not-need-an-effect) keeps
   // the new render and any persist call against it in sync — without this,
   // mutations after a key change would write the prior key's state under the
-  // new key.
+  // new key. readEntry is read-only, so this stays render-pure.
   const lastKeyRef = useRef(storageKey);
   if (lastKeyRef.current !== storageKey) {
     lastKeyRef.current = storageKey;
-    const fresh = readState(storageKey);
+    const fresh = readEntry(storageKey, Date.now());
     stateRef.current = fresh;
     setState(fresh);
   }
+
+  // Sweep expired entries off the render path. Once per mount is enough —
+  // sweep scans all entries regardless of the current key, and the 90-day TTL
+  // means missing a sweep cycle within a single session is harmless.
+  useEffect(() => {
+    sweepExpired(Date.now());
+  }, []);
 
   const persist = useCallback(
     (updater: (prev: ViewState) => ViewState) => {
@@ -201,12 +213,22 @@ export function useViewState(storageKey: string): UseViewStateApi {
     [state.keyChangeIds],
   );
 
-  return {
-    markChapterViewed,
-    unmarkChapterViewed,
-    isChapterViewed,
-    markKeyChangeChecked,
-    unmarkKeyChangeChecked,
-    isKeyChangeChecked,
-  };
+  return useMemo(
+    () => ({
+      markChapterViewed,
+      unmarkChapterViewed,
+      isChapterViewed,
+      markKeyChangeChecked,
+      unmarkKeyChangeChecked,
+      isKeyChangeChecked,
+    }),
+    [
+      markChapterViewed,
+      unmarkChapterViewed,
+      isChapterViewed,
+      markKeyChangeChecked,
+      unmarkKeyChangeChecked,
+      isKeyChangeChecked,
+    ],
+  );
 }

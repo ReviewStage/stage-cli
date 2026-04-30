@@ -120,6 +120,15 @@ describe("useViewState", () => {
     }
   });
 
+  it("returns a referentially stable api across unrelated re-renders", () => {
+    const { result, rerender } = renderHook(({ key }: { key: string }) => useViewState(key), {
+      initialProps: { key: "repo-a" },
+    });
+    const first = result.current;
+    rerender({ key: "repo-a" });
+    expect(result.current).toBe(first);
+  });
+
   it("rehydrates state when storageKey changes", () => {
     const now = Date.now();
     window.localStorage.setItem(
