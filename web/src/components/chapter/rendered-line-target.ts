@@ -1,4 +1,4 @@
-import { DIFF_SIDE, type DiffSide } from "@/lib/diff-types";
+import { DIFF_SIDE, type DiffSide } from "@stage/types";
 
 function sideSelector(side: DiffSide): string {
   return side === DIFF_SIDE.ADDITIONS ? "[data-additions]" : "[data-deletions]";

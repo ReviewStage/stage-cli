@@ -1,8 +1,5 @@
-export const DIFF_SIDE = {
-  ADDITIONS: "additions",
-  DELETIONS: "deletions",
-} as const;
-export type DiffSide = (typeof DIFF_SIDE)[keyof typeof DIFF_SIDE];
+import type { DiffSide, LineRef } from "@stage/types";
+import { DIFF_SIDE } from "@stage/types";
 
 export const COMMENT_SIDE = {
   LEFT: "LEFT",
@@ -53,13 +50,6 @@ export interface PullRequestFile {
   isSymlink?: boolean;
   symlinkTarget?: string;
   oldSymlinkTarget?: string;
-}
-
-export interface LineRef {
-  filePath: string;
-  side: DiffSide;
-  startLine: number;
-  endLine: number;
 }
 
 export interface AnnotatedLineRef extends LineRef {

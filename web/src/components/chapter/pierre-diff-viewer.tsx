@@ -6,13 +6,8 @@ import {
 } from "@pierre/diffs";
 import { FileDiff, PatchDiff } from "@pierre/diffs/react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import {
-  type AnnotatedLineRef,
-  COMMENT_SIDE,
-  DIFF_SIDE,
-  type LineRef,
-  SIDE_TO_DIFF,
-} from "@/lib/diff-types";
+import { type AnnotatedLineRef, COMMENT_SIDE, SIDE_TO_DIFF } from "@/lib/diff-types";
+import { DIFF_SIDE, type LineRef } from "@stage/types";
 import { resolveSyntaxTheme } from "@/lib/syntax-themes";
 import { useDiffSettings } from "@/lib/use-diff-settings";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";

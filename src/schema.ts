@@ -1,23 +1,36 @@
 import { z } from "zod";
+import {
+  DIFF_SIDE,
+  SCOPE_KIND,
+  WORKING_TREE_REF,
+  type Chapter,
+  type ChaptersFile,
+  type CommittedScope,
+  type HunkReference,
+  type KeyChange,
+  type LineRef,
+  type Scope,
+  type WorkingTreeScope,
+} from "./types.js";
 
-export const DIFF_SIDE = {
-  ADDITIONS: "additions",
-  DELETIONS: "deletions",
-} as const;
-export type DiffSide = (typeof DIFF_SIDE)[keyof typeof DIFF_SIDE];
-
-export const SCOPE_KIND = {
-  COMMITTED: "committed",
-  WORKING_TREE: "workingTree",
-} as const;
-export type ScopeKind = (typeof SCOPE_KIND)[keyof typeof SCOPE_KIND];
-
-export const WORKING_TREE_REF = {
-  WORK: "work",
-  STAGED: "staged",
-  UNSTAGED: "unstaged",
-} as const;
-export type WorkingTreeRef = (typeof WORKING_TREE_REF)[keyof typeof WORKING_TREE_REF];
+export {
+  DIFF_SIDE,
+  SCOPE_KIND,
+  WORKING_TREE_REF,
+} from "./types.js";
+export type {
+  Chapter,
+  ChaptersFile,
+  CommittedScope,
+  DiffSide,
+  HunkReference,
+  KeyChange,
+  LineRef,
+  Scope,
+  ScopeKind,
+  WorkingTreeRef,
+  WorkingTreeScope,
+} from "./types.js";
 
 const fullShaSchema = z.string().regex(/^[0-9a-f]{40}$/, "Expected a full commit SHA");
 
@@ -25,7 +38,6 @@ export const hunkReferenceSchema = z.strictObject({
   filePath: z.string().min(1),
   oldStart: z.number().int().nonnegative(),
 });
-export type HunkReference = z.infer<typeof hunkReferenceSchema>;
 
 export const lineRefSchema = z
   .strictObject({
@@ -38,14 +50,12 @@ export const lineRefSchema = z
     message: "endLine must be greater than or equal to startLine",
     path: ["endLine"],
   });
-export type LineRef = z.infer<typeof lineRefSchema>;
 
 export const keyChangeSchema = z.strictObject({
   /** A judgment-call question for a human reviewer, not source code. */
   content: z.string().min(1),
   lineRefs: z.array(lineRefSchema).min(1),
 });
-export type KeyChange = z.infer<typeof keyChangeSchema>;
 
 export const chapterSchema = z.strictObject({
   id: z.string().min(1),
@@ -55,7 +65,6 @@ export const chapterSchema = z.strictObject({
   hunkRefs: z.array(hunkReferenceSchema),
   keyChanges: z.array(keyChangeSchema),
 });
-export type Chapter = z.infer<typeof chapterSchema>;
 
 export const committedScopeSchema = z.strictObject({
   kind: z.literal(SCOPE_KIND.COMMITTED),
@@ -63,7 +72,6 @@ export const committedScopeSchema = z.strictObject({
   headSha: fullShaSchema,
   mergeBaseSha: fullShaSchema,
 });
-export type CommittedScope = z.infer<typeof committedScopeSchema>;
 
 export const workingTreeScopeSchema = z.strictObject({
   kind: z.literal(SCOPE_KIND.WORKING_TREE),
@@ -72,17 +80,32 @@ export const workingTreeScopeSchema = z.strictObject({
   headSha: fullShaSchema,
   mergeBaseSha: fullShaSchema,
 });
-export type WorkingTreeScope = z.infer<typeof workingTreeScopeSchema>;
 
 export const scopeSchema = z.discriminatedUnion("kind", [
   committedScopeSchema,
   workingTreeScopeSchema,
 ]);
-export type Scope = z.infer<typeof scopeSchema>;
 
 export const ChaptersFileSchema = z.strictObject({
   scope: scopeSchema,
   chapters: z.array(chapterSchema),
   generatedAt: z.iso.datetime(),
 });
-export type ChaptersFile = z.infer<typeof ChaptersFileSchema>;
+
+// Pin each Zod schema's inferred shape to the plain interface in ./types.ts.
+// If anyone changes one without the other, this block fails to typecheck —
+// so the SPA's type imports and the CLI's runtime validation can't drift.
+type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
+  ? true
+  : false;
+type Expect<T extends true> = T;
+type _SchemaTypeChecks = [
+  Expect<Equal<z.infer<typeof hunkReferenceSchema>, HunkReference>>,
+  Expect<Equal<z.infer<typeof lineRefSchema>, LineRef>>,
+  Expect<Equal<z.infer<typeof keyChangeSchema>, KeyChange>>,
+  Expect<Equal<z.infer<typeof chapterSchema>, Chapter>>,
+  Expect<Equal<z.infer<typeof committedScopeSchema>, CommittedScope>>,
+  Expect<Equal<z.infer<typeof workingTreeScopeSchema>, WorkingTreeScope>>,
+  Expect<Equal<z.infer<typeof scopeSchema>, Scope>>,
+  Expect<Equal<z.infer<typeof ChaptersFileSchema>, ChaptersFile>>,
+];
