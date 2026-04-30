@@ -1,46 +1,28 @@
 /**
- * Zod schemas for the wire format. The canonical TS shapes live in
- * `./types.ts` (Zod-free, so SPA value imports don't pull Zod into the web
- * bundle). Each schema's inferred output is checked against the matching
- * type from `./types.ts` via the `_drift` block at the bottom of this file,
- * so drift between the two surfaces fails to type-check. Callers can import
- * either file; this file re-exports the types and constants for a single
- * import path on the CLI side.
+ * Wire-format schemas and types shared between the CLI (which validates with
+ * Zod) and the SPA (which imports the inferred types). Single source of truth.
  */
 
 import { z } from "zod";
-import {
-  DIFF_SIDE,
-  SCOPE_KIND,
-  WORKING_TREE_REF,
-  type Chapter,
-  type ChaptersFile,
-  type CommittedScope,
-  type HunkReference,
-  type KeyChange,
-  type LineRef,
-  type Scope,
-  type WorkingTreeScope,
-} from "./types.js";
 
-export {
-  DIFF_SIDE,
-  SCOPE_KIND,
-  WORKING_TREE_REF,
-} from "./types.js";
-export type {
-  Chapter,
-  ChaptersFile,
-  CommittedScope,
-  DiffSide,
-  HunkReference,
-  KeyChange,
-  LineRef,
-  Scope,
-  ScopeKind,
-  WorkingTreeRef,
-  WorkingTreeScope,
-} from "./types.js";
+export const DIFF_SIDE = {
+  ADDITIONS: "additions",
+  DELETIONS: "deletions",
+} as const;
+export type DiffSide = (typeof DIFF_SIDE)[keyof typeof DIFF_SIDE];
+
+export const SCOPE_KIND = {
+  COMMITTED: "committed",
+  WORKING_TREE: "workingTree",
+} as const;
+export type ScopeKind = (typeof SCOPE_KIND)[keyof typeof SCOPE_KIND];
+
+export const WORKING_TREE_REF = {
+  WORK: "work",
+  STAGED: "staged",
+  UNSTAGED: "unstaged",
+} as const;
+export type WorkingTreeRef = (typeof WORKING_TREE_REF)[keyof typeof WORKING_TREE_REF];
 
 const fullShaSchema = z.string().regex(/^[0-9a-f]{40}$/, "Expected a full commit SHA");
 
@@ -48,6 +30,7 @@ export const hunkReferenceSchema = z.strictObject({
   filePath: z.string().min(1),
   oldStart: z.number().int().nonnegative(),
 });
+export type HunkReference = z.infer<typeof hunkReferenceSchema>;
 
 export const lineRefSchema = z
   .strictObject({
@@ -60,12 +43,18 @@ export const lineRefSchema = z
     message: "endLine must be greater than or equal to startLine",
     path: ["endLine"],
   });
+export type LineRef = z.infer<typeof lineRefSchema>;
 
 export const keyChangeSchema = z.strictObject({
+  // Stable across re-runs of the same diff (the SPA uses it as a localStorage
+  // key for "checked" state). Generators must derive it from content, not
+  // index, or state migrates onto whichever item lands at the same position.
   id: z.string().min(1),
+  // A judgment-call question for a human reviewer, not source code.
   content: z.string().min(1),
   lineRefs: z.array(lineRefSchema).min(1),
 });
+export type KeyChange = z.infer<typeof keyChangeSchema>;
 
 export const chapterSchema = z.strictObject({
   id: z.string().min(1),
@@ -75,6 +64,7 @@ export const chapterSchema = z.strictObject({
   hunkRefs: z.array(hunkReferenceSchema),
   keyChanges: z.array(keyChangeSchema),
 });
+export type Chapter = z.infer<typeof chapterSchema>;
 
 export const committedScopeSchema = z.strictObject({
   kind: z.literal(SCOPE_KIND.COMMITTED),
@@ -82,6 +72,7 @@ export const committedScopeSchema = z.strictObject({
   headSha: fullShaSchema,
   mergeBaseSha: fullShaSchema,
 });
+export type CommittedScope = z.infer<typeof committedScopeSchema>;
 
 export const workingTreeScopeSchema = z.strictObject({
   kind: z.literal(SCOPE_KIND.WORKING_TREE),
@@ -90,42 +81,17 @@ export const workingTreeScopeSchema = z.strictObject({
   headSha: fullShaSchema,
   mergeBaseSha: fullShaSchema,
 });
+export type WorkingTreeScope = z.infer<typeof workingTreeScopeSchema>;
 
 export const scopeSchema = z.discriminatedUnion("kind", [
   committedScopeSchema,
   workingTreeScopeSchema,
 ]);
+export type Scope = z.infer<typeof scopeSchema>;
 
 export const ChaptersFileSchema = z.strictObject({
   scope: scopeSchema,
   chapters: z.array(chapterSchema),
   generatedAt: z.iso.datetime(),
 });
-
-// Drift guard: each schema's inferred output must equal the canonical type in
-// ./types.ts. Equality (not just assignability) catches both extra and
-// missing fields. If types and schemas drift, one of these assignments fails
-// to type-check.
-type Equals<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
-  ? true
-  : false;
-const _drift: {
-  hunkReference: Equals<z.infer<typeof hunkReferenceSchema>, HunkReference>;
-  lineRef: Equals<z.infer<typeof lineRefSchema>, LineRef>;
-  keyChange: Equals<z.infer<typeof keyChangeSchema>, KeyChange>;
-  chapter: Equals<z.infer<typeof chapterSchema>, Chapter>;
-  committedScope: Equals<z.infer<typeof committedScopeSchema>, CommittedScope>;
-  workingTreeScope: Equals<z.infer<typeof workingTreeScopeSchema>, WorkingTreeScope>;
-  scope: Equals<z.infer<typeof scopeSchema>, Scope>;
-  chaptersFile: Equals<z.infer<typeof ChaptersFileSchema>, ChaptersFile>;
-} = {
-  hunkReference: true,
-  lineRef: true,
-  keyChange: true,
-  chapter: true,
-  committedScope: true,
-  workingTreeScope: true,
-  scope: true,
-  chaptersFile: true,
-};
-void _drift;
+export type ChaptersFile = z.infer<typeof ChaptersFileSchema>;

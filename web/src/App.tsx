@@ -1,5 +1,5 @@
 import { Checkbox } from "@/components/ui/checkbox";
-import { SCOPE_KIND, type Chapter, type ChaptersFile, type Scope } from "@stage/types";
+import { SCOPE_KIND, type Chapter, type ChaptersFile, type Scope } from "@stage/schema";
 import { type UseViewStateApi, useViewState } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
 import { Circle, CircleCheck } from "lucide-react";

@@ -1,6 +1,6 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import type { AnnotatedLineRef } from "@/lib/diff-types";
-import type { LineRef } from "@stage/types";
+import type { LineRef } from "@stage/schema";
 import type * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { findRenderedDiffLine } from "./rendered-line-target";
