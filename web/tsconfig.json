@@ -24,5 +24,5 @@
       "@stage/*": ["../src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "../src/types.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "../src/schema.ts"]
 }
