@@ -125,7 +125,7 @@ describe("runs API", () => {
       chapters: Array<{
         chapterIndex: number;
         title: string;
-        keyChanges: Array<{ content: string; keyChangeIndex: number }>;
+        keyChanges: Array<{ content: string }>;
       }>;
     };
     expect(body.run.id).toBe(runId);
@@ -133,15 +133,12 @@ describe("runs API", () => {
     expect(body.chapters[0]?.chapterIndex).toBe(1);
     expect(body.chapters[0]?.title).toBe("First");
     expect(body.chapters[0]?.keyChanges).toHaveLength(1);
-    expect(body.chapters[0]?.keyChanges[0]).toMatchObject({
-      content: "Question?",
-      keyChangeIndex: 0,
-    });
+    expect(body.chapters[0]?.keyChanges[0]).toMatchObject({ content: "Question?" });
     expect(body.chapters[1]?.chapterIndex).toBe(2);
     expect(body.chapters[1]?.keyChanges).toHaveLength(0);
   });
 
-  it("returns key_change rows in keyChangeIndex order, not insert order", async () => {
+  it("returns key_change rows in insertion order (matching hosted stage's natural query order)", async () => {
     const db = getDb({ dbPath });
     const fixture = makeFixture({
       chapters: [
@@ -149,7 +146,7 @@ describe("runs API", () => {
           id: "chapter-0",
           order: 1,
           title: "Multi-key-change",
-          summary: "Tests deterministic ordering",
+          summary: "Insertion-order check",
           hunkRefs: [],
           keyChanges: [
             {
@@ -174,14 +171,13 @@ describe("runs API", () => {
     const res = await getJson(port, `/api/runs/${runId}/chapters`);
 
     const body = res.body as {
-      chapters: Array<{ keyChanges: Array<{ content: string; keyChangeIndex: number }> }>;
+      chapters: Array<{ keyChanges: Array<{ content: string }> }>;
     };
     expect(body.chapters[0]?.keyChanges.map((k) => k.content)).toEqual([
       "first",
       "second",
       "third",
     ]);
-    expect(body.chapters[0]?.keyChanges.map((k) => k.keyChangeIndex)).toEqual([0, 1, 2]);
   });
 
   it("omits the denormalized chapter.keyChanges content array from the response", async () => {

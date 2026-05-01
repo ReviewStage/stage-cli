@@ -1,15 +1,17 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import type { LineRef } from "../../schema.js";
 import { chapter } from "./chapter.js";
 import { baseColumns } from "./columns.js";
 
 /**
  * Mirrors `~/Developer/stage/packages/db/src/schema/key-change.ts` in sqlite-core syntax.
- * `externalId` is content-derived (see `chapter.ts` for the ID strategy).
+ * Column shape matches hosted exactly (modulo SQLite encoding for uuid/jsonb/timestamp).
+ * `externalId` is the only additive column — the ticket explicitly authorizes it for
+ * view-state stability across regenerations (see `chapter.ts` for the ID strategy).
  *
- * `keyChangeIndex` is additive vs hosted stage: SQLite's millisecond `Date` resolution
- * collides for rows inserted in the same `ingest` transaction, so we can't rely on
- * `createdAt` for stable UI ordering. Mirrors the role of `chapter.chapterIndex`.
+ * Ordering: hosted reads key_changes via Drizzle's relations API without `orderBy`, so
+ * rows surface in natural query order (insertion order in practice). We mirror that here
+ * — no order/index column, the `runs.ts` route omits `orderBy` for the same reason.
  */
 export const keyChange = sqliteTable(
   "key_change",
@@ -19,7 +21,6 @@ export const keyChange = sqliteTable(
       .notNull()
       .references(() => chapter.id, { onDelete: "cascade" }),
     externalId: text().notNull(),
-    keyChangeIndex: integer().notNull(),
     content: text().notNull(),
     lineRefs: text({ mode: "json" }).$type<LineRef[]>().notNull().default([]),
   },

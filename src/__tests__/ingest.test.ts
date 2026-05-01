@@ -50,7 +50,6 @@ describe("ingest", () => {
     const keyChanges = db.select().from(keyChange).all();
     expect(keyChanges).toHaveLength(1);
     expect(keyChanges[0]?.chapterId).toBe(chapters[0]?.id);
-    expect(keyChanges[0]?.keyChangeIndex).toBe(0);
     expect(keyChanges[0]?.content).toContain("primary org");
     expect(keyChanges[0]?.lineRefs).toEqual([
       { filePath: "src/foo.ts", side: "additions", startLine: 5, endLine: 10 },

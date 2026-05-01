@@ -46,14 +46,11 @@ export function runRoutes(db: StageDb): Route[] {
           .all();
 
         const chapterIds = chapters.map((c) => c.id);
+        // No `orderBy` — mirrors hosted stage's relations query, which surfaces key_changes
+        // in natural query order. Both DBs return rows in insertion order in practice.
         const keyChanges =
           chapterIds.length > 0
-            ? db
-                .select()
-                .from(keyChange)
-                .where(inArray(keyChange.chapterId, chapterIds))
-                .orderBy(asc(keyChange.keyChangeIndex))
-                .all()
+            ? db.select().from(keyChange).where(inArray(keyChange.chapterId, chapterIds)).all()
             : [];
 
         const byChapter = new Map<string, typeof keyChanges>();
