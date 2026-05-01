@@ -122,15 +122,77 @@ describe("runs API", () => {
     expect(res.status).toBe(200);
     const body = res.body as {
       run: { id: string };
-      chapters: Array<{ chapterIndex: number; title: string; keyChanges: unknown[] }>;
+      chapters: Array<{
+        chapterIndex: number;
+        title: string;
+        keyChanges: Array<{ content: string; keyChangeIndex: number }>;
+      }>;
     };
     expect(body.run.id).toBe(runId);
     expect(body.chapters).toHaveLength(2);
     expect(body.chapters[0]?.chapterIndex).toBe(1);
     expect(body.chapters[0]?.title).toBe("First");
     expect(body.chapters[0]?.keyChanges).toHaveLength(1);
+    expect(body.chapters[0]?.keyChanges[0]).toMatchObject({
+      content: "Question?",
+      keyChangeIndex: 0,
+    });
     expect(body.chapters[1]?.chapterIndex).toBe(2);
     expect(body.chapters[1]?.keyChanges).toHaveLength(0);
+  });
+
+  it("returns key_change rows in keyChangeIndex order, not insert order", async () => {
+    const db = getDb({ dbPath });
+    const fixture = makeFixture({
+      chapters: [
+        {
+          id: "chapter-0",
+          order: 1,
+          title: "Multi-key-change",
+          summary: "Tests deterministic ordering",
+          hunkRefs: [],
+          keyChanges: [
+            {
+              content: "first",
+              lineRefs: [{ filePath: "a.ts", side: "additions", startLine: 1, endLine: 1 }],
+            },
+            {
+              content: "second",
+              lineRefs: [{ filePath: "a.ts", side: "additions", startLine: 2, endLine: 2 }],
+            },
+            {
+              content: "third",
+              lineRefs: [{ filePath: "a.ts", side: "additions", startLine: 3, endLine: 3 }],
+            },
+          ],
+        },
+      ],
+    });
+    const { runId } = insertChaptersFile(db, fixture, "/repo");
+
+    const { port } = await startWithRoutes();
+    const res = await getJson(port, `/api/runs/${runId}/chapters`);
+
+    const body = res.body as {
+      chapters: Array<{ keyChanges: Array<{ content: string; keyChangeIndex: number }> }>;
+    };
+    expect(body.chapters[0]?.keyChanges.map((k) => k.content)).toEqual([
+      "first",
+      "second",
+      "third",
+    ]);
+    expect(body.chapters[0]?.keyChanges.map((k) => k.keyChangeIndex)).toEqual([0, 1, 2]);
+  });
+
+  it("omits the denormalized chapter.keyChanges content array from the response", async () => {
+    const db = getDb({ dbPath });
+    const { runId } = insertChaptersFile(db, makeFixture(), "/repo");
+
+    const { port } = await startWithRoutes();
+    const res = await getJson(port, `/api/runs/${runId}/chapters`);
+
+    const body = res.body as { chapters: Array<{ keyChanges: unknown[] }> };
+    expect(body.chapters[0]?.keyChanges.every((k) => typeof k === "object")).toBe(true);
   });
 
   it("GET /api/runs/:runId/chapters returns 404 for unknown runs", async () => {

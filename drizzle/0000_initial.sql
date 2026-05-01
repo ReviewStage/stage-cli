@@ -33,6 +33,7 @@ CREATE TABLE `key_change` (
 	`updatedAt` integer NOT NULL,
 	`chapterId` text NOT NULL,
 	`externalId` text NOT NULL,
+	`keyChangeIndex` integer NOT NULL,
 	`content` text NOT NULL,
 	`lineRefs` text DEFAULT '[]' NOT NULL,
 	FOREIGN KEY (`chapterId`) REFERENCES `chapter`(`id`) ON UPDATE no action ON DELETE cascade

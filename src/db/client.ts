@@ -48,11 +48,20 @@ export function closeDb(): void {
 }
 
 /**
- * Locate the `drizzle/` migrations folder relative to the running JS file. Walks up from
- * the module location so it works whether we're running from `dist/index.js` (bundled) or
- * `src/db/client.ts` (vitest/tsx during development).
+ * Locate the `drizzle/` migrations folder. `STAGE_MIGRATIONS_DIR` env var wins so unusual
+ * install layouts (single-file bundles, vendored copies, custom packagers) can pin it
+ * explicitly; otherwise walks up from the running module so the default works in both
+ * `dist/index.js` (bundled) and `src/db/client.ts` (vitest/tsx during development).
  */
 function findMigrationsFolder(): string {
+  const override = process.env.STAGE_MIGRATIONS_DIR;
+  if (override) {
+    if (!existsSync(path.join(override, "meta", "_journal.json"))) {
+      throw new Error(`STAGE_MIGRATIONS_DIR=${override} does not contain meta/_journal.json`);
+    }
+    return override;
+  }
+
   let dir = path.dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 10; i++) {
     const candidate = path.join(dir, "drizzle");
@@ -61,5 +70,7 @@ function findMigrationsFolder(): string {
     if (parent === dir) break;
     dir = parent;
   }
-  throw new Error("Could not locate drizzle migrations folder");
+  throw new Error(
+    "Could not locate drizzle migrations folder. Set STAGE_MIGRATIONS_DIR to override.",
+  );
 }

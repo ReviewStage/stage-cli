@@ -52,7 +52,7 @@ export function runRoutes(db: StageDb): Route[] {
                 .select()
                 .from(keyChange)
                 .where(inArray(keyChange.chapterId, chapterIds))
-                .orderBy(asc(keyChange.createdAt))
+                .orderBy(asc(keyChange.keyChangeIndex))
                 .all()
             : [];
 
@@ -63,9 +63,12 @@ export function runRoutes(db: StageDb): Route[] {
           else byChapter.set(kc.chapterId, [kc]);
         }
 
-        const nested = chapters.map((c) => ({
-          ...c,
-          keyChanges: byChapter.get(c.id) ?? [],
+        // Drop the denormalized `keyChanges` content array from the chapter row — the API
+        // surface returns full key_change rows under the same key. Keeping both would let
+        // them drift.
+        const nested = chapters.map(({ keyChanges: _denormalized, ...rest }) => ({
+          ...rest,
+          keyChanges: byChapter.get(rest.id) ?? [],
         }));
 
         writeJson(res, 200, { run, chapters: nested });

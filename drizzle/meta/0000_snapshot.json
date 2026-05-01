@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a30f5198-b6a6-4058-aed9-db25d2e7a8b1",
+  "id": "9c7c836e-c7da-4942-9c84-3dc709c21a5b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "chapter": {
@@ -230,6 +230,13 @@
         "externalId": {
           "name": "externalId",
           "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "keyChangeIndex": {
+          "name": "keyChangeIndex",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
