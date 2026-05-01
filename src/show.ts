@@ -15,9 +15,20 @@ export async function show(_runId?: string): Promise<void> {
     // URL is on stdout — user can navigate manually.
   }
 
-  await new Promise<void>((resolve) => {
-    process.once("SIGINT", () => resolve());
-  });
+  await waitForShutdownSignal();
 
   await handle.close();
+}
+
+function waitForShutdownSignal(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const cleanup = () => {
+      process.removeListener("SIGINT", cleanup);
+      process.removeListener("SIGTERM", cleanup);
+      resolve();
+    };
+
+    process.once("SIGINT", cleanup);
+    process.once("SIGTERM", cleanup);
+  });
 }
