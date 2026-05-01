@@ -2,17 +2,6 @@ import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../../schema.js";
 import { baseColumns } from "./columns.js";
 
-/**
- * One row per `stage-cli ingest` invocation. Re-ingesting the same scope produces a new
- * row — history is preserved, never overwritten.
- *
- * Mirrors the discriminated `scope` shape from the Zod `ChaptersFile` schema (PLA-104).
- * `workingTreeRef` is nullable; populated only when `scopeKind === 'workingTree'`.
- *
- * Hosted stage's `chapter_run` is keyed by `(pullRequestId, headSha, runIndex)`. Stage CLI
- * has no pull_request concept yet, so we key only by `id` and let the agent ingest as many
- * runs as it likes per repo.
- */
 export const chapterRun = sqliteTable(
   "chapter_run",
   {
