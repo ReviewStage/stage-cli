@@ -3,7 +3,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { type Route, type ServerHandle, startServer } from "../server.js";
+import { LOOPBACK_HOST, type Route, type ServerHandle, startServer } from "../server.js";
 
 const INDEX_HTML = "<!doctype html><html><head><title>SPA</title></head><body>SPA-SHELL</body></html>";
 
@@ -47,7 +47,7 @@ function rawRequest(port: number, requestPath: string, method = "GET"): Promise<
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
-        hostname: "127.0.0.1",
+        hostname: LOOPBACK_HOST,
         port,
         method,
         path: requestPath,

@@ -59,6 +59,7 @@ const MIME_TYPES: Record<string, string> = {
 
 const CLI_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_WEB_DIST = path.resolve(CLI_DIR, "..", "web-dist");
+export const LOOPBACK_HOST = "127.0.0.1";
 const DEFAULT_START_PORT = 5391;
 const DEFAULT_MAX_PORT_ATTEMPTS = 100;
 
@@ -108,7 +109,7 @@ function listen(server: http.Server, port: number): Promise<void> {
       server.removeListener("error", onError);
       resolve();
     });
-    server.listen(port, "127.0.0.1");
+    server.listen(port, LOOPBACK_HOST);
   });
 }
 

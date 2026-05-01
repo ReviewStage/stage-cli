@@ -1,10 +1,10 @@
 import open from "open";
-import { startServer } from "./server.js";
+import { LOOPBACK_HOST, startServer } from "./server.js";
 
 export async function show(_runId?: string): Promise<void> {
   const handle = await startServer({});
   const { port } = handle;
-  const url = `http://127.0.0.1:${port}`;
+  const url = `http://${LOOPBACK_HOST}:${port}`;
 
   process.stdout.write(`Listening on ${url}\n`);
   process.stdout.write("Press Ctrl+C to exit.\n");
