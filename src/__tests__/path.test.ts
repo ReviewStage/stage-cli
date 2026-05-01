@@ -1,14 +1,13 @@
 import { createHash } from "node:crypto";
-import { homedir } from "node:os";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { NotInGitRepoError, getRepoRoot } from "../db/path.js";
 
-// Pull the per-repo path logic into a tiny pure helper so we can assert without invoking
-// `git rev-parse`. The shape mirrors `getDbPath()` precisely; if path.ts changes layout,
-// this test will catch it.
 function expectedPath(repoRoot: string): string {
   const hash = createHash("sha256").update(repoRoot.trim()).digest("hex").slice(0, 12);
-  return path.join(homedir(), ".stage", hash, "db.sqlite");
+  return path.join(os.homedir(), ".stage", hash, "db.sqlite");
 }
 
 describe("getDbPath layout", () => {
@@ -23,7 +22,27 @@ describe("getDbPath layout", () => {
 
   it("places the database under ~/.stage/<hash>/db.sqlite", () => {
     const p = expectedPath("/sample/repo");
-    expect(p.startsWith(path.join(homedir(), ".stage"))).toBe(true);
+    expect(p.startsWith(path.join(os.homedir(), ".stage"))).toBe(true);
     expect(path.basename(p)).toBe("db.sqlite");
+  });
+});
+
+describe("getRepoRoot outside a git repo", () => {
+  let tmpDir: string;
+  let originalCwd: string;
+
+  beforeEach(async () => {
+    originalCwd = process.cwd();
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-cli-no-git-"));
+    process.chdir(tmpDir);
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("throws NotInGitRepoError instead of silently falling back to cwd", () => {
+    expect(() => getRepoRoot()).toThrow(NotInGitRepoError);
   });
 });

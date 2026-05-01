@@ -8,18 +8,13 @@ const STAGE_HOME = ".stage";
 const DB_FILE = "db.sqlite";
 const REPO_HASH_LEN = 12;
 
-/**
- * Returns the absolute path to this repo's SQLite database, creating parent dirs as needed.
- *
- * Layout: `~/.stage/<sha256(repoRoot)[:12]>/db.sqlite` — mirrors diffity's per-repo scheme.
- * Two distinct repos check into separate hash buckets, so running stage-cli in one repo
- * never touches another's data.
- *
- * The repo root comes from `git rev-parse --show-toplevel` (trimmed before hashing so the
- * same repo always resolves to the same bucket). When invoked outside a git repo (rare —
- * stage-cli is meaningless without a repo), falls back to the cwd so the command at least
- * doesn't crash, but the consumer should still surface a clearer error.
- */
+export class NotInGitRepoError extends Error {
+  constructor() {
+    super("stage-cli must be run inside a git repository");
+    this.name = "NotInGitRepoError";
+  }
+}
+
 export function getDbPath(): string {
   const dir = ensureRepoDir(getRepoRoot());
   return path.join(dir, DB_FILE);
@@ -32,7 +27,7 @@ export function getRepoRoot(): string {
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
   } catch {
-    return process.cwd();
+    throw new NotInGitRepoError();
   }
 }
 
