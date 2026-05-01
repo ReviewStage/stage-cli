@@ -1,19 +1,34 @@
-import fs from "node:fs";
-import path from "node:path";
-import { findFreePort } from "./port.js";
+import open from "open";
+import { LOOPBACK_HOST, startServer } from "./server.js";
 
-export async function show(targetPath: string): Promise<void> {
-  const resolved = path.resolve(targetPath);
-  if (!fs.existsSync(resolved)) {
-    process.stderr.write(`File not found: ${targetPath}\n`);
-    process.exit(1);
-  }
+export async function show(_runId?: string): Promise<void> {
+  const handle = await startServer({});
+  const { port } = handle;
+  const url = `http://${LOOPBACK_HOST}:${port}`;
 
-  const port = await findFreePort();
-  const url = `http://localhost:${port}`;
-  process.stdout.write(`Listening on port ${port}\n`);
-  process.stdout.write(`URL: ${url} (server not implemented yet)\n`);
+  process.stdout.write(`Listening on ${url}\n`);
   process.stdout.write("Press Ctrl+C to exit.\n");
 
-  setInterval(() => {}, 1 << 30);
+  try {
+    await open(url);
+  } catch {
+    // URL is on stdout — user can navigate manually.
+  }
+
+  await waitForShutdownSignal();
+
+  await handle.close();
+}
+
+function waitForShutdownSignal(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const cleanup = () => {
+      process.removeListener("SIGINT", cleanup);
+      process.removeListener("SIGTERM", cleanup);
+      resolve();
+    };
+
+    process.once("SIGINT", cleanup);
+    process.once("SIGTERM", cleanup);
+  });
 }
