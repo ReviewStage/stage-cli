@@ -2,10 +2,6 @@
 import { Command } from "commander";
 import { show } from "./show.js";
 
-process.on("SIGINT", () => {
-  process.exit(0);
-});
-
 const program = new Command();
 
 program
