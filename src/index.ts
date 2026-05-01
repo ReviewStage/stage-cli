@@ -10,10 +10,10 @@ program
 
 program
   .command("show")
-  .description("Serve a chapters JSON file in a local browser")
-  .argument("<path>", "Path to the chapters JSON file")
-  .action(async (targetPath: string) => {
-    await show(targetPath);
+  .description("Serve the Stage CLI SPA in a local browser")
+  .argument("[runId]", "Run ID to show (defaults to the latest run once ingest is available)")
+  .action(async (runId?: string) => {
+    await show(runId);
   });
 
 program.parseAsync(process.argv).catch((err) => {

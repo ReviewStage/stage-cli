@@ -1,18 +1,9 @@
-import fs from "node:fs";
-import path from "node:path";
 import open from "open";
-import { findFreePort } from "./port.js";
 import { startServer } from "./server.js";
 
-export async function show(targetPath: string): Promise<void> {
-  const resolved = path.resolve(targetPath);
-  if (!fs.existsSync(resolved)) {
-    process.stderr.write(`File not found: ${targetPath}\n`);
-    process.exit(1);
-  }
-
-  const port = await findFreePort();
-  const handle = await startServer({ port });
+export async function show(_runId?: string): Promise<void> {
+  const handle = await startServer({});
+  const { port } = handle;
   const url = `http://localhost:${port}`;
 
   process.stdout.write(`Listening on ${url}\n`);
@@ -29,5 +20,4 @@ export async function show(targetPath: string): Promise<void> {
   });
 
   await handle.close();
-  process.exit(0);
 }

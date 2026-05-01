@@ -21,7 +21,8 @@ export interface Route {
 }
 
 export interface ServerOptions {
-  port: number;
+  port?: number;
+  maxPortAttempts?: number;
   routes?: Route[];
   /** Override the static asset root. Defaults to the bundled `web-dist/` next to the CLI. */
   webDistPath?: string;
@@ -58,39 +59,62 @@ const MIME_TYPES: Record<string, string> = {
 
 const CLI_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_WEB_DIST = path.resolve(CLI_DIR, "..", "web-dist");
+const DEFAULT_START_PORT = 5391;
+const DEFAULT_MAX_PORT_ATTEMPTS = 100;
 
 export async function startServer(opts: ServerOptions): Promise<ServerHandle> {
   const webDist = path.resolve(opts.webDistPath ?? DEFAULT_WEB_DIST);
   const compiled = (opts.routes ?? []).map(compileRoute);
+  const startPort = opts.port ?? DEFAULT_START_PORT;
+  const maxPortAttempts = opts.maxPortAttempts ?? DEFAULT_MAX_PORT_ATTEMPTS;
 
-  const server = http.createServer((req, res) => {
-    handleRequest(req, res, webDist, compiled).catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`request handler error: ${msg}\n`);
-      if (!res.headersSent) {
-        res.writeHead(500, { "Content-Type": "text/plain" });
-      }
-      res.end("Internal Server Error");
+  for (let i = 0; i < maxPortAttempts; i++) {
+    const port = startPort + i;
+    const server = http.createServer((req, res) => {
+      handleRequest(req, res, webDist, compiled).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`request handler error: ${msg}\n`);
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "text/plain" });
+        }
+        res.end("Internal Server Error");
+      });
     });
-  });
 
-  await new Promise<void>((resolve, reject) => {
+    try {
+      await listen(server, port);
+      return {
+        port,
+        close: () =>
+          new Promise<void>((resolve, reject) => {
+            server.close((err) => (err ? reject(err) : resolve()));
+          }),
+      };
+    } catch (err) {
+      if (!isPortUnavailable(err)) throw err;
+    }
+  }
+
+  throw new Error(
+    `Could not find a free port in range ${startPort}-${startPort + maxPortAttempts - 1}`,
+  );
+}
+
+function listen(server: http.Server, port: number): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
     const onError = (err: Error) => reject(err);
     server.once("error", onError);
     server.once("listening", () => {
       server.removeListener("error", onError);
       resolve();
     });
-    server.listen(opts.port, "127.0.0.1");
+    server.listen(port, "127.0.0.1");
   });
+}
 
-  return {
-    port: opts.port,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()));
-      }),
-  };
+function isPortUnavailable(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException).code;
+  return code === "EADDRINUSE" || code === "EACCES";
 }
 
 function compileRoute(route: Route): CompiledRoute {

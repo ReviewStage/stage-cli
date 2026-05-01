@@ -3,7 +3,6 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { findFreePort } from "../port.js";
 import { type Route, type ServerHandle, startServer } from "../server.js";
 
 const INDEX_HTML = "<!doctype html><html><head><title>SPA</title></head><body>SPA-SHELL</body></html>";
@@ -33,8 +32,7 @@ afterEach(async () => {
 });
 
 async function start(routes?: Route[]): Promise<ServerHandle> {
-  const port = await findFreePort();
-  const handle = await startServer({ port, webDistPath: webDist, routes });
+  const handle = await startServer({ webDistPath: webDist, routes });
   handles.push(handle);
   return handle;
 }
@@ -184,9 +182,8 @@ describe("startServer", () => {
     expect(res.status).toBe(404);
   });
 
-  it("two simultaneous starts pick separate ports", async () => {
-    const a = await start();
-    const b = await start();
+  it("two simultaneous starts bind separate ports", async () => {
+    const [a, b] = await Promise.all([start(), start()]);
     expect(a.port).not.toBe(b.port);
     expect(Math.abs(a.port - b.port)).toBeGreaterThanOrEqual(1);
   });
