@@ -1,6 +1,8 @@
-import fs from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import fsp from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 
 export type RouteParams = Record<string, string>;
@@ -125,9 +127,15 @@ async function handleRequest(
       const match = route.regex.exec(pathname);
       if (!match) continue;
       const params: RouteParams = {};
-      route.paramNames.forEach((name, i) => {
-        params[name] = decodeURIComponent(match[i + 1] ?? "");
-      });
+      try {
+        route.paramNames.forEach((name, i) => {
+          params[name] = decodeURIComponent(match[i + 1] ?? "");
+        });
+      } catch {
+        res.writeHead(400, { "Content-Type": "text/plain" });
+        res.end("Bad Request");
+        return;
+      }
       await route.handler(req, res, params);
       return;
     }
@@ -151,41 +159,53 @@ async function handleRequest(
     return;
   }
 
-  const candidate = path.resolve(webDist, `.${decoded}`);
-  if (candidate !== webDist && !candidate.startsWith(webDist + path.sep)) {
+  // path.relative + a check for `..`/absolute is a CodeQL-recognized path-injection sanitizer.
+  // Building filePath from the validated relative makes the data flow explicit.
+  const rel = path.relative(webDist, path.resolve(webDist, `.${decoded}`));
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
     res.writeHead(403, { "Content-Type": "text/plain" });
     res.end("Forbidden");
     return;
   }
+  const filePath = path.join(webDist, rel);
 
-  if (await sendFile(candidate, res)) return;
+  if (await sendFile(filePath, res)) return;
   await sendIndexFallback(webDist, res);
 }
 
 async function sendFile(filePath: string, res: http.ServerResponse): Promise<boolean> {
-  let data: Buffer;
+  let stat: Awaited<ReturnType<typeof fsp.stat>>;
   try {
-    data = await fs.readFile(filePath);
+    stat = await fsp.stat(filePath);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT" || code === "EISDIR") return false;
+    if (code === "ENOENT" || code === "ENOTDIR") return false;
     throw err;
   }
+  if (!stat.isFile()) return false;
+
   const ext = path.extname(filePath).toLowerCase();
-  const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-  res.writeHead(200, { "Content-Type": contentType });
-  res.end(data);
+  res.writeHead(200, {
+    "Content-Type": MIME_TYPES[ext] ?? "application/octet-stream",
+    "Content-Length": String(stat.size),
+  });
+  await pipeline(createReadStream(filePath), res);
   return true;
 }
 
 async function sendIndexFallback(webDist: string, res: http.ServerResponse): Promise<void> {
   const indexPath = path.join(webDist, "index.html");
+  let stat: Awaited<ReturnType<typeof fsp.stat>>;
   try {
-    const data = await fs.readFile(indexPath);
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(data);
+    stat = await fsp.stat(indexPath);
   } catch {
     res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("Not Found");
+    return;
   }
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Length": String(stat.size),
+  });
+  await pipeline(createReadStream(indexPath), res);
 }

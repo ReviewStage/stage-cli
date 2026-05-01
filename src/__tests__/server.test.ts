@@ -149,6 +149,27 @@ describe("startServer", () => {
     expect(JSON.parse(res.body)).toEqual({ id: "abc-123" });
   });
 
+  it("returns 400 when an /api route's :param has malformed percent-encoding", async () => {
+    const { port } = await start([
+      {
+        method: "GET",
+        pattern: "/api/runs/:id/chapters",
+        handler: (_req, res) => {
+          res.writeHead(200);
+          res.end("ok");
+        },
+      },
+    ]);
+    const res = await rawRequest(port, "/api/runs/%E0%A4%A/chapters");
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 on malformed percent-encoding in static paths", async () => {
+    const { port } = await start();
+    const res = await rawRequest(port, "/%E0%A4%A");
+    expect(res.status).toBe(400);
+  });
+
   it("returns 404 for /api/* paths that don't match any registered route", async () => {
     const { port } = await start([
       {
