@@ -43,7 +43,7 @@ describe("ingest", () => {
     const chapters = db.select().from(chapter).all();
     expect(chapters).toHaveLength(1);
     expect(chapters[0]?.runId).toBe(result.runId);
-    expect(chapters[0]?.externalId).toBe("chapter-0");
+    expect(chapters[0]?.externalId).toMatch(/^[0-9a-f]{24}$/);
     expect(chapters[0]?.chapterIndex).toBe(1);
     expect(chapters[0]?.hunkRefs).toEqual([{ filePath: "src/foo.ts", oldStart: 1 }]);
 
@@ -68,7 +68,7 @@ describe("ingest", () => {
     expect(db.select().from(chapter).all()).toHaveLength(2);
   });
 
-  it("derives stable externalIds for key_changes across re-ingests", () => {
+  it("derives stable externalIds for key_changes across re-ingests of the same scope", () => {
     const db = getDb({ dbPath });
     const fixture = makeFixture();
 
@@ -78,6 +78,58 @@ describe("ingest", () => {
     const all = db.select().from(keyChange).all();
     expect(all).toHaveLength(2);
     expect(all[0]?.externalId).toBe(all[1]?.externalId);
+  });
+
+  it("derives stable chapter externalIds across re-ingests of the same scope", () => {
+    const db = getDb({ dbPath });
+    insertChaptersFile(db, makeFixture(), "/repo");
+    insertChaptersFile(db, makeFixture(), "/repo");
+
+    const all = db.select().from(chapter).all();
+    expect(all).toHaveLength(2);
+    expect(all[0]?.externalId).toBe(all[1]?.externalId);
+  });
+
+  it("scopes externalIds — different headShas with same agent id produce different externalIds", () => {
+    const db = getDb({ dbPath });
+    const scopeA = {
+      kind: "committed" as const,
+      baseSha: "1".repeat(40),
+      headSha: "2".repeat(40),
+      mergeBaseSha: "3".repeat(40),
+    };
+    const scopeB = { ...scopeA, headSha: "4".repeat(40) };
+
+    insertChaptersFile(db, makeFixture({ scope: scopeA }), "/repo");
+    insertChaptersFile(db, makeFixture({ scope: scopeB }), "/repo");
+
+    const chapters = db.select().from(chapter).all();
+    expect(chapters).toHaveLength(2);
+    expect(chapters[0]?.externalId).not.toBe(chapters[1]?.externalId);
+
+    const keyChanges = db.select().from(keyChange).all();
+    expect(keyChanges).toHaveLength(2);
+    expect(keyChanges[0]?.externalId).not.toBe(keyChanges[1]?.externalId);
+  });
+
+  it("scopes externalIds — committed vs workingTree of the same SHAs produce different externalIds", () => {
+    const db = getDb({ dbPath });
+    const shas = {
+      baseSha: "1".repeat(40),
+      headSha: "2".repeat(40),
+      mergeBaseSha: "3".repeat(40),
+    };
+
+    insertChaptersFile(db, makeFixture({ scope: { kind: "committed", ...shas } }), "/repo");
+    insertChaptersFile(
+      db,
+      makeFixture({ scope: { kind: "workingTree", ref: "work", ...shas } }),
+      "/repo",
+    );
+
+    const chapters = db.select().from(chapter).all();
+    expect(chapters).toHaveLength(2);
+    expect(chapters[0]?.externalId).not.toBe(chapters[1]?.externalId);
   });
 
   it("preserves the workingTree scope discriminator", () => {
