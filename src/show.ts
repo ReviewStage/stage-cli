@@ -1,8 +1,11 @@
 import open from "open";
+import { closeDb, getDb } from "./db/client.js";
+import { runRoutes } from "./routes/runs.js";
 import { LOOPBACK_HOST, startServer } from "./server.js";
 
 export async function show(_runId?: string): Promise<void> {
-  const handle = await startServer({});
+  const db = getDb();
+  const handle = await startServer({ routes: runRoutes(db) });
   const { port } = handle;
   const url = `http://${LOOPBACK_HOST}:${port}`;
 
@@ -18,6 +21,7 @@ export async function show(_runId?: string): Promise<void> {
   await waitForShutdownSignal();
 
   await handle.close();
+  closeDb();
 }
 
 function waitForShutdownSignal(): Promise<void> {
