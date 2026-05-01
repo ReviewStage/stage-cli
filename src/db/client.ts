@@ -17,14 +17,6 @@ interface CachedHandle {
 
 let cached: CachedHandle | null = null;
 
-/**
- * Open the per-repo SQLite database, run pending migrations, and return a Drizzle handle.
- * Cached after the first call so subsequent invocations within the same process reuse the
- * connection. Migration runner is idempotent — Drizzle skips already-applied migrations
- * via its `__drizzle_migrations` tracking table.
- *
- * `dbPath` override exists for tests; production callers should use the default.
- */
 export function getDb(opts: { dbPath?: string } = {}): StageDb {
   const dbPath = opts.dbPath ?? getDbPath();
   if (cached && cached.path === dbPath) return cached.drizzle;
@@ -47,21 +39,9 @@ export function closeDb(): void {
   cached = null;
 }
 
-/**
- * Locate the `drizzle/` migrations folder. `STAGE_MIGRATIONS_DIR` env var wins so unusual
- * install layouts (single-file bundles, vendored copies, custom packagers) can pin it
- * explicitly; otherwise walks up from the running module so the default works in both
- * `dist/index.js` (bundled) and `src/db/client.ts` (vitest/tsx during development).
- */
+// Module depth differs between dev (src/db/client.ts) and prod (bundled dist/index.js),
+// so walk up from the running module to find the package's drizzle/ folder.
 function findMigrationsFolder(): string {
-  const override = process.env.STAGE_MIGRATIONS_DIR;
-  if (override) {
-    if (!existsSync(path.join(override, "meta", "_journal.json"))) {
-      throw new Error(`STAGE_MIGRATIONS_DIR=${override} does not contain meta/_journal.json`);
-    }
-    return override;
-  }
-
   let dir = path.dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 10; i++) {
     const candidate = path.join(dir, "drizzle");
@@ -70,7 +50,5 @@ function findMigrationsFolder(): string {
     if (parent === dir) break;
     dir = parent;
   }
-  throw new Error(
-    "Could not locate drizzle migrations folder. Set STAGE_MIGRATIONS_DIR to override.",
-  );
+  throw new Error("Could not locate drizzle migrations folder");
 }
