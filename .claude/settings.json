@@ -1,0 +1,14 @@
+{
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "deny": [
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/secrets/**)",
+      "Read(**/config/credentials.json)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)"
+    ],
+    "allow": ["Bash(sleep:*)"]
+  }
+}
