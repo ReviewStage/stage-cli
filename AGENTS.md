@@ -54,7 +54,7 @@ packages/
     drizzle.config.ts       # Drizzle Kit config
     tsdown.config.ts        # CLI bundler config (inlines @stage-cli/types)
   types/                    # @stage-cli/types (private, TS-native)
-    src/chapters.ts         # Wire-format chapter/key-change schemas + shared HunkRef/LineRef
+    src/chapters.ts         # Wire-format chapter/key-change schemas + shared HunkReference/LineRef
     src/view-state.ts       # Wire-format view-state schema
     src/index.ts            # Barrel re-export
   web/                      # @stage-cli/web (private) — built into ../cli/web-dist
@@ -89,7 +89,7 @@ Plain Node `http` server bound to `127.0.0.1`. Route patterns use `:name` placeh
 
 Wire-format types shared between the CLI's HTTP routes and the SPA. The package exports `.ts` source directly (no compile step) — `tsdown` and `vite` resolve TypeScript natively. The CLI bundle inlines this package via `deps.alwaysBundle` in `tsdown.config.ts`, so the published tarball never has a runtime require for `@stage-cli/types`.
 
-Building blocks like `HunkRef`, `LineRef`, and `DIFF_SIDE` live here; the strict ingestion schema (`ChaptersFileSchema`) stays in `packages/cli/src/schema.ts` and re-exports them.
+Building blocks like `HunkReference`, `LineRef`, and `DIFF_SIDE` live here; the strict ingestion schema (`ChaptersFileSchema`) stays in `packages/cli/src/schema.ts` and re-exports them.
 
 ### Web UI (`packages/web/`)
 

@@ -1,7 +1,7 @@
 import { hunkReferenceSchema, lineRefSchema } from "@stage-cli/types/chapters";
 import { z } from "zod";
 
-export type { DiffSide, HunkRef as HunkReference, LineRef } from "@stage-cli/types/chapters";
+export type { DiffSide, HunkReference, LineRef } from "@stage-cli/types/chapters";
 export { DIFF_SIDE, hunkReferenceSchema, lineRefSchema } from "@stage-cli/types/chapters";
 
 export const SCOPE_KIND = {

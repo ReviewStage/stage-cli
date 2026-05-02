@@ -10,7 +10,7 @@ export const hunkReferenceSchema = z.strictObject({
 	filePath: z.string().min(1),
 	oldStart: z.number().int().nonnegative(),
 });
-export type HunkRef = z.infer<typeof hunkReferenceSchema>;
+export type HunkReference = z.infer<typeof hunkReferenceSchema>;
 
 export const lineRefSchema = z
 	.strictObject({
