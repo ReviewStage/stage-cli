@@ -35,9 +35,6 @@ importers:
 
   packages/cli:
     dependencies:
-      '@stage-cli/types':
-        specifier: workspace:*
-        version: link:../types
       better-sqlite3:
         specifier: ^12.9.0
         version: 12.9.0
@@ -54,6 +51,9 @@ importers:
         specifier: ^4.3.6
         version: 4.4.2
     devDependencies:
+      '@stage-cli/types':
+        specifier: workspace:*
+        version: link:../types
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13

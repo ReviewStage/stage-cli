@@ -46,7 +46,6 @@
     "prepack": "node -e \"require('node:fs').copyFileSync('../../README.md','./README.md')\""
   },
   "dependencies": {
-    "@stage-cli/types": "workspace:*",
     "better-sqlite3": "^12.9.0",
     "commander": "^14.0.3",
     "drizzle-orm": "^0.45.2",
@@ -54,6 +53,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@stage-cli/types": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.6.0",
     "drizzle-kit": "^0.31.10",
