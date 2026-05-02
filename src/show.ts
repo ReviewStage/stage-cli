@@ -1,10 +1,16 @@
 import open from "open";
+import { closeDb, getDb } from "./db/client.js";
+import { runRoutes } from "./routes/runs.js";
+import { importChaptersFile } from "./runs/import-chapters.js";
 import { LOOPBACK_HOST, startServer } from "./server.js";
 
-export async function show(_runId?: string): Promise<void> {
-  const handle = await startServer({});
+export async function show(jsonPath: string): Promise<void> {
+  const db = getDb();
+  const { runId } = importChaptersFile(jsonPath, db);
+
+  const handle = await startServer({ routes: runRoutes(db) });
   const { port } = handle;
-  const url = `http://${LOOPBACK_HOST}:${port}`;
+  const url = `http://${LOOPBACK_HOST}:${port}/#/runs/${runId}`;
 
   process.stdout.write(`Listening on ${url}\n`);
   process.stdout.write("Press Ctrl+C to exit.\n");
@@ -18,6 +24,7 @@ export async function show(_runId?: string): Promise<void> {
   await waitForShutdownSignal();
 
   await handle.close();
+  closeDb();
 }
 
 function waitForShutdownSignal(): Promise<void> {

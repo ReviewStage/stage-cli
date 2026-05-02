@@ -4,16 +4,14 @@ import { show } from "./show.js";
 
 const program = new Command();
 
-program
-  .name("stage-cli")
-  .description("Chapter-style code review against your local git branch.");
+program.name("stage-cli").description("Chapter-style code review against your local git branch.");
 
 program
   .command("show")
-  .description("Serve the Stage CLI SPA in a local browser")
-  .argument("[runId]", "Run ID to show (defaults to the latest run once ingest is available)")
-  .action(async (runId?: string) => {
-    await show(runId);
+  .description("Load a chapters.json file and open it in a local browser")
+  .argument("<path>", "Path to a chapters.json file")
+  .action(async (jsonPath: string) => {
+    await show(jsonPath);
   });
 
 program.parseAsync(process.argv).catch((err) => {
