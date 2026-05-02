@@ -1,4 +1,5 @@
 export { FileHeader } from "./file-header";
+export { FILE_VIEWED_STATE, type FileViewedState, FileViewRow } from "./file-view-row";
 export {
 	findKeyChangeIdAtPoint,
 	isPointInReviewStateBadge,

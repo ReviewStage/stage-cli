@@ -12,6 +12,9 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "src"),
+			// Shared wire-format Zod schemas. Both the CLI server (src/routes/*) and
+			// the SPA import these so the contract has a single source of truth.
+			"@wire": path.resolve(__dirname, "..", "src", "wire"),
 		},
 	},
 	build: {
