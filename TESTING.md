@@ -13,7 +13,7 @@ This is stage-cli's canonical testing policy. All testing decisions — by human
 
 ### 1. Static Analysis
 
-TypeScript strict mode (`strict: true`, `noUncheckedIndexedAccess: true`, `verbatimModuleSyntax: true`) + Biome. Free. Run `npx tsc --noEmit` and `npm run lint` before pushing.
+TypeScript strict mode (`strict: true`, `noUncheckedIndexedAccess: true`, `verbatimModuleSyntax: true`) + Biome. Free. Run `pnpm typecheck` and `pnpm lint` before pushing.
 
 ### 2. Route / Server Integration Tests
 

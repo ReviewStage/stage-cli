@@ -5,21 +5,23 @@ This file provides guidance to coding agents working in this repository, includi
 ## Build & Development Commands
 
 ```bash
-npm install             # Install dependencies
-npm run dev:web         # Start the web UI in Vite dev mode
-npm run build           # Bundle the CLI with tsdown into dist/
-npm run build:web       # Build the web UI with Vite into web-dist/
-npm run test            # Run tests (Vitest)
-npm run lint            # Biome linting
-npm run format          # Format code with Biome
-npx tsc --noEmit        # TypeScript checking (root tsconfig)
-npx tsc --noEmit -p web/tsconfig.json  # TypeScript checking for the web app
+pnpm install            # Install dependencies (also installs husky pre-commit hook)
+pnpm dev:web            # Start the web UI in Vite dev mode
+pnpm build              # Bundle the CLI with tsdown into dist/
+pnpm build:web          # Build the web UI with Vite into web-dist/
+pnpm test               # Run tests (Vitest)
+pnpm lint               # Biome check (lint + format) — fails on warnings
+pnpm lint:fix           # Biome check with auto-fix
+pnpm format             # Format code with Biome
+pnpm typecheck          # tsc --noEmit for both root and web tsconfigs
 ```
+
+The package manager is pinned via `packageManager` in `package.json`. Use `corepack enable` if pnpm isn't on your PATH.
 
 ### Database (Drizzle ORM + SQLite)
 
 ```bash
-npm run db:generate     # Generate a new migration into drizzle/ from schema changes
+pnpm db:generate        # Generate a new migration into drizzle/ from schema changes
 ```
 
 The CLI uses an embedded SQLite database via `better-sqlite3`. There is no separate dev database to start — `getDb()` opens (or creates) the local SQLite file and runs pending migrations on first use.
@@ -88,14 +90,16 @@ Vite app with React 19, Tailwind 4, and shadcn/ui (new-york style, zinc base, lu
 
 ## Code Style (Biome)
 
-- Spaces for indentation (width 2)
+- Tabs for indentation (JS/TS), spaces for JSON
 - Line width: 100 characters
 - Double quotes, semicolons required, trailing commas everywhere
 - `noUnusedImports: error` / `noUnusedVariables: error`
-- `useImportType: error` — use type imports/exports
-- `noExplicitAny: warn` and `noNonNullAssertion: warn` — treat warnings as failures in PRs
+- `useImportType: error` / `useExportType: error` — use type imports/exports
+- `noExplicitAny: error` and `noFocusedTests: error`
+- `noConsole: warn` (allowing `console.error`/`console.warn`) — treat warnings as failures in PRs
+- `organizeImports` runs on save/format
 
-There are no pre-commit hooks configured; run `npm run lint` and `npm run test` yourself before pushing.
+A `pre-commit` hook (husky + lint-staged) runs `biome check --write` against staged files. Run `pnpm lint`, `pnpm typecheck`, and `pnpm test` locally before pushing.
 
 ## Package Naming
 
@@ -114,7 +118,7 @@ This is a single-package repo published as `stagereview`. The CLI binary is `sta
 ## Git & Commit Workflow
 
 - When executing a plan, commit incrementally — one logical unit of work per commit, not one giant commit at the end.
-- Before every push, run `npx tsc --noEmit && npm run lint && npm run test` locally and ensure all checks pass. Never push with failing CI.
+- Before every push, run `pnpm typecheck && pnpm lint && pnpm test` locally and ensure all checks pass. Never push with failing CI.
 
 ## Implementation Quality
 

@@ -15,7 +15,7 @@ You are a specialized TypeScript error resolution agent. Your primary job is to 
 
 2. **Reproduce locally**:
    - Run `npx tsc --noEmit` (root) and `npx tsc --noEmit -p web/tsconfig.json` (web UI)
-   - For runtime errors during dev, run `npm run dev:web` and watch the Vite output
+   - For runtime errors during dev, run `pnpm dev:web` and watch the Vite output
 
 3. **Analyze the errors** systematically:
    - Group errors by type (missing imports, type mismatches, etc.)
@@ -80,7 +80,7 @@ npx tsc --noEmit -p web/tsconfig.json # web UI
 
 ## TypeScript Commands
 
-This is a single npm package with two `tsconfig.json` files:
+This is a single Node package (managed with pnpm) with two `tsconfig.json` files:
 - **CLI / src**: `npx tsc --noEmit` (root tsconfig)
 - **Web UI**: `npx tsc --noEmit -p web/tsconfig.json`
 
