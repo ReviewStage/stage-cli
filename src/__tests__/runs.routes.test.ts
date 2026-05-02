@@ -102,18 +102,18 @@ describe("runs API", () => {
 		const body = res.body as {
 			run: { id: string };
 			chapters: Array<{
-				chapterIndex: number;
+				order: number;
 				title: string;
 				keyChanges: Array<{ content: string }>;
 			}>;
 		};
 		expect(body.run.id).toBe(runId);
 		expect(body.chapters).toHaveLength(2);
-		expect(body.chapters[0]?.chapterIndex).toBe(1);
+		expect(body.chapters[0]?.order).toBe(1);
 		expect(body.chapters[0]?.title).toBe("First");
 		expect(body.chapters[0]?.keyChanges).toHaveLength(1);
 		expect(body.chapters[0]?.keyChanges[0]).toMatchObject({ content: "Question?" });
-		expect(body.chapters[1]?.chapterIndex).toBe(2);
+		expect(body.chapters[1]?.order).toBe(2);
 		expect(body.chapters[1]?.keyChanges).toHaveLength(0);
 	});
 
