@@ -20,9 +20,8 @@
     "useDefineForClassFields": true,
     "allowImportingTsExtensions": true,
     "paths": {
-      "@/*": ["./src/*"],
-      "@cli/types/*": ["../src/types/*"]
+      "@/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "../src/types/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }

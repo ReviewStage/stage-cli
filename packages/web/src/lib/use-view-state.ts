@@ -1,4 +1,4 @@
-import { type ViewState, ViewStateSchema } from "@cli/types/view-state";
+import { type ViewState, ViewStateSchema } from "@stage-cli/types/view-state";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 

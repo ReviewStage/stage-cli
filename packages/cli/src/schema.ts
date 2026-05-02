@@ -1,10 +1,8 @@
+import { hunkReferenceSchema, lineRefSchema } from "@stage-cli/types/chapters";
 import { z } from "zod";
 
-export const DIFF_SIDE = {
-	ADDITIONS: "additions",
-	DELETIONS: "deletions",
-} as const;
-export type DiffSide = (typeof DIFF_SIDE)[keyof typeof DIFF_SIDE];
+export type { DiffSide, HunkRef as HunkReference, LineRef } from "@stage-cli/types/chapters";
+export { DIFF_SIDE, hunkReferenceSchema, lineRefSchema } from "@stage-cli/types/chapters";
 
 export const SCOPE_KIND = {
 	COMMITTED: "committed",
@@ -20,25 +18,6 @@ export const WORKING_TREE_REF = {
 export type WorkingTreeRef = (typeof WORKING_TREE_REF)[keyof typeof WORKING_TREE_REF];
 
 const fullShaSchema = z.string().regex(/^[0-9a-f]{40}$/, "Expected a full commit SHA");
-
-export const hunkReferenceSchema = z.strictObject({
-	filePath: z.string().min(1),
-	oldStart: z.number().int().nonnegative(),
-});
-export type HunkReference = z.infer<typeof hunkReferenceSchema>;
-
-export const lineRefSchema = z
-	.strictObject({
-		filePath: z.string().min(1),
-		side: z.enum(DIFF_SIDE),
-		startLine: z.number().int().positive(),
-		endLine: z.number().int().positive(),
-	})
-	.refine((v) => v.startLine <= v.endLine, {
-		message: "endLine must be greater than or equal to startLine",
-		path: ["endLine"],
-	});
-export type LineRef = z.infer<typeof lineRefSchema>;
 
 export const keyChangeSchema = z.strictObject({
 	/** A judgment-call question for a human reviewer, not source code. */

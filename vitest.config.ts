@@ -1,13 +1,16 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import tsconfigPaths from "vite-tsconfig-paths";
 import { defineConfig } from "vitest/config";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-	// SPA modules under test resolve `@/*` and `@cli/types/*` from web/tsconfig.json.
-	// CLI tests don't use either alias, so pointing the plugin at web/'s tsconfig
-	// covers the only consumer.
-	plugins: [tsconfigPaths({ projects: [path.resolve(__dirname, "web", "tsconfig.json")] })],
+	resolve: {
+		// `@/*` is the SPA-local alias declared in packages/web/tsconfig.json.
+		// Mirroring it here lets vitest resolve web tests without dragging in
+		// vite-tsconfig-paths just for one alias.
+		alias: {
+			"@": path.resolve(__dirname, "packages/web/src"),
+		},
+	},
 });

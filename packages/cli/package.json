@@ -1,0 +1,64 @@
+{
+  "name": "stagereview",
+  "version": "0.1.0",
+  "description": "Chapter-style code review against your local git branch.",
+  "keywords": [
+    "code-review",
+    "cli",
+    "chapters",
+    "git",
+    "claude-code",
+    "cursor",
+    "codex",
+    "gemini",
+    "opencode"
+  ],
+  "homepage": "https://github.com/ReviewStage/stage-cli#readme",
+  "bugs": {
+    "url": "https://github.com/ReviewStage/stage-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ReviewStage/stage-cli.git",
+    "directory": "packages/cli"
+  },
+  "license": "MIT",
+  "author": "Stage",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "stage-cli": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "drizzle",
+    "web-dist",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "prepack": "node -e \"require('node:fs').copyFileSync('../../README.md','./README.md')\""
+  },
+  "dependencies": {
+    "@stage-cli/types": "workspace:*",
+    "better-sqlite3": "^12.9.0",
+    "commander": "^14.0.3",
+    "drizzle-orm": "^0.45.2",
+    "open": "^11.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.6.0",
+    "drizzle-kit": "^0.31.10",
+    "tsdown": "^0.21.10",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.5"
+  }
+}

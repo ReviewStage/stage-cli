@@ -1,4 +1,4 @@
-import type { Chapter, HunkRef } from "@cli/types/chapters";
+import type { Chapter, HunkRef } from "@stage-cli/types/chapters";
 import { ChevronRight, Circle, CircleCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileViewRow } from "@/components/chapter";
