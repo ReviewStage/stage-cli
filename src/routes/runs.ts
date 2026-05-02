@@ -2,7 +2,41 @@ import { asc, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
 import type { Route } from "../server.js";
+import type { Chapter, ChapterRun, KeyChange } from "../types/chapters.js";
 import { writeJson } from "./json.js";
+
+type ChapterRow = typeof chapter.$inferSelect;
+type ChapterRunRow = typeof chapterRun.$inferSelect;
+type KeyChangeRow = typeof keyChange.$inferSelect;
+
+// Project DB rows into the public wire shape. Keeps DB-only fields
+// (`runId`, `chapterIndex`, `createdAt`, `updatedAt`, the denormalized
+// `keyChanges` string array) out of the API surface so the wire format can
+// evolve independently of the schema. Mirrors hosted's mapChapterRow pattern.
+function mapKeyChange(kc: KeyChangeRow): KeyChange {
+	return {
+		id: kc.id,
+		externalId: kc.externalId,
+		content: kc.content,
+		lineRefs: kc.lineRefs,
+	};
+}
+
+function mapChapter(ch: ChapterRow, kcs: KeyChangeRow[]): Chapter {
+	return {
+		id: ch.id,
+		externalId: ch.externalId,
+		order: ch.chapterIndex,
+		title: ch.title,
+		summary: ch.summary,
+		hunkRefs: ch.hunkRefs,
+		keyChanges: kcs.map(mapKeyChange),
+	};
+}
+
+function mapRun(run: ChapterRunRow): ChapterRun {
+	return { id: run.id };
+}
 
 export function runRoutes(db: StageDb): Route[] {
 	return [
@@ -35,22 +69,17 @@ export function runRoutes(db: StageDb): Route[] {
 						? db.select().from(keyChange).where(inArray(keyChange.chapterId, chapterIds)).all()
 						: [];
 
-				const byChapter = new Map<string, typeof keyChanges>();
+				const byChapter = new Map<string, KeyChangeRow[]>();
 				for (const kc of keyChanges) {
 					const list = byChapter.get(kc.chapterId);
 					if (list) list.push(kc);
 					else byChapter.set(kc.chapterId, [kc]);
 				}
 
-				// Drop the denormalized `keyChanges` content array from the chapter row — the API
-				// surface returns full key_change rows under the same key. Keeping both would let
-				// them drift.
-				const nested = chapters.map(({ keyChanges: _denormalized, ...rest }) => ({
-					...rest,
-					keyChanges: byChapter.get(rest.id) ?? [],
-				}));
-
-				writeJson(res, 200, { run, chapters: nested });
+				writeJson(res, 200, {
+					run: mapRun(run),
+					chapters: chapters.map((ch) => mapChapter(ch, byChapter.get(ch.id) ?? [])),
+				});
 			},
 		},
 	];
