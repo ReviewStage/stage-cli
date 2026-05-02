@@ -2,6 +2,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
 import type { Route } from "../server.js";
+import { writeJson } from "./json.js";
 
 export function runRoutes(db: StageDb): Route[] {
   return [
@@ -53,9 +54,4 @@ export function runRoutes(db: StageDb): Route[] {
       },
     },
   ];
-}
-
-function writeJson(res: import("node:http").ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
-  res.end(JSON.stringify(body));
 }
