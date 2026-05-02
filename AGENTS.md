@@ -1,0 +1,167 @@
+# AGENTS.md
+
+This file provides guidance to coding agents working in this repository, including Claude Code and Codex.
+
+## Build & Development Commands
+
+```bash
+npm install             # Install dependencies
+npm run dev:web         # Start the web UI in Vite dev mode
+npm run build           # Bundle the CLI with tsdown into dist/
+npm run build:web       # Build the web UI with Vite into web-dist/
+npm run test            # Run tests (Vitest)
+npm run lint            # Biome linting
+npm run format          # Format code with Biome
+npx tsc --noEmit        # TypeScript checking (root tsconfig)
+npx tsc --noEmit -p web/tsconfig.json  # TypeScript checking for the web app
+```
+
+### Database (Drizzle ORM + SQLite)
+
+```bash
+npm run db:generate     # Generate a new migration into drizzle/ from schema changes
+```
+
+The CLI uses an embedded SQLite database via `better-sqlite3`. There is no separate dev database to start — `getDb()` opens (or creates) the local SQLite file and runs pending migrations on first use.
+
+### Adding UI Components
+
+```bash
+npx shadcn@latest add <component>
+```
+
+Components land under `web/src/components/ui/` per `components.json`.
+
+## Architecture
+
+**Single npm package**, published as `stagereview` with the `stage-cli` binary. The CLI starts a local-loopback HTTP server that serves the prebuilt React UI and a small JSON API.
+
+```
+src/                    # CLI + local HTTP server (Node, ESM)
+  index.ts              # CLI entry (Commander)
+  show.ts               # `stage-cli show <path>` implementation
+  server.ts             # Plain Node http server with regex-compiled routes
+  routes/               # API route handlers (one file per resource)
+  runs/                 # Chapter run import + processing
+  db/                   # Drizzle client, path resolution, schema/
+  schema.ts             # Zod schemas for chapter JSON ingestion
+  __tests__/            # Vitest tests
+drizzle/                # Generated SQL migrations + meta journal
+web/                    # Vite + React 19 + Tailwind 4 frontend (built into web-dist/)
+  src/components/       # UI components (shadcn/ui under components/ui/)
+  src/lib/              # Frontend utilities
+  src/styles/           # Tailwind globals
+```
+
+### CLI (`src/index.ts`)
+
+Uses [Commander](https://github.com/tj/commander.js) for subcommand parsing. Add new subcommands by chaining `.command(...)` and delegating to a module under `src/`.
+
+### Local Server (`src/server.ts`)
+
+Plain Node `http` server bound to `127.0.0.1`. Route patterns use `:name` placeholders and are compiled to regexes at startup. The server resolves `/api/*` against registered routes and otherwise serves static files from `web-dist/` with an `index.html` SPA fallback.
+
+- Route handlers live in `src/routes/` — one file per resource (`runs.ts`, `view-state.ts`, `json.ts`).
+- Path traversal is blocked by computing `path.relative(webDist, resolved)` and rejecting any result that escapes the root. **Don't bypass that check** when adding static-serving features.
+- The server picks the first free port starting at `5391`. Don't hard-code ports in callers.
+
+### Database Layer (`src/db/`)
+
+- **Client:** `getDb()` in `src/db/client.ts` is a singleton wrapped around `better-sqlite3`. It enables WAL + foreign keys and auto-runs migrations from `drizzle/`.
+- **Schemas:** `src/db/schema/*.ts`, re-exported from `src/db/schema/index.ts`. Pass `* as schema` into `drizzle()` so relational queries work.
+- **Path:** `src/db/path.ts` decides where the SQLite file lives (per-OS app data dir).
+- Prefer Drizzle's Relational Queries API over the SQL-like query builder unless you need aggregations, custom column selections, or complex joins.
+
+### Web UI (`web/`)
+
+Vite app with React 19, Tailwind 4, and shadcn/ui (new-york style, zinc base, lucide icons). Built to `web-dist/`, which is bundled into the published npm package and served by the CLI's local HTTP server.
+
+### Key Technologies
+
+- **CLI:** Commander, Node 20+, ESM only
+- **Server:** Node `http` (no Express/Fastify/oRPC)
+- **Database:** Drizzle ORM, SQLite via `better-sqlite3`
+- **Frontend:** Vite, React 19, Tailwind CSS 4, shadcn/ui
+- **Validation:** Zod
+- **Bundler:** tsdown (CLI), Vite (web)
+- **Testing:** Vitest
+
+## Code Style (Biome)
+
+- Spaces for indentation (width 2)
+- Line width: 100 characters
+- Double quotes, semicolons required, trailing commas everywhere
+- `noUnusedImports: error` / `noUnusedVariables: error`
+- `useImportType: error` — use type imports/exports
+- `noExplicitAny: warn` and `noNonNullAssertion: warn` — treat warnings as failures in PRs
+
+There are no pre-commit hooks configured; run `npm run lint` and `npm run test` yourself before pushing.
+
+## Package Naming
+
+This is a single-package repo published as `stagereview`. The CLI binary is `stage-cli`. There is no monorepo or workspace scope.
+
+## Testing
+
+**See [TESTING.md](./TESTING.md) for the full testing strategy.** All testing decisions follow that document.
+
+## Pull Request Format
+
+- **Summary:** what changed and why
+- **Changes:** bullet list of notable edits
+- **Testing:** how the change was verified
+
+## Git & Commit Workflow
+
+- When executing a plan, commit incrementally — one logical unit of work per commit, not one giant commit at the end.
+- Before every push, run `npx tsc --noEmit && npm run lint && npm run test` locally and ensure all checks pass. Never push with failing CI.
+
+## Implementation Quality
+
+- Follow Ousterhout's principles from A Philosophy of Software Design.
+- Be "engineered enough": not fragile or hacky (under-engineered), and not abstracting prematurely or adding unnecessary complexity (over-engineered) - YAGNI.
+- No hacky solutions. Implement things the way a senior engineer would — clean, robust, no code smells or anti-patterns.
+- Follow modern best practices per official docs — not existing codebase patterns, which could contain antipatterns. Official documentation and canonical examples are authoritative; existing code is not.
+- Prefer battle-tested libraries over custom implementations. Don't reinvent the wheel.
+- DRY: flag and eliminate repetition aggressively.
+- Embrace OOP for non-trivial logic: encapsulate state and behavior in classes with simple interfaces, not loose functions.
+- Make code obvious and immediately understandable. Prefer explicit over clever.
+- **Offensive programming, not defensive:** Only validate at system boundaries — CLI args, HTTP request bodies, JSON files on disk, external APIs. Inside the system, trust your own code and the type system. `?? fallback` is a lie — silent corruption is worse than a loud crash. Never add `??`, null-checks, or try/catch for states your code guarantees cannot occur.
+- Err toward covering more edge cases, not fewer.
+- No unnecessary comments.
+- Follow React's "You Might Not Need an Effect" guidance before adding `useEffect`: https://react.dev/learn/you-might-not-need-an-effect
+- Prefer Drizzle's Relational Queries API over the SQL-like query builder unless you need aggregations, custom column selections, or complex joins.
+- No stringly-typed code. For fixed value sets: `as const` SCREAMING_SNAKE_CASE objects, unions via `typeof Foo[keyof typeof Foo]`, no parallel arrays; pass directly to Zod (`z.enum(FOO)`) or Drizzle. Raw strings only for freeform user-facing text. Never construct keys via concatenation or template literals (no `` `${runId}:${chapterId}` ``) — use nested objects or a `Map` with serialized/primitive keys instead.
+
+## Component Design
+
+- Consolidate sibling props that always travel together into a single type. Fewer props = simpler interfaces and less room for mismatches.
+
+## Logging
+
+- The CLI runs locally on a developer's machine, so logging is minimal. Errors that should reach the user are written to `process.stderr`; everything else stays silent.
+- Log sparingly: only significant operation boundaries (`info`-equivalent), unexpected-but-recoverable situations (`warn`), and caught errors (`error`) — always include the underlying error message.
+- Never log tokens, passwords, file contents, or anything that could include user code beyond what the user explicitly asked the CLI to display.
+
+## TypeScript Safety Rules
+
+- Do not use any unsafe type assertions: `as any`, `as unknown as T`, or non-null `!`.
+- Do not use type assertions to narrow types. If you think you need one, STOP and:
+  1. add/adjust types so inference works, OR
+  2. validate at runtime using Zod and narrow from `unknown`, OR
+  3. as a very last resort, use a type guard
+- `noUncheckedIndexedAccess` is on — array/index access returns `T | undefined`. Handle the `undefined` case explicitly rather than asserting.
+
+## Skill Routing
+
+When the user's request matches an available skill, ALWAYS invoke it using the Skill tool as your FIRST action. Do NOT answer directly, do NOT use other tools first. The skill has specialized workflows that produce better results than ad-hoc answers.
+
+Key routing rules:
+- Iterate / babysit a PR → invoke iterate-pr
+- Fix CI failures on a branch → invoke fixing-ci
+- Resolve PR review comments → invoke fixing-pr-comments
+- Rebase onto origin/main → invoke rebase-origin-main
+- Quality review against this file's `## Implementation Quality` section → invoke quality-review
+- Create a Linear issue from current context → invoke linear-issue
+- Trade-off analysis → invoke trade-off
+- De-slop UI / strip generic AI styling → invoke deslop-ui
