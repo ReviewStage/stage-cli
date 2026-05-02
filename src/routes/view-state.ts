@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { LOCAL_USER_ID } from "../db/local-user.js";
 import { chapter, chapterRun, chapterView, keyChange, keyChangeView } from "../db/schema/index.js";
@@ -94,27 +94,13 @@ export function viewStateRoutes(db: StageDb): Route[] {
           .where(and(eq(chapterView.userId, LOCAL_USER_ID), eq(chapter.runId, runId)))
           .all();
 
-        const chapterIdsInRun = db
-          .select({ id: chapter.id })
-          .from(chapter)
-          .where(eq(chapter.runId, runId))
-          .all()
-          .map((r) => r.id);
-
-        const checkedKeyChanges =
-          chapterIdsInRun.length > 0
-            ? db
-                .select({ externalId: keyChange.externalId })
-                .from(keyChangeView)
-                .innerJoin(keyChange, eq(keyChange.id, keyChangeView.keyChangeId))
-                .where(
-                  and(
-                    eq(keyChangeView.userId, LOCAL_USER_ID),
-                    inArray(keyChange.chapterId, chapterIdsInRun),
-                  ),
-                )
-                .all()
-            : [];
+        const checkedKeyChanges = db
+          .select({ externalId: keyChange.externalId })
+          .from(keyChangeView)
+          .innerJoin(keyChange, eq(keyChange.id, keyChangeView.keyChangeId))
+          .innerJoin(chapter, eq(chapter.id, keyChange.chapterId))
+          .where(and(eq(keyChangeView.userId, LOCAL_USER_ID), eq(chapter.runId, runId)))
+          .all();
 
         writeJson(res, 200, {
           chapterIds: viewedChapters.map((r) => r.externalId),
