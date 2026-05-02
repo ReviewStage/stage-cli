@@ -9,8 +9,8 @@ program.name("stage-cli").description("Chapter-style code review against your lo
 program
   .command("show")
   .description("Load a chapters.json file and open it in a local browser")
-  .argument("[path]", "Path to a chapters.json file (defaults to the latest run)")
-  .action(async (jsonPath?: string) => {
+  .argument("<path>", "Path to a chapters.json file")
+  .action(async (jsonPath: string) => {
     await show(jsonPath);
   });
 

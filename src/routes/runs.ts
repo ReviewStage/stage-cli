@@ -1,27 +1,10 @@
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
 import type { Route } from "../server.js";
 
 export function runRoutes(db: StageDb): Route[] {
   return [
-    {
-      method: "GET",
-      pattern: "/api/runs/latest",
-      handler: (_req, res) => {
-        const [row] = db
-          .select()
-          .from(chapterRun)
-          .orderBy(desc(chapterRun.createdAt))
-          .limit(1)
-          .all();
-        if (!row) {
-          writeJson(res, 404, { error: "No runs found" });
-          return;
-        }
-        writeJson(res, 200, { run: row });
-      },
-    },
     {
       method: "GET",
       pattern: "/api/runs/:runId/chapters",

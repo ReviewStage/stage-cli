@@ -66,27 +66,6 @@ function getJson(port: number, requestPath: string): Promise<JsonResponse> {
 }
 
 describe("runs API", () => {
-  it("GET /api/runs/latest returns the most recent run", async () => {
-    const db = getDb({ dbPath });
-    const first = insertChaptersFile(db, makeFixture(), "/repo");
-    await new Promise((r) => setTimeout(r, 5));
-    const second = insertChaptersFile(db, makeFixture(), "/repo");
-
-    const { port } = await startWithRoutes();
-    const res = await getJson(port, "/api/runs/latest");
-
-    expect(res.status).toBe(200);
-    const body = res.body as { run: { id: string } };
-    expect(body.run.id).toBe(second.runId);
-    expect(body.run.id).not.toBe(first.runId);
-  });
-
-  it("GET /api/runs/latest returns 404 when no runs exist", async () => {
-    const { port } = await startWithRoutes();
-    const res = await getJson(port, "/api/runs/latest");
-    expect(res.status).toBe(404);
-  });
-
   it("GET /api/runs/:runId/chapters returns chapters with nested keyChanges sorted by chapterIndex", async () => {
     const db = getDb({ dbPath });
     const fixture = makeFixture({

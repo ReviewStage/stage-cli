@@ -1,31 +1,16 @@
-import { eq } from "drizzle-orm";
 import open from "open";
 import { closeDb, getDb } from "./db/client.js";
-import { chapterRun } from "./db/schema/index.js";
 import { runRoutes } from "./routes/runs.js";
 import { importChaptersFile } from "./runs/import-chapters.js";
 import { LOOPBACK_HOST, startServer } from "./server.js";
 
-export async function show(jsonPath?: string): Promise<void> {
+export async function show(jsonPath: string): Promise<void> {
   const db = getDb();
-  const runId = jsonPath ? importChaptersFile(jsonPath, db).runId : undefined;
-
-  if (runId !== undefined) {
-    const exists = db
-      .select({ id: chapterRun.id })
-      .from(chapterRun)
-      .where(eq(chapterRun.id, runId))
-      .get();
-    if (!exists) throw new Error(`Run ${runId} not found`);
-  }
+  const { runId } = importChaptersFile(jsonPath, db);
 
   const handle = await startServer({ routes: runRoutes(db) });
   const { port } = handle;
-  // Pass the runId through the URL hash so the SPA can pick it up. Falls back to the latest
-  // run (the SPA hits /api/runs/latest when no fragment is present).
-  const url = runId
-    ? `http://${LOOPBACK_HOST}:${port}/#/runs/${runId}`
-    : `http://${LOOPBACK_HOST}:${port}`;
+  const url = `http://${LOOPBACK_HOST}:${port}/#/runs/${runId}`;
 
   process.stdout.write(`Listening on ${url}\n`);
   process.stdout.write("Press Ctrl+C to exit.\n");
