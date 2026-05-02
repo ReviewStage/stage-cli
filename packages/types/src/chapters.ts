@@ -25,7 +25,7 @@ export const lineRefSchema = z
 	});
 export type LineRef = z.infer<typeof lineRefSchema>;
 
-// Non-strict (vs. ingestion's z.strictObject in @stage-cli/cli's schema.ts) so the server
+// Non-strict (vs. ingestion's z.strictObject in packages/cli/src/schema.ts) so the server
 // can add fields the SPA doesn't yet read without rejecting the whole response.
 export const KeyChangeSchema = z.object({
 	id: z.string(),
