@@ -3,9 +3,9 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { insertChaptersFile } from "../commands/ingest.js";
 import { closeDb, getDb } from "../db/client.js";
 import { runRoutes } from "../routes/runs.js";
+import { insertChaptersFile } from "../runs/import-chapters.js";
 import { LOOPBACK_HOST, type ServerHandle, startServer } from "../server.js";
 import { makeFixture } from "./fixtures.js";
 

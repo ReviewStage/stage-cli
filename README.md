@@ -26,6 +26,12 @@ In your AI agent, run:
 
 This breaks your branch's diff into reviewable "chapters".
 
+To open a generated chapters file directly:
+
+```bash
+stage-cli show path/to/chapters.json
+```
+
 ## What it does
 
 - Splits a local git branch diff into logical review chapters

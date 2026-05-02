@@ -6,13 +6,16 @@ import { getRepoRoot } from "../db/path.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
 import { type ChaptersFile, ChaptersFileSchema, SCOPE_KIND, type Scope } from "../schema.js";
 
-export interface IngestResult {
+export interface ImportChaptersResult {
   runId: string;
   chapterCount: number;
   keyChangeCount: number;
 }
 
-export function ingest(jsonPath: string, db: StageDb = getDb()): IngestResult {
+export function importChaptersFile(
+  jsonPath: string,
+  db: StageDb = getDb(),
+): ImportChaptersResult {
   const absolute = path.resolve(jsonPath);
   const raw = readFileSync(absolute, "utf8");
   const parsed = JSON.parse(raw) as unknown;
@@ -24,7 +27,7 @@ export function insertChaptersFile(
   db: StageDb,
   file: ChaptersFile,
   repoRoot: string,
-): IngestResult {
+): ImportChaptersResult {
   return db.transaction((tx) => {
     const [runRow] = tx
       .insert(chapterRun)

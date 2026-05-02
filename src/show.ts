@@ -3,10 +3,12 @@ import open from "open";
 import { closeDb, getDb } from "./db/client.js";
 import { chapterRun } from "./db/schema/index.js";
 import { runRoutes } from "./routes/runs.js";
+import { importChaptersFile } from "./runs/import-chapters.js";
 import { LOOPBACK_HOST, startServer } from "./server.js";
 
-export async function show(runId?: string): Promise<void> {
+export async function show(jsonPath?: string): Promise<void> {
   const db = getDb();
+  const runId = jsonPath ? importChaptersFile(jsonPath, db).runId : undefined;
 
   if (runId !== undefined) {
     const exists = db

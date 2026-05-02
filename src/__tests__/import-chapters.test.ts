@@ -2,16 +2,16 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ingest, insertChaptersFile } from "../commands/ingest.js";
 import { closeDb, getDb } from "../db/client.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
+import { importChaptersFile, insertChaptersFile } from "../runs/import-chapters.js";
 import { makeFixture } from "./fixtures.js";
 
 let tmpDir: string;
 let dbPath: string;
 
 beforeEach(async () => {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-cli-ingest-"));
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-cli-import-"));
   dbPath = path.join(tmpDir, "db.sqlite");
   closeDb();
 });
@@ -21,14 +21,14 @@ afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
-describe("ingest", () => {
+describe("chapter import", () => {
   it("inserts a run, chapters, and key_changes atomically and returns the runId", async () => {
     const db = getDb({ dbPath });
     const fixture = makeFixture();
     const fixturePath = path.join(tmpDir, "chapters.json");
     await fs.writeFile(fixturePath, JSON.stringify(fixture));
 
-    const result = ingest(fixturePath, db);
+    const result = importChaptersFile(fixturePath, db);
 
     expect(result.runId).toMatch(/^[0-9a-f-]{36}$/);
     expect(result.chapterCount).toBe(1);
@@ -56,7 +56,7 @@ describe("ingest", () => {
     ]);
   });
 
-  it("creates a new run on re-ingest of identical content (history preserved)", () => {
+  it("creates a new run when importing identical content again (history preserved)", () => {
     const db = getDb({ dbPath });
     const fixture = makeFixture();
 
@@ -68,7 +68,7 @@ describe("ingest", () => {
     expect(db.select().from(chapter).all()).toHaveLength(2);
   });
 
-  it("derives stable externalIds for key_changes across re-ingests of the same scope", () => {
+  it("derives stable externalIds for key_changes across repeated imports of the same scope", () => {
     const db = getDb({ dbPath });
     const fixture = makeFixture();
 
@@ -80,7 +80,7 @@ describe("ingest", () => {
     expect(all[0]?.externalId).toBe(all[1]?.externalId);
   });
 
-  it("derives stable chapter externalIds across re-ingests of the same scope", () => {
+  it("derives stable chapter externalIds across repeated imports of the same scope", () => {
     const db = getDb({ dbPath });
     insertChaptersFile(db, makeFixture(), "/repo");
     insertChaptersFile(db, makeFixture(), "/repo");
@@ -165,7 +165,7 @@ describe("ingest", () => {
       }),
     );
 
-    expect(() => ingest(bad, db)).toThrow();
+    expect(() => importChaptersFile(bad, db)).toThrow();
     expect(db.select().from(chapterRun).all()).toHaveLength(0);
     expect(db.select().from(chapter).all()).toHaveLength(0);
   });
