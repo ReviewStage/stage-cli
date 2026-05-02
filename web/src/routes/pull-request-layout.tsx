@@ -1,5 +1,5 @@
+import { type ChaptersResponse, ChaptersResponseSchema } from "@stage/types/chapters";
 import { useQuery } from "@tanstack/react-query";
-import { type ChaptersResponse, ChaptersResponseSchema } from "@wire/chapters";
 import { BookOpen, FileText } from "lucide-react";
 import { useMemo, useState } from "react";
 import { SectionLabel } from "@/components/pull-request/section-label";

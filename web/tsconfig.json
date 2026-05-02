@@ -21,8 +21,8 @@
     "allowImportingTsExtensions": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@wire/*": ["../src/wire/*"]
+      "@stage/types/*": ["../src/types/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "../src/wire/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "../src/types/**/*.ts"]
 }

@@ -11,7 +11,7 @@ export default defineConfig({
 			// SPA modules under test (e.g. web/src/lib/use-view-state.ts) do, so the
 			// resolver needs them to find the imports.
 			"@": path.resolve(__dirname, "web", "src"),
-			"@wire": path.resolve(__dirname, "src", "wire"),
+			"@stage/types": path.resolve(__dirname, "src", "types"),
 		},
 	},
 });
