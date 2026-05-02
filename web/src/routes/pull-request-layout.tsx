@@ -1,4 +1,4 @@
-import { type ChaptersResponse, ChaptersResponseSchema } from "@stage/types/chapters";
+import { type ChaptersResponse, ChaptersResponseSchema } from "@cli/types/chapters";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, FileText } from "lucide-react";
 import { useMemo, useState } from "react";

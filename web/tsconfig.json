@@ -21,7 +21,7 @@
     "allowImportingTsExtensions": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@stage/types/*": ["../src/types/*"]
+      "@cli/types/*": ["../src/types/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts", "../src/types/**/*.ts"]
