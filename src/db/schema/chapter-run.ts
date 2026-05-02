@@ -3,20 +3,20 @@ import { SCOPE_KIND, WORKING_TREE_REF } from "../../schema.js";
 import { baseColumns } from "./columns.js";
 
 export const chapterRun = sqliteTable(
-  "chapter_run",
-  {
-    ...baseColumns(),
-    repoRoot: text().notNull(),
-    scopeKind: text({ enum: [SCOPE_KIND.COMMITTED, SCOPE_KIND.WORKING_TREE] }).notNull(),
-    workingTreeRef: text({
-      enum: [WORKING_TREE_REF.WORK, WORKING_TREE_REF.STAGED, WORKING_TREE_REF.UNSTAGED],
-    }),
-    baseSha: text().notNull(),
-    headSha: text().notNull(),
-    mergeBaseSha: text().notNull(),
-    generatedAt: integer({ mode: "timestamp_ms" }).notNull(),
-  },
-  (table) => [index("chapter_run_created_at_idx").on(table.createdAt)],
+	"chapter_run",
+	{
+		...baseColumns(),
+		repoRoot: text().notNull(),
+		scopeKind: text({ enum: [SCOPE_KIND.COMMITTED, SCOPE_KIND.WORKING_TREE] }).notNull(),
+		workingTreeRef: text({
+			enum: [WORKING_TREE_REF.WORK, WORKING_TREE_REF.STAGED, WORKING_TREE_REF.UNSTAGED],
+		}),
+		baseSha: text().notNull(),
+		headSha: text().notNull(),
+		mergeBaseSha: text().notNull(),
+		generatedAt: integer({ mode: "timestamp_ms" }).notNull(),
+	},
+	(table) => [index("chapter_run_created_at_idx").on(table.createdAt)],
 );
 
 export type ChapterRunRow = typeof chapterRun.$inferSelect;

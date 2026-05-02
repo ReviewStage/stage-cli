@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.14/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -7,45 +7,66 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "ignore": ["dist", "web-dist", "node_modules"]
-  },
-  "formatter": {
-    "enabled": true,
-    "indentStyle": "space",
-    "indentWidth": 2,
-    "lineWidth": 100,
-    "lineEnding": "lf"
-  },
-  "organizeImports": {
-    "enabled": true
+    "includes": [
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.json",
+      "**/*.md",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/web-dist",
+      "!drizzle"
+    ]
   },
   "linter": {
     "enabled": true,
     "rules": {
       "recommended": true,
-      "style": {
-        "noNonNullAssertion": "warn",
-        "useImportType": "error"
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error"
       },
       "suspicious": {
-        "noExplicitAny": "warn"
+        "noExplicitAny": "error",
+        "noConsole": {
+          "level": "warn",
+          "options": {
+            "allow": ["error", "warn"]
+          }
+        },
+        "noFocusedTests": "error"
       },
-      "correctness": {
-        "noUnusedVariables": "error",
-        "noUnusedImports": "error"
+      "style": {
+        "useImportType": "error",
+        "useExportType": "error"
       }
     }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": {
+          "level": "on"
+        }
+      }
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "tab",
+    "lineWidth": 100
   },
   "javascript": {
     "formatter": {
       "quoteStyle": "double",
-      "semicolons": "always",
-      "trailingCommas": "all",
-      "arrowParentheses": "always"
+      "semicolons": "always"
     }
   },
   "json": {
     "formatter": {
+      "indentStyle": "space",
       "indentWidth": 2
     }
   }

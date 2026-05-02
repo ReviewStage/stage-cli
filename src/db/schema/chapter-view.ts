@@ -4,15 +4,15 @@ import { chapter } from "./chapter.js";
 import { baseColumns } from "./columns.js";
 
 export const chapterView = sqliteTable(
-  "chapter_view",
-  {
-    ...baseColumns(),
-    userId: text().notNull().default(LOCAL_USER_ID),
-    chapterId: text()
-      .notNull()
-      .references(() => chapter.id, { onDelete: "cascade" }),
-  },
-  (table) => [unique("chapter_view_user_chapter_unique").on(table.userId, table.chapterId)],
+	"chapter_view",
+	{
+		...baseColumns(),
+		userId: text().notNull().default(LOCAL_USER_ID),
+		chapterId: text()
+			.notNull()
+			.references(() => chapter.id, { onDelete: "cascade" }),
+	},
+	(table) => [unique("chapter_view_user_chapter_unique").on(table.userId, table.chapterId)],
 );
 
 export type ChapterViewRow = typeof chapterView.$inferSelect;
