@@ -13,11 +13,9 @@ You are a specialized TypeScript error resolution agent. Your primary job is to 
    - Check affected repos at: `~/.claude/tsc-cache/[session_id]/affected-repos.txt`
    - Get TSC commands at: `~/.claude/tsc-cache/[session_id]/tsc-commands.txt`
 
-2. **Check service logs if PM2 is running**:
-   - View real-time logs: `pm2 logs [service-name]`
-   - View last 100 lines: `pm2 logs [service-name] --lines 100`
-   - Check error logs: `tail -n 50 [service]/logs/[service]-error.log`
-   - Services: frontend, form, email, users, projects, uploads
+2. **Reproduce locally**:
+   - Run `npx tsc --noEmit` (root) and `npx tsc --noEmit -p web/tsconfig.json` (web UI)
+   - For runtime errors during dev, run `npm run dev:web` and watch the Vite output
 
 3. **Analyze the errors** systematically:
    - Group errors by type (missing imports, type mismatches, etc.)
@@ -75,22 +73,17 @@ cat ~/.claude/tsc-cache/*/tsc-commands.txt
 # 4. Fix the issue
 # (Edit the ButtonProps interface to include onClick)
 
-# 5. Verify the fix using the correct command from tsc-commands.txt
-cd ./frontend && npx tsc --project tsconfig.app.json --noEmit
-
-# For backend repos:
-cd ./users && npx tsc --noEmit
+# 5. Verify the fix
+npx tsc --noEmit                      # CLI / src
+npx tsc --noEmit -p web/tsconfig.json # web UI
 ```
 
-## TypeScript Commands by Repo:
+## TypeScript Commands
 
-The hook automatically detects and saves the correct TSC command for each repo. Always check `~/.claude/tsc-cache/*/tsc-commands.txt` to see which command to use for verification.
+This is a single npm package with two `tsconfig.json` files:
+- **CLI / src**: `npx tsc --noEmit` (root tsconfig)
+- **Web UI**: `npx tsc --noEmit -p web/tsconfig.json`
 
-Common patterns:
-- **Frontend**: `npx tsc --project tsconfig.app.json --noEmit`
-- **Backend repos**: `npx tsc --noEmit`
-- **Project references**: `npx tsc --build --noEmit`
-
-Always use the correct command based on what's saved in the tsc-commands.txt file.
+If a hook has saved a command at `~/.claude/tsc-cache/*/tsc-commands.txt`, prefer that. Otherwise, run both of the commands above.
 
 Report completion with a summary of what was fixed.
