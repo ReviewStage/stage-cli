@@ -1,8 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { LOCAL_USER_ID } from "../db/local-user.js";
 import { chapter, chapterRun, chapterView, keyChange, keyChangeView } from "../db/schema/index.js";
 import type { Route } from "../server.js";
+import { writeJson } from "./json.js";
 
 export function viewStateRoutes(db: StageDb): Route[] {
   return [
@@ -10,13 +11,15 @@ export function viewStateRoutes(db: StageDb): Route[] {
       method: "POST",
       pattern: "/api/chapter-view/:chapterId",
       handler: (_req, res, params) => {
-        const id = resolveChapterId(db, params.chapterId);
-        if (!id) {
+        const ids = resolveChapterIds(db, params.chapterId);
+        if (ids.length === 0) {
           writeJson(res, 404, { error: `Chapter ${params.chapterId} not found` });
           return;
         }
+        // Fan out across every chapter row sharing this externalId so view-state survives
+        // re-imports of the same diff (PLA-117). For a uuid param this collapses to one row.
         db.insert(chapterView)
-          .values({ userId: LOCAL_USER_ID, chapterId: id })
+          .values(ids.map((id) => ({ userId: LOCAL_USER_ID, chapterId: id })))
           .onConflictDoNothing()
           .run();
         writeJson(res, 200, {});
@@ -26,15 +29,15 @@ export function viewStateRoutes(db: StageDb): Route[] {
       method: "DELETE",
       pattern: "/api/chapter-view/:chapterId",
       handler: (_req, res, params) => {
-        const id = resolveChapterId(db, params.chapterId);
-        if (!id) {
+        const ids = resolveChapterIds(db, params.chapterId);
+        if (ids.length === 0) {
           // Idempotent: if the chapter doesn't exist there's nothing to delete. The SPA
           // shouldn't have to distinguish "row was gone" from "chapter was gone".
           writeJson(res, 200, {});
           return;
         }
         db.delete(chapterView)
-          .where(and(eq(chapterView.userId, LOCAL_USER_ID), eq(chapterView.chapterId, id)))
+          .where(and(eq(chapterView.userId, LOCAL_USER_ID), inArray(chapterView.chapterId, ids)))
           .run();
         writeJson(res, 200, {});
       },
@@ -43,13 +46,13 @@ export function viewStateRoutes(db: StageDb): Route[] {
       method: "POST",
       pattern: "/api/key-change-view/:keyChangeId",
       handler: (_req, res, params) => {
-        const id = resolveKeyChangeId(db, params.keyChangeId);
-        if (!id) {
+        const ids = resolveKeyChangeIds(db, params.keyChangeId);
+        if (ids.length === 0) {
           writeJson(res, 404, { error: `Key change ${params.keyChangeId} not found` });
           return;
         }
         db.insert(keyChangeView)
-          .values({ userId: LOCAL_USER_ID, keyChangeId: id })
+          .values(ids.map((id) => ({ userId: LOCAL_USER_ID, keyChangeId: id })))
           .onConflictDoNothing()
           .run();
         writeJson(res, 200, {});
@@ -59,13 +62,15 @@ export function viewStateRoutes(db: StageDb): Route[] {
       method: "DELETE",
       pattern: "/api/key-change-view/:keyChangeId",
       handler: (_req, res, params) => {
-        const id = resolveKeyChangeId(db, params.keyChangeId);
-        if (!id) {
+        const ids = resolveKeyChangeIds(db, params.keyChangeId);
+        if (ids.length === 0) {
           writeJson(res, 200, {});
           return;
         }
         db.delete(keyChangeView)
-          .where(and(eq(keyChangeView.userId, LOCAL_USER_ID), eq(keyChangeView.keyChangeId, id)))
+          .where(
+            and(eq(keyChangeView.userId, LOCAL_USER_ID), inArray(keyChangeView.keyChangeId, ids)),
+          )
           .run();
         writeJson(res, 200, {});
       },
@@ -111,43 +116,36 @@ export function viewStateRoutes(db: StageDb): Route[] {
   ];
 }
 
-function resolveChapterId(db: StageDb, idOrExternalId: string | undefined): string | null {
-  if (!idOrExternalId) return null;
-  const [row] = db
+// Returns every chapter row matching the param: a singleton when given a uuid, or every
+// chapter sharing an externalId (re-imports of the same scope). Empty array means 404.
+function resolveChapterIds(db: StageDb, idOrExternalId: string | undefined): string[] {
+  if (!idOrExternalId) return [];
+  const byPk = db
     .select({ id: chapter.id })
     .from(chapter)
     .where(eq(chapter.id, idOrExternalId))
-    .limit(1)
     .all();
-  if (row) return row.id;
-  const [byExt] = db
+  if (byPk.length > 0) return byPk.map((r) => r.id);
+  return db
     .select({ id: chapter.id })
     .from(chapter)
     .where(eq(chapter.externalId, idOrExternalId))
-    .limit(1)
-    .all();
-  return byExt?.id ?? null;
+    .all()
+    .map((r) => r.id);
 }
 
-function resolveKeyChangeId(db: StageDb, idOrExternalId: string | undefined): string | null {
-  if (!idOrExternalId) return null;
-  const [row] = db
+function resolveKeyChangeIds(db: StageDb, idOrExternalId: string | undefined): string[] {
+  if (!idOrExternalId) return [];
+  const byPk = db
     .select({ id: keyChange.id })
     .from(keyChange)
     .where(eq(keyChange.id, idOrExternalId))
-    .limit(1)
     .all();
-  if (row) return row.id;
-  const [byExt] = db
+  if (byPk.length > 0) return byPk.map((r) => r.id);
+  return db
     .select({ id: keyChange.id })
     .from(keyChange)
     .where(eq(keyChange.externalId, idOrExternalId))
-    .limit(1)
-    .all();
-  return byExt?.id ?? null;
-}
-
-function writeJson(res: import("node:http").ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
-  res.end(JSON.stringify(body));
+    .all()
+    .map((r) => r.id);
 }

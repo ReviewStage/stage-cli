@@ -288,4 +288,34 @@ describe("view-state API", () => {
     expect(db.select().from(chapterView).all()).toHaveLength(0);
     expect(db.select().from(keyChangeView).all()).toHaveLength(0);
   });
+
+  it("POST via external_id fans out across re-imports of the same scope (view-state survives regeneration)", async () => {
+    // Importing twice with identical scope creates two chapter rows sharing one externalId.
+    // POST to that externalId must mark both runs viewed; otherwise GET on whichever run
+    // was missed comes back empty even though the content is identical.
+    const db = getDb({ dbPath });
+    insertChaptersFile(db, makeFixture(), "/repo");
+    const runA = db.select().from(chapter).all();
+    insertChaptersFile(db, makeFixture(), "/repo");
+    const allChapters = db.select().from(chapter).all();
+    const chapterB = allChapters.find((c) => !runA.some((a) => a.id === c.id));
+    if (!chapterB) throw new Error("seed: expected a second chapter row from the re-import");
+    const chapterA = runA[0];
+    if (!chapterA) throw new Error("seed: missing chapter from first import");
+    expect(chapterB.externalId).toBe(chapterA.externalId);
+    expect(chapterB.runId).not.toBe(chapterA.runId);
+
+    const { port } = await startWithRoutes();
+    const post = await request(port, "POST", `/api/chapter-view/${chapterA.externalId}`);
+    expect(post.status).toBe(200);
+
+    const stateA = await request(port, "GET", `/api/runs/${chapterA.runId}/view-state`);
+    const stateB = await request(port, "GET", `/api/runs/${chapterB.runId}/view-state`);
+    expect((stateA.body as { chapterIds: string[] }).chapterIds).toEqual([chapterA.externalId]);
+    expect((stateB.body as { chapterIds: string[] }).chapterIds).toEqual([chapterB.externalId]);
+
+    const del = await request(port, "DELETE", `/api/chapter-view/${chapterA.externalId}`);
+    expect(del.status).toBe(200);
+    expect(db.select().from(chapterView).all()).toHaveLength(0);
+  });
 });
