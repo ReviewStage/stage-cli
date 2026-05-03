@@ -28,12 +28,14 @@ export function diffRoutes(db: StageDb): Route[] {
 					return;
 				}
 
-				// Defense in depth: repoRoot was validated at ingest, but the diff endpoint is a
-				// fresh boundary. Reject anything that isn't an absolute, normalized path so we
-				// can't be tricked into spawning git against `..`-style traversals or relative paths.
+				// Defense in depth: repoRoot was validated at ingest, but the diff endpoint is
+				// a fresh boundary. Refuse non-absolute paths or any path containing `..`
+				// segments so we can't be tricked into spawning git against a traversal.
 				const repoRoot = run.repoRoot;
-				if (!path.isAbsolute(repoRoot) || path.resolve(repoRoot) !== repoRoot) {
-					writeJson(res, 500, { error: "Run repoRoot is not an absolute, normalized path" });
+				if (!path.isAbsolute(repoRoot) || repoRoot.split(path.sep).includes("..")) {
+					writeJson(res, 500, {
+						error: "Run repoRoot is not an absolute path or contains traversal segments",
+					});
 					return;
 				}
 
