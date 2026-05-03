@@ -54,7 +54,7 @@ export function makeFetchScript(over: Partial<FetchScript> = {}): FetchScript {
 function ensureRun(script: FetchScript, runId: string): ViewState {
 	let state = script.viewState[runId];
 	if (!state) {
-		state = { chapterIds: [], keyChangeIds: [] };
+		state = { chapterIds: [], keyChangeIds: [], filePaths: [] };
 		script.viewState[runId] = state;
 	}
 	return state;
@@ -96,7 +96,7 @@ export function installFetch(script: FetchScript): void {
 		if (method === "GET" && viewMatch) {
 			const runId = decodeURIComponent(viewMatch[1] ?? "");
 			await maybeWaitGate(script, method, url);
-			const body = script.viewState[runId] ?? { chapterIds: [], keyChangeIds: [] };
+			const body = script.viewState[runId] ?? { chapterIds: [], keyChangeIds: [], filePaths: [] };
 			return new Response(JSON.stringify(body), {
 				status: 200,
 				headers: { "Content-Type": "application/json" },
@@ -131,6 +131,22 @@ export function installFetch(script: FetchScript): void {
 				} else if (method === "DELETE") {
 					state.keyChangeIds = state.keyChangeIds.filter((x) => x !== id);
 				}
+			}
+			return new Response("{}", { status: 200 });
+		}
+
+		const fileViewMatch = url.match(/\/api\/runs\/([^/]+)\/file-views$/);
+		if (fileViewMatch && (method === "POST" || method === "DELETE")) {
+			const runId = decodeURIComponent(fileViewMatch[1] ?? "");
+			await maybeWaitGate(script, method, url);
+			const body = init?.body ? (JSON.parse(String(init.body)) as { path: string }) : null;
+			const path = body?.path ?? "";
+			if (!path) return new Response("missing path", { status: 400 });
+			const state = ensureRun(script, runId);
+			if (method === "POST") {
+				if (!state.filePaths.includes(path)) state.filePaths.push(path);
+			} else {
+				state.filePaths = state.filePaths.filter((p) => p !== path);
 			}
 			return new Response("{}", { status: 200 });
 		}

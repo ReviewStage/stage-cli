@@ -13,7 +13,7 @@ afterEach(() => {
 describe("useViewState — reads", () => {
 	it("hydrates the initial viewed sets from GET /api/runs/:runId/view-state", async () => {
 		const script = makeFetchScript({
-			viewState: { run1: { chapterIds: ["chap-a"], keyChangeIds: ["kc-a"] } },
+			viewState: { run1: { chapterIds: ["chap-a"], keyChangeIds: ["kc-a"], filePaths: [] } },
 		});
 		installFetch(script);
 		const { Wrapper } = makeWrapper();
@@ -29,7 +29,7 @@ describe("useViewState — reads", () => {
 
 	it("idempotent mark of an already-viewed chapter does not duplicate cache entries", async () => {
 		const script = makeFetchScript({
-			viewState: { run1: { chapterIds: ["chap-1"], keyChangeIds: [] } },
+			viewState: { run1: { chapterIds: ["chap-1"], keyChangeIds: [], filePaths: [] } },
 		});
 		installFetch(script);
 		const { client, Wrapper } = makeWrapper();
@@ -51,8 +51,8 @@ describe("useViewState — reads", () => {
 	it("changing runId triggers a refetch and isolates state per run", async () => {
 		const script = makeFetchScript({
 			viewState: {
-				run1: { chapterIds: ["chap-a"], keyChangeIds: [] },
-				run2: { chapterIds: ["chap-b"], keyChangeIds: ["kc-b"] },
+				run1: { chapterIds: ["chap-a"], keyChangeIds: [], filePaths: [] },
+				run2: { chapterIds: ["chap-b"], keyChangeIds: ["kc-b"], filePaths: [] },
 			},
 		});
 		installFetch(script);

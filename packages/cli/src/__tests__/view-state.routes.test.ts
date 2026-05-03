@@ -5,7 +5,14 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, getDb } from "../db/client.js";
-import { chapter, chapterView, keyChange, keyChangeView } from "../db/schema/index.js";
+import {
+	chapter,
+	chapterRun,
+	chapterView,
+	fileView,
+	keyChange,
+	keyChangeView,
+} from "../db/schema/index.js";
 import { runRoutes } from "../routes/runs.js";
 import { viewStateRoutes } from "../routes/view-state.js";
 import { insertChaptersFile } from "../runs/import-chapters.js";
@@ -67,6 +74,44 @@ function request(port: number, method: string, requestPath: string): Promise<Jso
 			},
 		);
 		req.on("error", reject);
+		req.end();
+	});
+}
+
+function requestWithBody(
+	port: number,
+	method: string,
+	requestPath: string,
+	body: unknown,
+): Promise<JsonResponse> {
+	const payload = body === undefined ? "" : JSON.stringify(body);
+	return new Promise((resolve, reject) => {
+		const req = http.request(
+			{
+				hostname: LOOPBACK_HOST,
+				port,
+				method,
+				path: requestPath,
+				agent: false,
+				headers: {
+					"Content-Type": "application/json",
+					"Content-Length": Buffer.byteLength(payload).toString(),
+				},
+			},
+			(res) => {
+				const chunks: Buffer[] = [];
+				res.on("data", (c: Buffer) => chunks.push(c));
+				res.on("end", () => {
+					const text = Buffer.concat(chunks).toString("utf8");
+					resolve({
+						status: res.statusCode ?? 0,
+						body: text ? JSON.parse(text) : null,
+					});
+				});
+			},
+		);
+		req.on("error", reject);
+		if (payload) req.write(payload);
 		req.end();
 	});
 }
@@ -287,6 +332,155 @@ describe("view-state API", () => {
 
 		expect(db.select().from(chapterView).all()).toHaveLength(0);
 		expect(db.select().from(keyChangeView).all()).toHaveLength(0);
+	});
+
+	it("POST /api/runs/:runId/file-views inserts a row and is idempotent", async () => {
+		const { runId } = seedRun();
+		const { port } = await startWithRoutes();
+
+		const first = await requestWithBody(port, "POST", `/api/runs/${runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+		expect(first.status).toBe(200);
+
+		const second = await requestWithBody(port, "POST", `/api/runs/${runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+		expect(second.status).toBe(200);
+
+		const db = getDb({ dbPath });
+		const rows = db.select().from(fileView).where(eq(fileView.runId, runId)).all();
+		expect(rows).toHaveLength(1);
+		expect(rows[0]?.filePath).toBe("src/foo.ts");
+	});
+
+	it("POST /api/runs/:runId/file-views accepts paths with slashes and dots (no path traversal magic)", async () => {
+		const { runId } = seedRun();
+		const { port } = await startWithRoutes();
+
+		// File paths are pure identifiers in the view-state table; we don't resolve
+		// them to disk, so traversal characters are stored verbatim.
+		const tricky = "deep/../../weird path/with spaces.ts";
+		const res = await requestWithBody(port, "POST", `/api/runs/${runId}/file-views`, {
+			path: tricky,
+		});
+		expect(res.status).toBe(200);
+
+		const get = await request(port, "GET", `/api/runs/${runId}/view-state`);
+		expect((get.body as { filePaths: string[] }).filePaths).toEqual([tricky]);
+	});
+
+	it("POST /api/runs/:runId/file-views returns 404 for unknown run", async () => {
+		const { port } = await startWithRoutes();
+		const res = await requestWithBody(
+			port,
+			"POST",
+			"/api/runs/00000000-0000-0000-0000-000000000000/file-views",
+			{ path: "src/foo.ts" },
+		);
+		expect(res.status).toBe(404);
+		expect((res.body as { error: string }).error).toMatch(/not found/i);
+	});
+
+	it("POST /api/runs/:runId/file-views returns 400 for missing or empty path", async () => {
+		const { runId } = seedRun();
+		const { port } = await startWithRoutes();
+
+		const empty = await requestWithBody(port, "POST", `/api/runs/${runId}/file-views`, {});
+		expect(empty.status).toBe(400);
+
+		const blank = await requestWithBody(port, "POST", `/api/runs/${runId}/file-views`, {
+			path: "",
+		});
+		expect(blank.status).toBe(400);
+	});
+
+	it("DELETE /api/runs/:runId/file-views removes the row and is idempotent", async () => {
+		const { runId } = seedRun();
+		const { port } = await startWithRoutes();
+
+		await requestWithBody(port, "POST", `/api/runs/${runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+
+		const first = await requestWithBody(port, "DELETE", `/api/runs/${runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+		expect(first.status).toBe(200);
+
+		const db = getDb({ dbPath });
+		expect(db.select().from(fileView).where(eq(fileView.runId, runId)).all()).toHaveLength(0);
+
+		const second = await requestWithBody(port, "DELETE", `/api/runs/${runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+		expect(second.status).toBe(200);
+	});
+
+	it("GET /api/runs/:runId/view-state returns viewed file paths in filePaths", async () => {
+		const { runId } = seedRun();
+		const { port } = await startWithRoutes();
+
+		await requestWithBody(port, "POST", `/api/runs/${runId}/file-views`, {
+			path: "packages/web/src/App.tsx",
+		});
+		await requestWithBody(port, "POST", `/api/runs/${runId}/file-views`, {
+			path: "packages/cli/src/index.ts",
+		});
+
+		const res = await request(port, "GET", `/api/runs/${runId}/view-state`);
+		expect(res.status).toBe(200);
+		const body = res.body as { filePaths: string[] };
+		expect(body.filePaths).toContain("packages/web/src/App.tsx");
+		expect(body.filePaths).toContain("packages/cli/src/index.ts");
+	});
+
+	it("GET /api/runs/:runId/view-state isolates filePaths across runs", async () => {
+		const db = getDb({ dbPath });
+		const fixtureA = makeFixture({
+			scope: {
+				kind: "committed",
+				baseSha: "a".repeat(40),
+				headSha: "b".repeat(40),
+				mergeBaseSha: "c".repeat(40),
+			},
+		});
+		const fixtureB = makeFixture({
+			scope: {
+				kind: "committed",
+				baseSha: "d".repeat(40),
+				headSha: "e".repeat(40),
+				mergeBaseSha: "f".repeat(40),
+			},
+		});
+		const runA = insertChaptersFile(db, fixtureA, makeRepoContext());
+		const runB = insertChaptersFile(db, fixtureB, makeRepoContext());
+
+		const { port } = await startWithRoutes();
+		await requestWithBody(port, "POST", `/api/runs/${runA.runId}/file-views`, {
+			path: "src/a.ts",
+		});
+
+		const stateA = await request(port, "GET", `/api/runs/${runA.runId}/view-state`);
+		const stateB = await request(port, "GET", `/api/runs/${runB.runId}/view-state`);
+		expect((stateA.body as { filePaths: string[] }).filePaths).toEqual(["src/a.ts"]);
+		expect((stateB.body as { filePaths: string[] }).filePaths).toEqual([]);
+	});
+
+	it("cascade: deleting a run removes its file_view rows", async () => {
+		const { runId } = seedRun();
+		const { port } = await startWithRoutes();
+
+		await requestWithBody(port, "POST", `/api/runs/${runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+
+		const db = getDb({ dbPath });
+		expect(db.select().from(fileView).all()).toHaveLength(1);
+
+		// File views are scoped to chapter_run; deleting the run cascades them.
+		db.delete(chapterRun).where(eq(chapterRun.id, runId)).run();
+		expect(db.select().from(fileView).all()).toHaveLength(0);
 	});
 
 	it("POST via external_id fans out across re-imports of the same scope (view-state survives regeneration)", async () => {

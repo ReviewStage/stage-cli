@@ -1,9 +1,17 @@
+import { FileViewBodySchema } from "@stage-cli/types/view-state";
 import { and, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { LOCAL_USER_ID } from "../db/local-user.js";
-import { chapter, chapterRun, chapterView, keyChange, keyChangeView } from "../db/schema/index.js";
+import {
+	chapter,
+	chapterRun,
+	chapterView,
+	fileView,
+	keyChange,
+	keyChangeView,
+} from "../db/schema/index.js";
 import type { Route } from "../server.js";
-import { writeJson } from "./json.js";
+import { readJsonBody, writeJson } from "./json.js";
 
 export function viewStateRoutes(db: StageDb): Route[] {
 	return [
@@ -75,6 +83,62 @@ export function viewStateRoutes(db: StageDb): Route[] {
 				writeJson(res, 200, {});
 			},
 		},
+		// File-view endpoints take the path in the body so file paths with `/` separators
+		// don't have to be URL-encoded into route segments.
+		{
+			method: "POST",
+			pattern: "/api/runs/:runId/file-views",
+			handler: async (req, res, params) => {
+				const runId = params.runId;
+				if (!runId) {
+					writeJson(res, 400, { error: "Missing runId" });
+					return;
+				}
+				const exists = runExists(db, runId);
+				if (!exists) {
+					writeJson(res, 404, { error: `Run ${runId} not found` });
+					return;
+				}
+
+				const parsed = await parseFileViewBody(req, res);
+				if (!parsed) return;
+
+				db.insert(fileView)
+					.values({ userId: LOCAL_USER_ID, runId, filePath: parsed.path })
+					.onConflictDoNothing()
+					.run();
+				writeJson(res, 200, {});
+			},
+		},
+		{
+			method: "DELETE",
+			pattern: "/api/runs/:runId/file-views",
+			handler: async (req, res, params) => {
+				const runId = params.runId;
+				if (!runId) {
+					writeJson(res, 400, { error: "Missing runId" });
+					return;
+				}
+				if (!runExists(db, runId)) {
+					writeJson(res, 200, {});
+					return;
+				}
+
+				const parsed = await parseFileViewBody(req, res);
+				if (!parsed) return;
+
+				db.delete(fileView)
+					.where(
+						and(
+							eq(fileView.userId, LOCAL_USER_ID),
+							eq(fileView.runId, runId),
+							eq(fileView.filePath, parsed.path),
+						),
+					)
+					.run();
+				writeJson(res, 200, {});
+			},
+		},
 		{
 			method: "GET",
 			pattern: "/api/runs/:runId/view-state",
@@ -107,9 +171,16 @@ export function viewStateRoutes(db: StageDb): Route[] {
 					.where(and(eq(keyChangeView.userId, LOCAL_USER_ID), eq(chapter.runId, runId)))
 					.all();
 
+				const viewedFiles = db
+					.select({ filePath: fileView.filePath })
+					.from(fileView)
+					.where(and(eq(fileView.userId, LOCAL_USER_ID), eq(fileView.runId, runId)))
+					.all();
+
 				writeJson(res, 200, {
 					chapterIds: viewedChapters.map((r) => r.externalId),
 					keyChangeIds: checkedKeyChanges.map((r) => r.externalId),
+					filePaths: viewedFiles.map((r) => r.filePath),
 				});
 			},
 		},
@@ -148,4 +219,32 @@ function resolveKeyChangeIds(db: StageDb, idOrExternalId: string | undefined): s
 		.where(eq(keyChange.externalId, idOrExternalId))
 		.all()
 		.map((r) => r.id);
+}
+
+function runExists(db: StageDb, runId: string): boolean {
+	const rows = db
+		.select({ id: chapterRun.id })
+		.from(chapterRun)
+		.where(eq(chapterRun.id, runId))
+		.all();
+	return rows.length > 0;
+}
+
+async function parseFileViewBody(
+	req: Parameters<Route["handler"]>[0],
+	res: Parameters<Route["handler"]>[1],
+): Promise<{ path: string } | null> {
+	let raw: unknown;
+	try {
+		raw = await readJsonBody(req);
+	} catch (err) {
+		writeJson(res, 400, { error: err instanceof Error ? err.message : "Invalid JSON body" });
+		return null;
+	}
+	const parsed = FileViewBodySchema.safeParse(raw);
+	if (!parsed.success) {
+		writeJson(res, 400, { error: "Invalid file-view body: missing or empty `path`" });
+		return null;
+	}
+	return parsed.data;
 }

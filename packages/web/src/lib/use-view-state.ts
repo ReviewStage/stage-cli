@@ -54,13 +54,31 @@ const postKeyChangeView = (id: string) =>
 const deleteKeyChangeView = (id: string) =>
 	jsonFetch<unknown>(`/api/key-change-view/${encodeURIComponent(id)}`, { method: "DELETE" });
 
+const fileViewBody = (path: string): RequestInit => ({
+	method: "POST",
+	headers: { "Content-Type": "application/json" },
+	body: JSON.stringify({ path }),
+});
+
+const postFileView = (runId: string, path: string) =>
+	jsonFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}/file-views`, fileViewBody(path));
+
+const deleteFileView = (runId: string, path: string) =>
+	jsonFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}/file-views`, {
+		...fileViewBody(path),
+		method: "DELETE",
+	});
+
 export interface UseViewStateDataResult {
 	/** Stable reference; mutates only when the underlying query data changes. */
 	chapterIdSet: ReadonlySet<string>;
 	/** Stable reference; mutates only when the underlying query data changes. */
 	keyChangeIdSet: ReadonlySet<string>;
+	/** Stable reference; mutates only when the underlying query data changes. */
+	filePathSet: ReadonlySet<string>;
 	isChapterViewed: (chapterId: string) => boolean;
 	isKeyChangeChecked: (keyChangeId: string) => boolean;
+	isFileViewed: (filePath: string) => boolean;
 	isLoading: boolean;
 	error: unknown;
 }
@@ -70,6 +88,8 @@ export interface UseViewStateResult extends UseViewStateDataResult {
 	unmarkChapterViewed: (chapterId: string) => void;
 	markKeyChangeChecked: (keyChangeId: string) => void;
 	unmarkKeyChangeChecked: (keyChangeId: string) => void;
+	markFileViewed: (filePath: string) => void;
+	unmarkFileViewed: (filePath: string) => void;
 }
 
 /**
@@ -88,17 +108,20 @@ export function useViewStateData(runId: string): UseViewStateDataResult {
 
 	const chapterIdSet = useMemo(() => new Set(data?.chapterIds ?? []), [data?.chapterIds]);
 	const keyChangeIdSet = useMemo(() => new Set(data?.keyChangeIds ?? []), [data?.keyChangeIds]);
+	const filePathSet = useMemo(() => new Set(data?.filePaths ?? []), [data?.filePaths]);
 
 	return useMemo(
 		() => ({
 			chapterIdSet,
 			keyChangeIdSet,
+			filePathSet,
 			isChapterViewed: (id: string) => chapterIdSet.has(id),
 			isKeyChangeChecked: (id: string) => keyChangeIdSet.has(id),
+			isFileViewed: (path: string) => filePathSet.has(path),
 			isLoading,
 			error,
 		}),
-		[chapterIdSet, keyChangeIdSet, isLoading, error],
+		[chapterIdSet, keyChangeIdSet, filePathSet, isLoading, error],
 	);
 }
 
@@ -119,7 +142,7 @@ export function useViewState(runId: string): UseViewStateResult {
 		await queryClient.cancelQueries({ queryKey });
 		const previous = queryClient.getQueryData<ViewState>(queryKey);
 		queryClient.setQueryData<ViewState>(queryKey, (old) => {
-			const base: ViewState = old ?? { chapterIds: [], keyChangeIds: [] };
+			const base: ViewState = old ?? { chapterIds: [], keyChangeIds: [], filePaths: [] };
 			return patch(base);
 		});
 		return { previous, queryKey };
@@ -184,11 +207,35 @@ export function useViewState(runId: string): UseViewStateResult {
 		onSettled: settle,
 	});
 
+	const markFileMutation = useMutation<unknown, Error, string, MutationContext>({
+		mutationFn: (filePath) => postFileView(runId, filePath),
+		onMutate: (filePath) =>
+			snapshotAndPatch((prev) => {
+				if (prev.filePaths.includes(filePath)) return prev;
+				return { ...prev, filePaths: [...prev.filePaths, filePath] };
+			}),
+		onError: (_err, _filePath, ctx) => rollback(ctx),
+		onSettled: settle,
+	});
+
+	const unmarkFileMutation = useMutation<unknown, Error, string, MutationContext>({
+		mutationFn: (filePath) => deleteFileView(runId, filePath),
+		onMutate: (filePath) =>
+			snapshotAndPatch((prev) => ({
+				...prev,
+				filePaths: prev.filePaths.filter((p) => p !== filePath),
+			})),
+		onError: (_err, _filePath, ctx) => rollback(ctx),
+		onSettled: settle,
+	});
+
 	return {
 		...data,
 		markChapterViewed: markChapterMutation.mutate,
 		unmarkChapterViewed: unmarkChapterMutation.mutate,
 		markKeyChangeChecked: markKeyChangeMutation.mutate,
 		unmarkKeyChangeChecked: unmarkKeyChangeMutation.mutate,
+		markFileViewed: markFileMutation.mutate,
+		unmarkFileViewed: unmarkFileMutation.mutate,
 	};
 }
