@@ -21,7 +21,7 @@ export const APP_THEME = {
 } as const;
 export type AppTheme = (typeof APP_THEME)[keyof typeof APP_THEME];
 
-export const THEME_STORAGE_KEY = "ui-theme";
+const STORAGE_KEY = "ui-theme";
 
 const VALID_THEMES: ReadonlySet<string> = new Set<string>(Object.values(USER_THEME));
 
@@ -31,7 +31,7 @@ function isValidUserTheme(value: string): value is UserTheme {
 
 function getStoredUserTheme(): UserTheme {
 	try {
-		const stored = localStorage.getItem(THEME_STORAGE_KEY);
+		const stored = localStorage.getItem(STORAGE_KEY);
 		if (stored && isValidUserTheme(stored)) return stored;
 	} catch {
 		// localStorage unavailable
@@ -82,7 +82,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 	const setTheme = useCallback((next: UserTheme) => {
 		setUserTheme(next);
 		try {
-			localStorage.setItem(THEME_STORAGE_KEY, next);
+			localStorage.setItem(STORAGE_KEY, next);
 		} catch {
 			// localStorage unavailable
 		}
