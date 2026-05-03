@@ -208,7 +208,7 @@ describe("view-state API", () => {
 				},
 			],
 		});
-		insertChaptersFile(db, fixture, "/repo");
+		insertChaptersFile(db, fixture, makeRepoContext());
 		const [chapterRow] = db.select().from(chapter).limit(1).all();
 		if (!chapterRow) throw new Error("seed: missing chapter");
 
@@ -270,7 +270,7 @@ describe("view-state API", () => {
 				},
 			],
 		});
-		insertChaptersFile(db, fixture, "/repo");
+		insertChaptersFile(db, fixture, makeRepoContext());
 		const chapters = db.select().from(chapter).all();
 		const chapterA = chapters.find((c) => c.chapterIndex === 1);
 		const chapterB = chapters.find((c) => c.chapterIndex === 2);

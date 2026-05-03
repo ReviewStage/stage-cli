@@ -1,10 +1,10 @@
 import { ChevronRight, CircleCheck, FileText, Folder, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PullRequestFile } from "@/lib/diff-types";
-import { FILE_STATUS } from "@/lib/diff-types";
+import { FILE_STATUS, type PullRequestFile } from "@/lib/diff-types";
 import { FILE_STATUS_ICONS, FILE_STATUS_TEXT_COLORS } from "@/lib/file-status";
 import { buildFileTree, collapseEmptyFolders, type FileNode, sortFileNodes } from "@/lib/file-tree";
 import { cn } from "@/lib/utils";
+import { CollapsiblePicker } from "./collapsible-picker";
 
 interface FilePickerProps {
 	files: PullRequestFile[];
@@ -48,37 +48,41 @@ export function FilePicker({
 		[filteredTree],
 	);
 
+	const filterInput = (
+		<div className="relative">
+			<Search
+				className="-translate-y-1/2 absolute top-1/2 left-2.5 size-3.5 text-muted-foreground/50"
+				aria-hidden="true"
+			/>
+			<input
+				type="text"
+				placeholder="Filter files..."
+				value={filter}
+				onChange={(e) => setFilter(e.target.value)}
+				className="w-full rounded-md border border-border bg-background/50 py-1.5 pr-2 pl-8 text-xs outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+			/>
+		</div>
+	);
+
 	return (
-		<aside
-			className={cn(
-				"flex w-72 flex-col gap-3 border-border border-r bg-card/30 px-3 py-4",
-				className,
-			)}
+		<CollapsiblePicker
+			icon={FileText}
+			title="Files"
+			count={files.length}
+			className={className}
+			headerExtra={filterInput}
+			collapsedIndicators={files.map((file) => (
+				<div
+					key={file.path}
+					className={cn(
+						"h-0.5 w-5 rounded-full transition-colors",
+						file.path === activeFilePath ? "bg-green-500" : "bg-muted-foreground/30",
+					)}
+				/>
+			))}
 		>
-			<div className="flex items-center justify-between gap-2">
-				<div className="flex min-w-0 items-center gap-2 text-muted-foreground">
-					<FileText className="size-3.5 shrink-0" aria-hidden="true" />
-					<span className="font-medium text-xs uppercase tracking-wide">Files</span>
-					<span className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums">
-						{files.length}
-					</span>
-				</div>
-			</div>
-			<div className="relative">
-				<Search
-					className="-translate-y-1/2 absolute top-1/2 left-2.5 size-3.5 text-muted-foreground/50"
-					aria-hidden="true"
-				/>
-				<input
-					type="text"
-					placeholder="Filter files..."
-					value={filter}
-					onChange={(e) => setFilter(e.target.value)}
-					className="w-full rounded-md border border-border bg-background/50 py-1.5 pr-2 pl-8 text-xs outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-				/>
-			</div>
 			{rootChildren.length > 0 ? (
-				<div className="flex-1 space-y-0.5 overflow-y-auto">
+				<div className="space-y-0.5">
 					{rootChildren.map((node) => (
 						<FilePickerTreeItem
 							key={node.path}
@@ -94,7 +98,7 @@ export function FilePicker({
 			) : (
 				<p className="py-4 text-center text-muted-foreground text-xs">No files found</p>
 			)}
-		</aside>
+		</CollapsiblePicker>
 	);
 }
 

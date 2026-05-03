@@ -1,15 +1,16 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import {
-	type CollapseState,
 	FileDiffList,
 	type FileDiffListHandle,
 	FilePicker,
 	SidebarLayout,
 } from "@/components/files";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FILE_STATUS } from "@/lib/diff-types";
 import { useFileDiffEntries } from "@/lib/parse-diff";
 import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
 import { useDiffPatch } from "@/lib/use-diff-patch";
+import { useFileCollapseState } from "@/lib/use-file-collapse-state";
 import { useFileNavigationKeys } from "@/lib/use-file-navigation-keys";
 import { useViewState } from "@/lib/use-view-state";
 
@@ -32,7 +33,20 @@ export function FilesPage({ runId }: FilesPageProps) {
 		[filePathSet, markFileViewed, unmarkFileViewed],
 	);
 
-	const collapseState = useCollapseState(files);
+	// Deleted files and viewed files start collapsed; recomputes reactively when
+	// viewed state changes so toggling a file's viewed state automatically
+	// flips its collapsed state.
+	const defaultCollapsedFileIds = useMemo(() => {
+		const ids = new Set<string>();
+		for (const file of files) {
+			if (file.status === FILE_STATUS.DELETED) ids.add(file.path);
+		}
+		for (const path of filePathSet) ids.add(path);
+		return ids;
+	}, [files, filePathSet]);
+
+	const filePaths = useMemo(() => files.map((f) => f.path), [files]);
+	const collapseState = useFileCollapseState(defaultCollapsedFileIds, filePaths, runId);
 
 	const diffListRef = useRef<FileDiffListHandle>(null);
 	const { activeFilePath, setActiveFileManually } = useActiveFileOnScroll(files);
@@ -70,32 +84,6 @@ export function FilesPage({ runId }: FilesPageProps) {
 				collapseState={collapseState}
 			/>
 		</SidebarLayout>
-	);
-}
-
-function useCollapseState(files: { path: string }[]): CollapseState {
-	const [collapsedFiles, setCollapsedFiles] = useState<ReadonlySet<string>>(() => new Set());
-
-	const toggleFileCollapsed = useCallback((filePath: string) => {
-		setCollapsedFiles((prev) => {
-			const next = new Set(prev);
-			if (next.has(filePath)) next.delete(filePath);
-			else next.add(filePath);
-			return next;
-		});
-	}, []);
-
-	const collapseAllFiles = useCallback(() => {
-		setCollapsedFiles(new Set(files.map((f) => f.path)));
-	}, [files]);
-
-	const expandAllFiles = useCallback(() => {
-		setCollapsedFiles(new Set());
-	}, []);
-
-	return useMemo(
-		() => ({ collapsedFiles, toggleFileCollapsed, collapseAllFiles, expandAllFiles }),
-		[collapsedFiles, toggleFileCollapsed, collapseAllFiles, expandAllFiles],
 	);
 }
 

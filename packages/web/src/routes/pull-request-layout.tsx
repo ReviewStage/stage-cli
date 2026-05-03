@@ -1,5 +1,5 @@
 import { BookOpen, FileText } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { SectionLabel } from "@/components/pull-request/section-label";
 import { useChapters } from "@/lib/use-chapters";
 import { useFileDiffEntries } from "@/lib/parse-diff";
@@ -111,16 +111,41 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		return String(totalFileCount);
 	})();
 
+	// `--content-top` (height of the sticky tab nav) and `--main-height` (visible
+	// scroll viewport) are read by `SidebarLayout` / `CollapsiblePicker` so the
+	// file-picker sticks below the nav and stretches to the bottom of the page.
+	// Mirrors hosted-stage's `AppShell` + nav-measurement pattern.
+	const navRef = useRef<HTMLElement>(null);
+	const [navHeight, setNavHeight] = useState(0);
+	useEffect(() => {
+		const el = navRef.current;
+		if (!el) return;
+		const observer = new ResizeObserver(() => setNavHeight(el.getBoundingClientRect().height));
+		observer.observe(el);
+		setNavHeight(el.getBoundingClientRect().height);
+		return () => observer.disconnect();
+	}, []);
+
 	if (error) return <ErrorState error={error} />;
 
+	// Topbar is 48px (h-12) and sticks above the PR layout, so the picker sticks
+	// 48px + the measured PR-nav height from the top of the viewport.
+	const layoutStyle = {
+		"--content-top": `${48 + navHeight}px`,
+		"--main-height": "100vh",
+	} as CSSProperties;
+
 	return (
-		<div className="flex flex-1 flex-col">
+		<div className="flex flex-1 flex-col" style={layoutStyle}>
 			<div className="flex-1 px-6 pt-6 pb-16 lg:px-8">
 				<header className="mb-4 space-y-1">
 					<SectionLabel>Run</SectionLabel>
 					<p className="break-all font-mono text-foreground/80 text-xs">{data?.run.id ?? runId}</p>
 				</header>
-				<nav className="-mx-6 lg:-mx-8 sticky top-12 z-10 mb-6 flex items-center justify-between gap-4 border-border border-b bg-background/95 px-6 lg:px-8 pt-1 pb-2 backdrop-blur">
+				<nav
+					ref={navRef}
+					className="-mx-6 lg:-mx-8 sticky top-12 z-10 mb-6 flex items-center justify-between gap-4 border-border border-b bg-background/95 px-6 lg:px-8 pt-1 pb-2 backdrop-blur"
+				>
 					<div className="flex shrink-0 items-center gap-1">
 						{tabs.map((tab) => (
 							<TabLink
