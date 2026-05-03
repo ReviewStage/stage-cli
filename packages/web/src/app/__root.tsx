@@ -5,9 +5,11 @@ export const Route = createRootRouteWithContext<{
 	queryClient: QueryClient;
 }>()({
 	beforeLoad: ({ location }) => {
-		if (location.hash.startsWith("#/runs/")) {
+		// TanStack Router strips the leading `#` from `location.hash`, so a legacy
+		// URL like `/#/runs/abc` lands here with `hash === "/runs/abc"`.
+		if (location.hash.startsWith("/runs/")) {
 			throw redirect({
-				to: location.hash.slice(1),
+				to: location.hash,
 				replace: true,
 			});
 		}
