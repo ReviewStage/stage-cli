@@ -1,9 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
-import { KEYBOARD_SHORTCUTS, type ShortcutKey } from "@/lib/keyboard-shortcuts";
+import type { ShortcutKey } from "@/lib/keyboard-shortcuts";
+import { useShortcutHandler } from "@/lib/use-shortcut-handler";
 import { cn } from "@/lib/utils";
 
 interface CollapsiblePickerProps {
@@ -40,7 +40,6 @@ export function CollapsiblePicker({
 	defaultExpanded = true,
 }: CollapsiblePickerProps) {
 	const [isCollapsed, setIsCollapsed] = useState(!defaultExpanded);
-	const { hotkey } = KEYBOARD_SHORTCUTS[shortcutKey];
 
 	useEffect(() => {
 		const mql = window.matchMedia("(max-width: 768px)");
@@ -54,9 +53,7 @@ export function CollapsiblePicker({
 
 	const toggleCollapsed = useCallback(() => setIsCollapsed((prev) => !prev), []);
 
-	useHotkeys(hotkey, toggleCollapsed, { preventDefault: true, enableOnFormTags: false }, [
-		toggleCollapsed,
-	]);
+	useShortcutHandler(shortcutKey, toggleCollapsed);
 
 	const header = (
 		<div

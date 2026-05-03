@@ -1,8 +1,8 @@
 import { BookOpen, FileText } from "lucide-react";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { SectionLabel } from "@/components/pull-request/section-label";
-import { useChapters } from "@/lib/use-chapters";
 import { useFileDiffEntries } from "@/lib/parse-diff";
+import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useViewStateData } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
