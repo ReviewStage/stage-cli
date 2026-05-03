@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { PullRequestFile } from "./diff-types";
+import { isEditableTarget } from "./keyboard";
 
 const TOPBAR_HEIGHT = 48;
 const TABBAR_HEIGHT = 48;
@@ -51,14 +52,6 @@ export function useFileNavigationKeys(
 		window.addEventListener("keydown", handler);
 		return () => window.removeEventListener("keydown", handler);
 	}, [files, onSelectFile, enabled]);
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-	if (!(target instanceof HTMLElement)) return false;
-	const tag = target.tagName;
-	if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-	if (target.isContentEditable) return true;
-	return false;
 }
 
 function findCurrentFile(files: PullRequestFile[]): string | null {

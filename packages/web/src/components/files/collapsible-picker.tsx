@@ -1,13 +1,16 @@
 import type { LucideIcon } from "lucide-react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useHotkeys } from "react-hotkeys-hook";
+import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
+import { KEYBOARD_SHORTCUTS, type ShortcutKey } from "@/lib/keyboard-shortcuts";
 import { cn } from "@/lib/utils";
 
 interface CollapsiblePickerProps {
 	icon: LucideIcon;
 	title: string;
 	count: number;
+	shortcutKey: ShortcutKey;
 	collapsedIndicators: ReactNode;
 	headerExtra?: ReactNode;
 	children: ReactNode;
@@ -21,14 +24,14 @@ interface CollapsiblePickerProps {
  * `CollapsiblePicker` — auto-collapses on narrow viewports and slides the panel
  * out as a hover overlay when collapsed so the file list is one mouse-over away.
  *
- * The shortcut-key hotkey + tooltip from hosted are dropped because stage-cli
- * doesn't have a keyboard-shortcuts registry; the toggle button covers the
- * collapse/expand UX on its own.
+ * `shortcutKey` wires the toggle to the global keyboard-shortcuts registry,
+ * which drives both the `useHotkeys` listener and the tooltip's kbd display.
  */
 export function CollapsiblePicker({
 	icon: Icon,
 	title,
 	count,
+	shortcutKey,
 	collapsedIndicators,
 	headerExtra,
 	children,
@@ -37,6 +40,7 @@ export function CollapsiblePicker({
 	defaultExpanded = true,
 }: CollapsiblePickerProps) {
 	const [isCollapsed, setIsCollapsed] = useState(!defaultExpanded);
+	const { hotkey } = KEYBOARD_SHORTCUTS[shortcutKey];
 
 	useEffect(() => {
 		const mql = window.matchMedia("(max-width: 768px)");
@@ -50,6 +54,10 @@ export function CollapsiblePicker({
 
 	const toggleCollapsed = useCallback(() => setIsCollapsed((prev) => !prev), []);
 
+	useHotkeys(hotkey, toggleCollapsed, { preventDefault: true, enableOnFormTags: false }, [
+		toggleCollapsed,
+	]);
+
 	const header = (
 		<div
 			className={cn(
@@ -61,25 +69,23 @@ export function CollapsiblePicker({
 				<Icon className="size-4 text-muted-foreground" aria-hidden="true" />
 				<h2 className="font-semibold text-sm">{title}</h2>
 				<span className="text-muted-foreground text-xs">({count})</span>
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<button
-							type="button"
-							onClick={toggleCollapsed}
-							className="ml-auto cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
-							aria-label={`${isCollapsed ? "Show" : "Hide"} ${title.toLowerCase()}`}
-						>
-							{isCollapsed ? (
-								<PanelLeftOpen className="size-4" />
-							) : (
-								<PanelLeftClose className="size-4" />
-							)}
-						</button>
-					</TooltipTrigger>
-					<TooltipContent side="bottom">
-						{isCollapsed ? "Show" : "Hide"} {title.toLowerCase()}
-					</TooltipContent>
-				</Tooltip>
+				<ShortcutTooltip
+					shortcutKey={shortcutKey}
+					label={`${isCollapsed ? "Show" : "Hide"} ${title.toLowerCase()}`}
+					side="bottom"
+				>
+					<button
+						type="button"
+						onClick={toggleCollapsed}
+						className="ml-auto cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+					>
+						{isCollapsed ? (
+							<PanelLeftOpen className="size-4" />
+						) : (
+							<PanelLeftClose className="size-4" />
+						)}
+					</button>
+				</ShortcutTooltip>
 			</div>
 			{headerExtra}
 		</div>

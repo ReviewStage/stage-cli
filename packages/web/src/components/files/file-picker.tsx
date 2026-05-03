@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { FILE_STATUS, type PullRequestFile } from "@/lib/diff-types";
 import { FILE_STATUS_ICONS, FILE_STATUS_TEXT_COLORS } from "@/lib/file-status";
 import { buildFileTree, collapseEmptyFolders, type FileNode, sortFileNodes } from "@/lib/file-tree";
+import { SHORTCUT_KEY } from "@/lib/keyboard-shortcuts";
 import { cn } from "@/lib/utils";
 import { CollapsiblePicker } from "./collapsible-picker";
 
@@ -69,6 +70,7 @@ export function FilePicker({
 			icon={FileText}
 			title="Files"
 			count={files.length}
+			shortcutKey={SHORTCUT_KEY.TOGGLE_FILES}
 			className={className}
 			headerExtra={filterInput}
 			collapsedIndicators={files.map((file) => (
