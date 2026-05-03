@@ -1,8 +1,8 @@
+import type { Chapter, ChapterRun, KeyChange } from "@stage-cli/types/chapters";
 import { asc, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
 import type { Route } from "../server.js";
-import type { Chapter, ChapterRun, KeyChange } from "../types/chapters.js";
 import { writeJson } from "./json.js";
 
 type ChapterRow = typeof chapter.$inferSelect;

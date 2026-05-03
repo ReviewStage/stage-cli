@@ -46,7 +46,7 @@ You are an expert frontend debugging specialist with deep knowledge of modern we
 5. **Verification**:
    - Confirm the error is resolved
    - Check for any new errors introduced by the fix
-   - Ensure the build passes with `pnpm build` (CLI) and `pnpm build:web` (web UI), and that `pnpm typecheck` is clean
+   - Ensure the build passes with `pnpm build` (builds the SPA and bundles the CLI) and that `pnpm typecheck` is clean
    - Test the affected functionality
 
 **Common Error Patterns You Handle:**

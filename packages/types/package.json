@@ -1,0 +1,24 @@
+{
+  "name": "@stage-cli/types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared wire-format types for the stage-cli server and SPA.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./chapters": "./src/chapters.ts",
+    "./view-state": "./src/view-state.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

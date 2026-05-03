@@ -1,4 +1,4 @@
-import type { Chapter, HunkRef } from "@cli/types/chapters";
+import type { Chapter, HunkReference } from "@stage-cli/types/chapters";
 import { ChevronRight, Circle, CircleCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileViewRow } from "@/components/chapter";
@@ -141,7 +141,7 @@ function ChapterEntry({
 	);
 }
 
-function distinctFilePaths(hunkRefs: HunkRef[]): string[] {
+function distinctFilePaths(hunkRefs: HunkReference[]): string[] {
 	const seen = new Set<string>();
 	const out: string[] = [];
 	for (const h of hunkRefs) {

@@ -7,13 +7,12 @@ This file provides guidance to coding agents working in this repository, includi
 ```bash
 pnpm install            # Install dependencies (also installs husky pre-commit hook)
 pnpm dev:web            # Start the web UI in Vite dev mode
-pnpm build              # Bundle the CLI with tsdown into dist/
-pnpm build:web          # Build the web UI with Vite into web-dist/
-pnpm test               # Run tests (Vitest)
+pnpm build              # Build SPA, then bundle the CLI (writes packages/cli/{dist,web-dist})
+pnpm test               # Run tests (Vitest, from root)
 pnpm lint               # Biome check (lint + format) — fails on warnings
 pnpm lint:fix           # Biome check with auto-fix
 pnpm format             # Format code with Biome
-pnpm typecheck          # tsc --noEmit for both root and web tsconfigs
+pnpm typecheck          # tsc --noEmit across every package (`pnpm -r typecheck`)
 ```
 
 The package manager is pinned via `packageManager` in `package.json`. Use `corepack enable` if pnpm isn't on your PATH.
@@ -21,7 +20,7 @@ The package manager is pinned via `packageManager` in `package.json`. Use `corep
 ### Database (Drizzle ORM + SQLite)
 
 ```bash
-pnpm db:generate        # Generate a new migration into drizzle/ from schema changes
+pnpm db:generate        # Generate a new migration into packages/cli/drizzle/ from schema changes
 ```
 
 The CLI uses an embedded SQLite database via `better-sqlite3`. There is no separate dev database to start — `getDb()` opens (or creates) the local SQLite file and runs pending migrations on first use.
@@ -29,54 +28,72 @@ The CLI uses an embedded SQLite database via `better-sqlite3`. There is no separ
 ### Adding UI Components
 
 ```bash
-npx shadcn@latest add <component>
+cd packages/web && npx shadcn@latest add <component>
 ```
 
-Components land under `web/src/components/ui/` per `components.json`.
+Components land under `packages/web/src/components/ui/` per `packages/web/components.json`.
 
 ## Architecture
 
-**Single npm package**, published as `stagereview` with the `stage-cli` binary. The CLI starts a local-loopback HTTP server that serves the prebuilt React UI and a small JSON API.
+**pnpm workspace.** Three packages with real boundaries — no path-alias indirection. The published unit is `packages/cli` (npm name `stagereview`, binary `stage-cli`); the rest are private workspace deps that get inlined at build time.
 
 ```
-src/                    # CLI + local HTTP server (Node, ESM)
-  index.ts              # CLI entry (Commander)
-  show.ts               # `stage-cli show <path>` implementation
-  server.ts             # Plain Node http server with regex-compiled routes
-  routes/               # API route handlers (one file per resource)
-  runs/                 # Chapter run import + processing
-  db/                   # Drizzle client, path resolution, schema/
-  schema.ts             # Zod schemas for chapter JSON ingestion
-  __tests__/            # Vitest tests
-drizzle/                # Generated SQL migrations + meta journal
-web/                    # Vite + React 19 + Tailwind 4 frontend (built into web-dist/)
-  src/components/       # UI components (shadcn/ui under components/ui/)
-  src/lib/              # Frontend utilities
-  src/styles/           # Tailwind globals
+pnpm-workspace.yaml         # packages: ["packages/*"]
+packages/
+  cli/                      # stagereview — published npm package
+    src/                    # CLI + local HTTP server (Node, ESM)
+      index.ts              # CLI entry (Commander)
+      show.ts               # `stage-cli show <path>` implementation
+      server.ts             # Plain Node http server with regex-compiled routes
+      routes/               # API route handlers (one file per resource)
+      runs/                 # Chapter run import + processing
+      db/                   # Drizzle client, path resolution, schema/
+      schema.ts             # Zod schemas for chapter JSON ingestion (strict)
+      __tests__/            # Vitest tests
+    drizzle/                # Generated SQL migrations + meta journal
+    drizzle.config.ts       # Drizzle Kit config
+    tsdown.config.ts        # CLI bundler config (inlines @stage-cli/types)
+  types/                    # @stage-cli/types (private, TS-native)
+    src/chapters.ts         # Wire-format chapter/key-change schemas + shared HunkReference/LineRef
+    src/view-state.ts       # Wire-format view-state schema
+    src/index.ts            # Barrel re-export
+  web/                      # @stage-cli/web (private) — built into ../cli/web-dist
+    src/components/         # UI components (shadcn/ui under components/ui/)
+    src/lib/                # Frontend utilities + tests
+    src/routes/             # SPA route components
+    src/styles/             # Tailwind globals
+    vite.config.ts          # outDir → ../cli/web-dist
+    components.json         # shadcn config
 ```
 
-### CLI (`src/index.ts`)
+### CLI (`packages/cli/src/index.ts`)
 
-Uses [Commander](https://github.com/tj/commander.js) for subcommand parsing. Add new subcommands by chaining `.command(...)` and delegating to a module under `src/`.
+Uses [Commander](https://github.com/tj/commander.js) for subcommand parsing. Add new subcommands by chaining `.command(...)` and delegating to a module under `packages/cli/src/`.
 
-### Local Server (`src/server.ts`)
+### Local Server (`packages/cli/src/server.ts`)
 
-Plain Node `http` server bound to `127.0.0.1`. Route patterns use `:name` placeholders and are compiled to regexes at startup. The server resolves `/api/*` against registered routes and otherwise serves static files from `web-dist/` with an `index.html` SPA fallback.
+Plain Node `http` server bound to `127.0.0.1`. Route patterns use `:name` placeholders and are compiled to regexes at startup. The server resolves `/api/*` against registered routes and otherwise serves static files from `web-dist/` (next to the bundled CLI) with an `index.html` SPA fallback.
 
-- Route handlers live in `src/routes/` — one file per resource (`runs.ts`, `view-state.ts`, `json.ts`).
+- Route handlers live in `packages/cli/src/routes/` — one file per resource (`runs.ts`, `view-state.ts`, `json.ts`).
 - Path traversal is blocked by computing `path.relative(webDist, resolved)` and rejecting any result that escapes the root. **Don't bypass that check** when adding static-serving features.
 - The server picks the first free port starting at `5391`. Don't hard-code ports in callers.
 
-### Database Layer (`src/db/`)
+### Database Layer (`packages/cli/src/db/`)
 
-- **Client:** `getDb()` in `src/db/client.ts` is a singleton wrapped around `better-sqlite3`. It enables WAL + foreign keys and auto-runs migrations from `drizzle/`.
-- **Schemas:** `src/db/schema/*.ts`, re-exported from `src/db/schema/index.ts`. Pass `* as schema` into `drizzle()` so relational queries work.
-- **Path:** `src/db/path.ts` decides where the SQLite file lives (per-OS app data dir).
+- **Client:** `getDb()` in `db/client.ts` is a singleton wrapped around `better-sqlite3`. It enables WAL + foreign keys and auto-runs migrations from `packages/cli/drizzle/`.
+- **Schemas:** `db/schema/*.ts`, re-exported from `db/schema/index.ts`. Pass `* as schema` into `drizzle()` so relational queries work.
+- **Path:** `db/path.ts` decides where the SQLite file lives (per-OS app data dir).
 - Prefer Drizzle's Relational Queries API over the SQL-like query builder unless you need aggregations, custom column selections, or complex joins.
 
-### Web UI (`web/`)
+### Shared Types (`packages/types/`)
 
-Vite app with React 19, Tailwind 4, and shadcn/ui (new-york style, zinc base, lucide icons). Built to `web-dist/`, which is bundled into the published npm package and served by the CLI's local HTTP server.
+Wire-format types shared between the CLI's HTTP routes and the SPA. The package exports `.ts` source directly (no compile step) — `tsdown` and `vite` resolve TypeScript natively. The CLI bundle inlines this package via `deps.alwaysBundle` in `tsdown.config.ts`, so the published tarball never has a runtime require for `@stage-cli/types`.
+
+Building blocks like `HunkReference`, `LineRef`, and `DIFF_SIDE` live here; the strict ingestion schema (`ChaptersFileSchema`) stays in `packages/cli/src/schema.ts` and re-exports them.
+
+### Web UI (`packages/web/`)
+
+Vite app with React 19, Tailwind 4, and shadcn/ui (new-york style, zinc base, lucide icons). Builds into `../cli/web-dist`, which is bundled into the published npm package and served by the CLI's local HTTP server.
 
 ### Key Technologies
 
@@ -103,7 +120,7 @@ A `pre-commit` hook (husky + lint-staged) runs `biome check --write` against sta
 
 ## Package Naming
 
-This is a single-package repo published as `stagereview`. The CLI binary is `stage-cli`. There is no monorepo or workspace scope.
+The published npm package is `stagereview` (lives in `packages/cli`); the CLI binary is `stage-cli`. Internal workspace packages use the `@stage-cli/*` scope (`@stage-cli/types`, `@stage-cli/web`) — they are private and never published.
 
 ## Testing
 

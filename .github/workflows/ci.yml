@@ -35,7 +35,7 @@ jobs:
       - name: Check Drizzle migrations are up to date
         run: |
           pnpm db:generate
-          git diff --exit-code drizzle/ || (echo "::error::Drizzle migrations are out of date. Run 'pnpm db:generate' and commit." && exit 1)
+          git diff --exit-code packages/cli/drizzle/ || (echo "::error::Drizzle migrations are out of date. Run 'pnpm db:generate' and commit." && exit 1)
 
       - name: Lint
         run: pnpm lint
@@ -47,6 +47,4 @@ jobs:
         run: pnpm test
 
       - name: Build
-        run: |
-          pnpm build
-          pnpm build:web
+        run: pnpm build

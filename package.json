@@ -1,18 +1,8 @@
 {
   "name": "stagereview",
   "version": "0.1.0",
-  "description": "Chapter-style code review against your local git branch.",
-  "keywords": [
-    "code-review",
-    "cli",
-    "chapters",
-    "git",
-    "claude-code",
-    "cursor",
-    "codex",
-    "gemini",
-    "opencode"
-  ],
+  "private": true,
+  "description": "pnpm workspace root for stagereview (packages/cli) and its supporting packages.",
   "homepage": "https://github.com/ReviewStage/stage-cli#readme",
   "bugs": {
     "url": "https://github.com/ReviewStage/stage-cli/issues"
@@ -25,29 +15,18 @@
   "author": "Stage",
   "type": "module",
   "packageManager": "pnpm@10.24.0",
-  "main": "./dist/index.js",
-  "bin": {
-    "stage-cli": "./dist/index.js"
-  },
-  "files": [
-    "dist",
-    "drizzle",
-    "web-dist",
-    "skills"
-  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsdown",
-    "build:web": "vite build --config web/vite.config.ts",
-    "dev:web": "vite --config web/vite.config.ts",
+    "build": "pnpm --filter @stage-cli/web build && pnpm --filter stagereview build",
+    "dev:web": "pnpm --filter @stage-cli/web dev",
     "test": "vitest run",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
-    "db:generate": "drizzle-kit generate",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter stagereview db:generate",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -57,50 +36,12 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.10",
-    "@pierre/diffs": "^1.0.11",
-    "@radix-ui/react-checkbox": "^1.3.3",
-    "@radix-ui/react-collapsible": "^1.1.12",
-    "@radix-ui/react-progress": "^1.1.8",
-    "@radix-ui/react-separator": "^1.1.8",
-    "@radix-ui/react-slot": "^1.2.4",
-    "@radix-ui/react-tooltip": "^1.2.8",
-    "@tailwindcss/vite": "^4.1.18",
-    "@tanstack/react-query": "^5.100.7",
     "@testing-library/react": "^16.3.2",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.6.0",
-    "@types/react": "^19.2.5",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.2",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "drizzle-kit": "^0.31.10",
     "happy-dom": "^20.9.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
-    "lucide-react": "^0.562.0",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
-    "tailwind-merge": "^3.3.1",
-    "tailwindcss": "^4.1.18",
-    "tsdown": "^0.21.10",
-    "tw-animate-css": "^1.4.0",
     "typescript": "^5.6.3",
-    "vite": "^7.3.1",
-    "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.5"
-  },
-  "dependencies": {
-    "better-sqlite3": "^12.9.0",
-    "commander": "^14.0.3",
-    "drizzle-orm": "^0.45.2",
-    "open": "^11.0.0",
-    "zod": "^4.3.6"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "better-sqlite3",
-      "esbuild"
-    ]
   }
 }

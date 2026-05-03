@@ -22,20 +22,20 @@ Test API route handlers through the real `startServer()` HTTP boundary, hitting 
 **This is the highest-ROI test layer.** Most logic worth testing is request handling, schema validation, and database state transitions.
 
 Examples:
-- `src/__tests__/runs.routes.test.ts` — exercises run/chapter routes against a real server + SQLite
-- `src/__tests__/view-state.routes.test.ts` — exercises view-state routes end-to-end
-- `src/__tests__/server.test.ts` — covers the static-file fallback, route compilation, and path-traversal guard
+- `packages/cli/src/__tests__/runs.routes.test.ts` — exercises run/chapter routes against a real server + SQLite
+- `packages/cli/src/__tests__/view-state.routes.test.ts` — exercises view-state routes end-to-end
+- `packages/cli/src/__tests__/server.test.ts` — covers the static-file fallback, route compilation, and path-traversal guard
 
-Use the helpers in `src/__tests__/fixtures.ts` to spin up a temp DB and the server.
+Use the helpers in `packages/cli/src/__tests__/fixtures.ts` to spin up a temp DB and the server.
 
 ### 3. Pure Logic Unit Tests
 
 Schemas, parsers, and pure helpers. No mocks needed — these are pure functions.
 
 Examples:
-- `src/__tests__/schema.test.ts` — Zod chapter-import schemas
-- `src/__tests__/path.test.ts` — DB path resolution
-- `src/__tests__/import-chapters.test.ts` — chapter import transformation
+- `packages/cli/src/__tests__/schema.test.ts` — Zod chapter-import schemas
+- `packages/cli/src/__tests__/path.test.ts` — DB path resolution
+- `packages/cli/src/__tests__/import-chapters.test.ts` — chapter import transformation
 
 ### 4. Web UI Component Tests
 
@@ -44,9 +44,9 @@ Narrow exception: tests for keyboard navigation, focus management, and form beha
 **Constraints:**
 - Must mock zero or one external boundary (the CLI's `/api/*` fetch calls)
 - Must mock at most one internal module
-- If a test needs more, lift the logic out of the component into `web/src/lib/` and test it there
+- If a test needs more, lift the logic out of the component into `packages/web/src/lib/` and test it there
 
-There are no web UI tests today. If you add the first one, set up a JSDOM Vitest project under `web/` rather than mixing it into the Node test config.
+Web tests live alongside their modules under `packages/web/src/lib/__tests__/` and use happy-dom (set per-file via the `// @vitest-environment happy-dom` directive). Vitest runs from the workspace root and picks up tests in any package.
 
 ## What to Test
 
@@ -92,7 +92,7 @@ If a test needs 2+ internal mocks, the test is testing the mock setup, not the a
 3. **Never mock more than one external-service boundary** per test file.
 4. **Never mock more than one internal module** per test file.
 5. **Never test that a component "renders without crashing"** — TypeScript already guarantees this.
-6. **Factory functions over inline object literals.** Use `make*` or `create*` helpers in `src/__tests__/fixtures.ts` (or alongside the test file) with overrides.
+6. **Factory functions over inline object literals.** Use `make*` or `create*` helpers in `packages/cli/src/__tests__/fixtures.ts` (or alongside the test file) with overrides.
 7. **One clear behavior per test.** Name by behavior, not method name.
 8. **Arrange-Act-Assert.** One clear action per test.
 9. **Use a real DB, not a mock.** Spin up a temp SQLite via the existing fixtures. Drizzle/better-sqlite3 are fast enough that mocking them is never the right call.
@@ -135,6 +135,6 @@ When modifying code that is covered by a slop test (a test that violates the moc
 | Path-resolution / static-file change | Route/server integration | Required |
 | Visual-only UI change | None | N/A |
 | New parser / transformer | Pure unit | Required |
-| New React component (logic-heavy) | Extract logic to `web/src/lib/`, test there | Optional |
+| New React component (logic-heavy) | Extract logic to `packages/web/src/lib/`, test there | Optional |
 | New React component (display-only) | None | N/A |
 | New schema migration | Route integration that exercises new columns | Required |
