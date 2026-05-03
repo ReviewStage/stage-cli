@@ -17,7 +17,8 @@
       "!**/node_modules",
       "!**/dist",
       "!**/web-dist",
-      "!**/drizzle"
+      "!**/drizzle",
+      "!packages/web/src/routeTree.gen.ts"
     ]
   },
   "linter": {

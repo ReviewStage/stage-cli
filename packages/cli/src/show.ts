@@ -14,7 +14,7 @@ export async function show(jsonPath: string): Promise<void> {
 		routes: [...runRoutes(db), ...viewStateRoutes(db), ...diffRoutes(db)],
 	});
 	const { port } = handle;
-	const url = `http://${LOOPBACK_HOST}:${port}/#/runs/${runId}`;
+	const url = `http://${LOOPBACK_HOST}:${port}/runs/${encodeURIComponent(runId)}`;
 
 	process.stdout.write(`Listening on ${url}\n`);
 	process.stdout.write("Press Ctrl+C to exit.\n");

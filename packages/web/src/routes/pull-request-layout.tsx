@@ -1,13 +1,12 @@
+import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { BookOpen, FileText } from "lucide-react";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ElementType, useEffect, useMemo, useRef, useState } from "react";
 import { SectionLabel } from "@/components/pull-request/section-label";
 import { useFileDiffEntries } from "@/lib/parse-diff";
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useViewStateData } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
-import { ChaptersIndexPage } from "./chapters-index-page";
-import { FilesPage } from "./files-page";
 
 const PR_TAB = {
 	CHAPTERS: "chapters",
@@ -18,27 +17,28 @@ type PrTab = (typeof PR_TAB)[keyof typeof PR_TAB];
 interface TabDef {
 	id: PrTab;
 	label: string;
-	icon: React.ElementType;
+	icon: ElementType;
+	to: "/runs/$runId" | "/runs/$runId/files";
 }
 
 const tabs: TabDef[] = [
-	{ id: PR_TAB.CHAPTERS, label: "Chapters", icon: BookOpen },
-	{ id: PR_TAB.FILES, label: "Files changed", icon: FileText },
+	{ id: PR_TAB.CHAPTERS, label: "Chapters", icon: BookOpen, to: "/runs/$runId" },
+	{ id: PR_TAB.FILES, label: "Files changed", icon: FileText, to: "/runs/$runId/files" },
 ];
 
 interface TabLinkProps {
 	tab: TabDef;
+	runId: string;
 	isActive: boolean;
-	onSelect: (tab: PrTab) => void;
 	countLabel?: string;
 }
 
-function TabLink({ tab, isActive, onSelect, countLabel }: TabLinkProps) {
-	const { icon: Icon, label } = tab;
+function TabLink({ tab, runId, isActive, countLabel }: TabLinkProps) {
+	const { icon: Icon, label, to } = tab;
 	return (
-		<button
-			type="button"
-			onClick={() => onSelect(tab.id)}
+		<Link
+			to={to}
+			params={{ runId }}
 			className={cn(
 				"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 font-medium text-sm transition-colors",
 				isActive
@@ -51,7 +51,7 @@ function TabLink({ tab, isActive, onSelect, countLabel }: TabLinkProps) {
 			{countLabel !== undefined && (
 				<span className="text-muted-foreground text-xs tabular-nums">{countLabel}</span>
 			)}
-		</button>
+		</Link>
 	);
 }
 
@@ -69,8 +69,14 @@ function ErrorState({ error }: { error: unknown }) {
 }
 
 export function PullRequestLayout({ runId }: { runId: string }) {
-	const { data, isLoading, error } = useChapters(runId);
-	const [activeTab, setActiveTab] = useState<PrTab>(PR_TAB.CHAPTERS);
+	const { data, error } = useChapters(runId);
+	const activeTab = useRouterState({
+		select: (state): PrTab => {
+			const routeIds = new Set(state.matches.map((match) => match.routeId));
+			if (routeIds.has("/runs/$runId/files")) return PR_TAB.FILES;
+			return PR_TAB.CHAPTERS;
+		},
+	});
 
 	const { chapterIdSet, filePathSet } = useViewStateData(runId);
 	const chapters = data?.chapters;
@@ -145,8 +151,8 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 							<TabLink
 								key={tab.id}
 								tab={tab}
+								runId={runId}
 								isActive={tab.id === activeTab}
-								onSelect={setActiveTab}
 								countLabel={
 									tab.id === PR_TAB.CHAPTERS
 										? chapterCountLabel
@@ -159,15 +165,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 					</div>
 					<div className="flex shrink-0 items-center gap-3" />
 				</nav>
-				{activeTab === PR_TAB.CHAPTERS && (
-					<ChaptersIndexPage
-						chapters={chapters}
-						runId={runId}
-						viewedCount={viewedChapterCount}
-						isLoading={isLoading}
-					/>
-				)}
-				{activeTab === PR_TAB.FILES && <FilesPage runId={runId} />}
+				<Outlet />
 			</div>
 		</div>
 	);
