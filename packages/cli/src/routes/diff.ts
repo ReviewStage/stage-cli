@@ -133,7 +133,7 @@ function streamGitDiff(
 			} else {
 				// Headers were already sent, so we can't change the status. Log and terminate
 				// the response — the client will see a truncated patch.
-				process.stderr.write(`git diff failed mid-stream (exit ${code}): ${stderr}`);
+				process.stderr.write(`git diff failed mid-stream (exit ${code}): ${stderr}\n`);
 				if (!res.writableEnded) res.end();
 			}
 			settle();
