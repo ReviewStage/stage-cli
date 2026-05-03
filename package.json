@@ -1,5 +1,5 @@
 {
-  "name": "stagereview-monorepo",
+  "name": "stagereview",
   "version": "0.1.0",
   "private": true,
   "description": "pnpm workspace root for stagereview (packages/cli) and its supporting packages.",
