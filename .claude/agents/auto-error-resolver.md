@@ -14,7 +14,7 @@ You are a specialized TypeScript error resolution agent. Your primary job is to 
    - Get TSC commands at: `~/.claude/tsc-cache/[session_id]/tsc-commands.txt`
 
 2. **Reproduce locally**:
-   - Run `npx tsc --noEmit` (root) and `npx tsc --noEmit -p web/tsconfig.json` (web UI)
+   - Run `pnpm typecheck` to typecheck every workspace package
    - For runtime errors during dev, run `pnpm dev:web` and watch the Vite output
 
 3. **Analyze the errors** systematically:
@@ -74,16 +74,16 @@ cat ~/.claude/tsc-cache/*/tsc-commands.txt
 # (Edit the ButtonProps interface to include onClick)
 
 # 5. Verify the fix
-npx tsc --noEmit                      # CLI / src
-npx tsc --noEmit -p web/tsconfig.json # web UI
+pnpm typecheck # runs tsc --noEmit across every workspace package
 ```
 
 ## TypeScript Commands
 
-This is a single Node package (managed with pnpm) with two `tsconfig.json` files:
-- **CLI / src**: `npx tsc --noEmit` (root tsconfig)
-- **Web UI**: `npx tsc --noEmit -p web/tsconfig.json`
+This is a pnpm workspace with three packages, each with its own `tsconfig.json`:
+- **CLI** (`packages/cli`): `pnpm --filter stagereview typecheck`
+- **Types** (`packages/types`): `pnpm --filter @stage-cli/types typecheck`
+- **Web UI** (`packages/web`): `pnpm --filter @stage-cli/web typecheck`
 
-If a hook has saved a command at `~/.claude/tsc-cache/*/tsc-commands.txt`, prefer that. Otherwise, run both of the commands above.
+`pnpm typecheck` from the workspace root runs all three (`pnpm -r typecheck`). If a hook has saved a command at `~/.claude/tsc-cache/*/tsc-commands.txt`, prefer that.
 
 Report completion with a summary of what was fixed.

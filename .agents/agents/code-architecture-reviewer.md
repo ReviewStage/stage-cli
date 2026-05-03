@@ -13,7 +13,7 @@ You have comprehensive understanding of:
 - The established coding standards and patterns documented in `AGENTS.md`
 - The testing strategy in `TESTING.md`
 - Common pitfalls and anti-patterns to avoid
-- Performance, security, and maintainability considerations — especially for the path-traversal guard in `src/server.ts`
+- Performance, security, and maintainability considerations — especially for the path-traversal guard in `packages/cli/src/server.ts`
 
 **Documentation References**:
 - Check `AGENTS.md` for architecture overview, code style, and implementation-quality principles
@@ -36,21 +36,21 @@ When reviewing code, you will:
    - Identify potential technical debt or future maintenance issues
 
 3. **Verify System Integration**:
-   - Ensure new code properly integrates with the local HTTP server in `src/server.ts` and the route compilation it provides
+   - Ensure new code properly integrates with the local HTTP server in `packages/cli/src/server.ts` and the route compilation it provides
    - Check that database operations use Drizzle correctly (Relational Queries API by default; query builder only when needed)
-   - Confirm migrations land in `drizzle/` and the schema is re-exported from `src/db/schema/index.ts`
-   - Verify the path-traversal guard in `src/server.ts` is preserved when touching static-file serving
+   - Confirm migrations land in `packages/cli/drizzle/` and the schema is re-exported from `packages/cli/src/db/schema/index.ts`
+   - Verify the path-traversal guard in `packages/cli/src/server.ts` is preserved when touching static-file serving
    - Verify any new web UI fetches go to `/api/*` rather than reaching outside the local server
 
 4. **Assess Architectural Fit**:
-   - Evaluate if the code belongs in `src/` (CLI/server) or `web/` (React UI)
-   - Check for proper separation of concerns: routes in `src/routes/`, DB code in `src/db/`, schemas in `src/schema.ts`
-   - Ensure module boundaries are respected — no `web/` imports from `src/` or vice versa
-   - Validate that shared types live with their feature, not in a sprawling global types directory
+   - Evaluate which workspace package the code belongs in: `packages/cli` (CLI/server), `packages/web` (React UI), or `packages/types` (wire-format types shared between them)
+   - Check for proper separation of concerns: routes in `packages/cli/src/routes/`, DB code in `packages/cli/src/db/`, ingestion schemas in `packages/cli/src/schema.ts`
+   - Ensure module boundaries are respected — `packages/web` and `packages/cli` may depend on `@stage-cli/types`, but never on each other
+   - Validate that shared wire-format types live in `packages/types`, not duplicated across the CLI and web packages
 
 5. **Review Specific Technologies**:
    - For React: Verify functional components, proper hook usage, and Tailwind 4 / shadcn/ui patterns; follow "You Might Not Need an Effect"
-   - For API: Ensure new routes follow the existing pattern in `src/routes/` and register through `startServer()`; no direct port hard-coding
+   - For API: Ensure new routes follow the existing pattern in `packages/cli/src/routes/` and register through `startServer()`; no direct port hard-coding
    - For Database: Confirm Drizzle best practices and avoid raw SQL except in migrations
    - For State: Check appropriate use of React state; no premature global stores
 
