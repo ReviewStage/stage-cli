@@ -5,7 +5,7 @@ import { SectionLabel } from "@/components/pull-request/section-label";
 import { useFileDiffEntries } from "@/lib/parse-diff";
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
-import { useViewStateData } from "@/lib/use-view-state";
+import { countViewedChapters, useViewStateData } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
 
 const PR_TAB = {
@@ -80,12 +80,10 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 
 	const { chapterIdSet, filePathSet } = useViewStateData(runId);
 	const chapters = data?.chapters;
-	const viewedChapterCount = useMemo(() => {
-		if (!chapters) return 0;
-		let n = 0;
-		for (const c of chapters) if (chapterIdSet.has(c.externalId)) n++;
-		return n;
-	}, [chapters, chapterIdSet]);
+	const viewedChapterCount = useMemo(
+		() => countViewedChapters(chapters, chapterIdSet),
+		[chapters, chapterIdSet],
+	);
 
 	// Fetched here so the Files tab's "N/M viewed" label can render before the
 	// user clicks into the tab; react-query dedupes the same fetch from FilesPage.

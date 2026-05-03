@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { useChapters } from "@/lib/use-chapters";
-import { useViewStateData } from "@/lib/use-view-state";
+import { countViewedChapters, useViewStateData } from "@/lib/use-view-state";
 import { ChaptersIndexPage } from "@/routes/chapters-index-page";
 
 export const Route = createFileRoute("/runs/$runId/")({
@@ -13,12 +13,10 @@ function ChaptersRoute() {
 	const { data, isLoading } = useChapters(runId);
 	const { chapterIdSet } = useViewStateData(runId);
 	const chapters = data?.chapters;
-	const viewedCount = useMemo(() => {
-		if (!chapters) return 0;
-		let n = 0;
-		for (const chapter of chapters) if (chapterIdSet.has(chapter.externalId)) n++;
-		return n;
-	}, [chapters, chapterIdSet]);
+	const viewedCount = useMemo(
+		() => countViewedChapters(chapters, chapterIdSet),
+		[chapters, chapterIdSet],
+	);
 
 	return (
 		<ChaptersIndexPage
