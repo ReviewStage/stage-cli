@@ -2,7 +2,7 @@ import { ChevronRight, CircleCheck, FileText, Folder, Search } from "lucide-reac
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FILE_STATUS, type PullRequestFile } from "@/lib/diff-types";
 import { FILE_STATUS_ICONS, FILE_STATUS_TEXT_COLORS } from "@/lib/file-status";
-import { buildFileTree, collapseEmptyFolders, type FileNode, sortFileNodes } from "@/lib/file-tree";
+import { buildFileTree, collapseEmptyFolders, type FileNode, sortFileTree } from "@/lib/file-tree";
 import { cn } from "@/lib/utils";
 import { CollapsiblePicker } from "./collapsible-picker";
 
@@ -23,7 +23,7 @@ export function FilePicker({
 }: FilePickerProps) {
 	const [filter, setFilter] = useState("");
 
-	const tree = useMemo(() => collapseEmptyFolders(buildFileTree(files)), [files]);
+	const tree = useMemo(() => collapseEmptyFolders(sortFileTree(buildFileTree(files))), [files]);
 
 	const filteredTree = useMemo(() => {
 		if (!filter) return tree;
@@ -43,10 +43,7 @@ export function FilePicker({
 		return filterNode(tree) ?? { ...tree, children: new Map() };
 	}, [tree, filter]);
 
-	const rootChildren = useMemo(
-		() => sortFileNodes(Array.from(filteredTree.children.values())),
-		[filteredTree],
-	);
+	const rootChildren = useMemo(() => Array.from(filteredTree.children.values()), [filteredTree]);
 
 	const filterInput = (
 		<div className="relative">
@@ -139,10 +136,7 @@ function FilePickerTreeItem({
 		}
 	}, [activeFilePath, node, filter]);
 
-	const children = useMemo(
-		() => sortFileNodes(Array.from(node.children.values())),
-		[node.children],
-	);
+	const children = useMemo(() => Array.from(node.children.values()), [node.children]);
 
 	if (node.type === "file" && node.file) {
 		const file = node.file;

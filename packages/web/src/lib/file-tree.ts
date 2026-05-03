@@ -51,8 +51,29 @@ export function buildFileTree(files: PullRequestFile[]): FileNode {
 }
 
 /**
+ * Recursively orders each node's children: folders before files, alphabetical
+ * within each group. Must run before `collapseEmptyFolders` so the sort key is
+ * the raw single-segment `name` (e.g. "apps") rather than the post-collapse
+ * merged name (e.g. "apps/web/src"), keeping sort and collapse independent.
+ */
+export function sortFileTree(node: FileNode): FileNode {
+	const sorted = Array.from(node.children.values())
+		.sort((a, b) => {
+			if (a.type !== b.type) return a.type === FILE_NODE_TYPE.FOLDER ? -1 : 1;
+			return a.name.localeCompare(b.name);
+		})
+		.map(sortFileTree);
+
+	const children = new Map<string, FileNode>();
+	for (const child of sorted) children.set(child.name, child);
+	return { ...node, children };
+}
+
+/**
  * Collapses folder nodes that have exactly one child which is also a folder.
- * `apps/` → `web/` → `src/` → `file.tsx` becomes `apps/web/src/` → `file.tsx`.
+ * For example, `apps/` → `web/` → `src/` → `file.tsx` becomes `apps/web/src/` → `file.tsx`.
+ * Purely presentational: preserves child iteration order, so collapsing a
+ * sorted tree leaves its order intact.
  */
 export function collapseEmptyFolders(node: FileNode): FileNode {
 	const collapsedChildren = new Map<string, FileNode>();
@@ -79,31 +100,21 @@ export function collapseEmptyFolders(node: FileNode): FileNode {
 	return { ...node, children: collapsedChildren };
 }
 
-export function sortFileNodes(nodes: FileNode[]): FileNode[] {
-	return [...nodes].sort((a, b) => {
-		if (a.type !== b.type) return a.type === FILE_NODE_TYPE.FOLDER ? -1 : 1;
-		return a.name.localeCompare(b.name);
-	});
-}
-
 /**
- * Comparator that orders flat file paths the same way `FilePicker` walks its
- * tree: at each path segment, folders come before files, alphabetical within
- * each group. Keeps the diff list in lockstep with the sidebar.
+ * Returns the leaf files of a tree in iteration order. Pair with
+ * `sortFileTree` to get files in the same order the picker renders them.
  */
-export function compareFilePaths(a: string, b: string): number {
-	const aParts = a.split("/");
-	const bParts = b.split("/");
-	const minLen = Math.min(aParts.length, bParts.length);
-	for (let i = 0; i < minLen; i++) {
-		const aPart = aParts[i];
-		const bPart = bParts[i];
-		if (aPart === undefined || bPart === undefined) break;
-		if (aPart === bPart) continue;
-		const aIsFile = i === aParts.length - 1;
-		const bIsFile = i === bParts.length - 1;
-		if (aIsFile !== bIsFile) return aIsFile ? 1 : -1;
-		return aPart.localeCompare(bPart);
+export function flattenFileTree(node: FileNode): PullRequestFile[] {
+	const result: PullRequestFile[] = [];
+	function visit(n: FileNode): void {
+		for (const child of n.children.values()) {
+			if (child.type === FILE_NODE_TYPE.FILE && child.file) {
+				result.push(child.file);
+			} else {
+				visit(child);
+			}
+		}
 	}
-	return aParts.length - bParts.length;
+	visit(node);
+	return result;
 }

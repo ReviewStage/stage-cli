@@ -7,8 +7,8 @@ import {
 } from "@/components/files";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FILE_STATUS } from "@/lib/diff-types";
-import { compareFilePaths } from "@/lib/file-tree";
-import { useFileDiffEntries } from "@/lib/parse-diff";
+import { buildFileTree, flattenFileTree, sortFileTree } from "@/lib/file-tree";
+import { type FileDiffEntry, useFileDiffEntries } from "@/lib/parse-diff";
 import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
@@ -22,12 +22,7 @@ export function FilesPage({ runId }: FilesPageProps) {
 	const { data, isLoading, error } = useDiffPatch(runId);
 
 	const rawEntries = useFileDiffEntries(data);
-	// Match the sidebar tree's order so the flat list and scroll-spy traverse
-	// files in the same sequence the user sees.
-	const entries = useMemo(
-		() => [...rawEntries].sort((a, b) => compareFilePaths(a.file.path, b.file.path)),
-		[rawEntries],
-	);
+	const entries = useMemo(() => sortFileDiffEntries(rawEntries), [rawEntries]);
 	const files = useMemo(() => entries.map((e) => e.file), [entries]);
 
 	const { filePathSet, markFileViewed, unmarkFileViewed } = useViewState(runId);
@@ -88,6 +83,18 @@ export function FilesPage({ runId }: FilesPageProps) {
 			/>
 		</SidebarLayout>
 	);
+}
+
+function sortFileDiffEntries(entries: FileDiffEntry[]): FileDiffEntry[] {
+	const entryByPath = new Map(entries.map((entry) => [entry.file.path, entry]));
+	const sortedFiles = flattenFileTree(
+		sortFileTree(buildFileTree(entries.map((entry) => entry.file))),
+	);
+	return sortedFiles.map((file) => {
+		const entry = entryByPath.get(file.path);
+		if (!entry) throw new Error(`Missing diff entry for sorted file ${file.path}`);
+		return entry;
+	});
 }
 
 function FilesPageSkeleton() {
