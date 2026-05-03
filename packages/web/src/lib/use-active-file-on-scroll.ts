@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PullRequestFile } from "./diff-types";
 
 const HEADER_OFFSET = 96;
+// Generous enough to outlast browser-defined smooth-scroll animations
+// (typically 300–500ms) so the scrollend that fires when the click-driven
+// scroll settles can't override the user's manual selection.
+const MANUAL_SELECTION_SUPPRESS_MS = 800;
 
 /**
  * Tracks which file diff is currently active based on scroll position.
@@ -17,9 +21,9 @@ export function useActiveFileOnScroll(files: PullRequestFile[]) {
 
 	const setActiveFileManually = useCallback((path: string) => {
 		setActiveFilePath(path);
-		// Suppress the next scrollend so a click-driven scroll doesn't immediately
-		// re-pick a different file when the animation settles.
-		suppressUntilRef.current = Date.now() + 100;
+		// Suppress the next scrollend so a click-driven smooth scroll doesn't
+		// re-pick a different file when its animation settles.
+		suppressUntilRef.current = Date.now() + MANUAL_SELECTION_SUPPRESS_MS;
 	}, []);
 
 	useEffect(() => {
