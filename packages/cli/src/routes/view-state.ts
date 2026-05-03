@@ -19,17 +19,27 @@ export function viewStateRoutes(db: StageDb): Route[] {
 			method: "POST",
 			pattern: "/api/chapter-view/:chapterId",
 			handler: (_req, res, params) => {
-				const ids = resolveChapterIds(db, params.chapterId);
-				if (ids.length === 0) {
+				const rows = resolveChapterRows(db, params.chapterId);
+				if (rows.length === 0) {
 					writeJson(res, 404, { error: `Chapter ${params.chapterId} not found` });
 					return;
 				}
 				// Fan out across every chapter row sharing this externalId so view-state survives
 				// re-imports of the same diff (PLA-117). For a uuid param this collapses to one row.
-				db.insert(chapterView)
-					.values(ids.map((id) => ({ userId: LOCAL_USER_ID, chapterId: id })))
-					.onConflictDoNothing()
-					.run();
+				db.transaction((tx) => {
+					tx.insert(chapterView)
+						.values(rows.map((r) => ({ userId: LOCAL_USER_ID, chapterId: r.id })))
+						.onConflictDoNothing()
+						.run();
+					// Cascade: marking a chapter viewed implicitly marks every file the
+					// chapter touches as viewed too. Mirrors hosted's chapter→file
+					// behavior (which writes through GitHub's per-file viewed-state) —
+					// here we write directly to file_view since that's our local store.
+					const fileViewRows = chapterFileViewRows(rows);
+					if (fileViewRows.length > 0) {
+						tx.insert(fileView).values(fileViewRows).onConflictDoNothing().run();
+					}
+				});
 				writeJson(res, 200, {});
 			},
 		},
@@ -37,15 +47,26 @@ export function viewStateRoutes(db: StageDb): Route[] {
 			method: "DELETE",
 			pattern: "/api/chapter-view/:chapterId",
 			handler: (_req, res, params) => {
-				const ids = resolveChapterIds(db, params.chapterId);
-				if (ids.length === 0) {
+				const rows = resolveChapterRows(db, params.chapterId);
+				if (rows.length === 0) {
 					// Idempotent: if the chapter doesn't exist there's nothing to delete. The SPA
 					// shouldn't have to distinguish "row was gone" from "chapter was gone".
 					writeJson(res, 200, {});
 					return;
 				}
+				// Direct file_view rows are intentionally preserved on chapter unmark —
+				// a file the user marked from the Files tab (or another chapter) shouldn't
+				// silently disappear when one of its containing chapters is unmarked.
 				db.delete(chapterView)
-					.where(and(eq(chapterView.userId, LOCAL_USER_ID), inArray(chapterView.chapterId, ids)))
+					.where(
+						and(
+							eq(chapterView.userId, LOCAL_USER_ID),
+							inArray(
+								chapterView.chapterId,
+								rows.map((r) => r.id),
+							),
+						),
+					)
 					.run();
 				writeJson(res, 200, {});
 			},
@@ -187,22 +208,43 @@ export function viewStateRoutes(db: StageDb): Route[] {
 	];
 }
 
+interface ResolvedChapterRow {
+	id: string;
+	runId: string;
+	hunkRefs: typeof chapter.$inferSelect.hunkRefs;
+}
+
 // Returns every chapter row matching the param: a singleton when given a uuid, or every
 // chapter sharing an externalId (re-imports of the same scope). Empty array means 404.
-function resolveChapterIds(db: StageDb, idOrExternalId: string | undefined): string[] {
+function resolveChapterRows(db: StageDb, idOrExternalId: string | undefined): ResolvedChapterRow[] {
 	if (!idOrExternalId) return [];
-	const byPk = db
-		.select({ id: chapter.id })
-		.from(chapter)
-		.where(eq(chapter.id, idOrExternalId))
-		.all();
-	if (byPk.length > 0) return byPk.map((r) => r.id);
-	return db
-		.select({ id: chapter.id })
-		.from(chapter)
-		.where(eq(chapter.externalId, idOrExternalId))
-		.all()
-		.map((r) => r.id);
+	const cols = { id: chapter.id, runId: chapter.runId, hunkRefs: chapter.hunkRefs };
+	const byPk = db.select(cols).from(chapter).where(eq(chapter.id, idOrExternalId)).all();
+	if (byPk.length > 0) return byPk;
+	return db.select(cols).from(chapter).where(eq(chapter.externalId, idOrExternalId)).all();
+}
+
+// Builds the file_view rows that the chapter→file cascade should insert. Each
+// chapter contributes one row per distinct file in its hunkRefs, scoped to the
+// chapter's runId so the same path in a different run stays unaffected.
+function chapterFileViewRows(
+	rows: ResolvedChapterRow[],
+): Array<{ userId: string; runId: string; filePath: string }> {
+	// Dedupe within (runId, filePath) pairs so we don't generate duplicate rows
+	// when externalId fan-out hits multiple imports of the same scope.
+	const seen = new Set<string>();
+	const out: Array<{ userId: string; runId: string; filePath: string }> = [];
+	for (const row of rows) {
+		const filePaths = new Set<string>();
+		for (const ref of row.hunkRefs) filePaths.add(ref.filePath);
+		for (const filePath of filePaths) {
+			const key = `${row.runId} ${filePath}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			out.push({ userId: LOCAL_USER_ID, runId: row.runId, filePath });
+		}
+	}
+	return out;
 }
 
 function resolveKeyChangeIds(db: StageDb, idOrExternalId: string | undefined): string[] {

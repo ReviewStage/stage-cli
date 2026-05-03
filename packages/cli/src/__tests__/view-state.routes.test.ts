@@ -189,6 +189,62 @@ describe("view-state API", () => {
 		expect(second.status).toBe(200);
 	});
 
+	it("POST /api/chapter-view/:chapterId cascades file_view rows for each path in the chapter's hunkRefs", async () => {
+		// Seed a chapter that touches two files so the cascade has more than one path.
+		const db = getDb({ dbPath });
+		const fixture = makeFixture({
+			chapters: [
+				{
+					id: "chapter-multi",
+					order: 1,
+					title: "Multi-file chapter",
+					summary: "Touches two files.",
+					hunkRefs: [
+						{ filePath: "src/foo.ts", oldStart: 1 },
+						{ filePath: "src/foo.ts", oldStart: 50 }, // duplicate path → still one row
+						{ filePath: "src/bar.ts", oldStart: 1 },
+					],
+					keyChanges: [],
+				},
+			],
+		});
+		insertChaptersFile(db, fixture, "/repo");
+		const [chapterRow] = db.select().from(chapter).limit(1).all();
+		if (!chapterRow) throw new Error("seed: missing chapter");
+
+		const { port } = await startWithRoutes();
+		const res = await request(port, "POST", `/api/chapter-view/${chapterRow.id}`);
+		expect(res.status).toBe(200);
+
+		const fileRows = db.select().from(fileView).where(eq(fileView.runId, chapterRow.runId)).all();
+		expect(fileRows.map((r) => r.filePath).sort()).toEqual(["src/bar.ts", "src/foo.ts"]);
+
+		// And the cascade is reflected in GET view-state.
+		const view = await request(port, "GET", `/api/runs/${chapterRow.runId}/view-state`);
+		expect((view.body as { filePaths: string[] }).filePaths.sort()).toEqual([
+			"src/bar.ts",
+			"src/foo.ts",
+		]);
+	});
+
+	it("DELETE /api/chapter-view/:chapterId preserves cascaded file_view rows (direct marks survive chapter unmark)", async () => {
+		const { chapterUuid, runId } = seedRun();
+		const { port } = await startWithRoutes();
+
+		await request(port, "POST", `/api/chapter-view/${chapterUuid}`);
+		const db = getDb({ dbPath });
+		const beforeUnmark = db.select().from(fileView).where(eq(fileView.runId, runId)).all();
+		expect(beforeUnmark.length).toBeGreaterThan(0);
+
+		await request(port, "DELETE", `/api/chapter-view/${chapterUuid}`);
+		// chapter_view row gone, but the file_view rows the cascade inserted stay —
+		// they outlive the chapter mark so a user's manual file mark from the Files
+		// tab can never be silently undone by toggling a chapter's view state.
+		expect(db.select().from(chapterView).all()).toHaveLength(0);
+		const afterUnmark = db.select().from(fileView).where(eq(fileView.runId, runId)).all();
+		expect(afterUnmark).toHaveLength(beforeUnmark.length);
+	});
+
 	it("POST /api/chapter-view/:chapterId returns 404 for unknown chapter (no FK 500)", async () => {
 		const { port } = await startWithRoutes();
 		const res = await request(
