@@ -227,22 +227,66 @@ describe("view-state API", () => {
 		]);
 	});
 
-	it("DELETE /api/chapter-view/:chapterId preserves cascaded file_view rows (direct marks survive chapter unmark)", async () => {
+	it("DELETE /api/chapter-view/:chapterId cascades the unmark to the chapter's files", async () => {
 		const { chapterUuid, runId } = seedRun();
 		const { port } = await startWithRoutes();
 
 		await request(port, "POST", `/api/chapter-view/${chapterUuid}`);
 		const db = getDb({ dbPath });
-		const beforeUnmark = db.select().from(fileView).where(eq(fileView.runId, runId)).all();
-		expect(beforeUnmark.length).toBeGreaterThan(0);
+		expect(
+			db.select().from(fileView).where(eq(fileView.runId, runId)).all().length,
+		).toBeGreaterThan(0);
 
 		await request(port, "DELETE", `/api/chapter-view/${chapterUuid}`);
-		// chapter_view row gone, but the file_view rows the cascade inserted stay —
-		// they outlive the chapter mark so a user's manual file mark from the Files
-		// tab can never be silently undone by toggling a chapter's view state.
+		// Symmetric with POST: unmarking the chapter clears the file_view rows it
+		// inserted so the Files-changed tab's "N/M viewed" count reflects the
+		// chapter being unviewed.
 		expect(db.select().from(chapterView).all()).toHaveLength(0);
-		const afterUnmark = db.select().from(fileView).where(eq(fileView.runId, runId)).all();
-		expect(afterUnmark).toHaveLength(beforeUnmark.length);
+		expect(db.select().from(fileView).where(eq(fileView.runId, runId)).all()).toHaveLength(0);
+	});
+
+	it("DELETE /api/chapter-view/:chapterId scopes the cascade to that chapter's hunkRef paths", async () => {
+		// File X belongs to chapter A, file Y belongs to chapter B. Marking A
+		// then unmarking A should clear X but leave Y untouched, even though Y
+		// was independently file-view'd.
+		const db = getDb({ dbPath });
+		const fixture = makeFixture({
+			chapters: [
+				{
+					id: "ch-a",
+					order: 1,
+					title: "A",
+					summary: "",
+					hunkRefs: [{ filePath: "x.ts", oldStart: 1 }],
+					keyChanges: [],
+				},
+				{
+					id: "ch-b",
+					order: 2,
+					title: "B",
+					summary: "",
+					hunkRefs: [{ filePath: "y.ts", oldStart: 1 }],
+					keyChanges: [],
+				},
+			],
+		});
+		insertChaptersFile(db, fixture, "/repo");
+		const chapters = db.select().from(chapter).all();
+		const chapterA = chapters.find((c) => c.chapterIndex === 1);
+		const chapterB = chapters.find((c) => c.chapterIndex === 2);
+		if (!chapterA || !chapterB) throw new Error("seed: missing chapters");
+
+		const { port } = await startWithRoutes();
+		await request(port, "POST", `/api/chapter-view/${chapterA.id}`);
+		await request(port, "POST", `/api/chapter-view/${chapterB.id}`);
+		await request(port, "DELETE", `/api/chapter-view/${chapterA.id}`);
+
+		const remaining = db
+			.select({ filePath: fileView.filePath })
+			.from(fileView)
+			.where(eq(fileView.runId, chapterA.runId))
+			.all();
+		expect(remaining.map((r) => r.filePath)).toEqual(["y.ts"]);
 	});
 
 	it("POST /api/chapter-view/:chapterId returns 404 for unknown chapter (no FK 500)", async () => {

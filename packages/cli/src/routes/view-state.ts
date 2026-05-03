@@ -54,20 +54,37 @@ export function viewStateRoutes(db: StageDb): Route[] {
 					writeJson(res, 200, {});
 					return;
 				}
-				// Direct file_view rows are intentionally preserved on chapter unmark —
-				// a file the user marked from the Files tab (or another chapter) shouldn't
-				// silently disappear when one of its containing chapters is unmarked.
-				db.delete(chapterView)
-					.where(
-						and(
-							eq(chapterView.userId, LOCAL_USER_ID),
-							inArray(
-								chapterView.chapterId,
-								rows.map((r) => r.id),
+				db.transaction((tx) => {
+					tx.delete(chapterView)
+						.where(
+							and(
+								eq(chapterView.userId, LOCAL_USER_ID),
+								inArray(
+									chapterView.chapterId,
+									rows.map((r) => r.id),
+								),
 							),
-						),
-					)
-					.run();
+						)
+						.run();
+					// Symmetric counterpart to the POST cascade: unmarking a chapter
+					// also unmarks every file the chapter touches, so the Files-changed
+					// tab's "N/M viewed" label tracks the chapter state. A file that
+					// belongs to multiple chapters loses its mark from this delete; the
+					// next refetch re-derives the correct count from whatever's left.
+					const cascadeRows = chapterFileViewRows(rows);
+					if (cascadeRows.length === 0) return;
+					const runIds = Array.from(new Set(cascadeRows.map((r) => r.runId)));
+					const filePaths = Array.from(new Set(cascadeRows.map((r) => r.filePath)));
+					tx.delete(fileView)
+						.where(
+							and(
+								eq(fileView.userId, LOCAL_USER_ID),
+								inArray(fileView.runId, runIds),
+								inArray(fileView.filePath, filePaths),
+							),
+						)
+						.run();
+				});
 				writeJson(res, 200, {});
 			},
 		},
