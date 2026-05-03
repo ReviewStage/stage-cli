@@ -23,7 +23,7 @@ interface FileDiffListProps {
 	collapseState: CollapseState;
 }
 
-const STICKY_HEADER_OFFSET = 64;
+const FILE_TOP_PADDING = 16;
 
 export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(function FileDiffList(
 	{ entries, emptyMessage, viewedPathSet, onToggleViewed, collapseState },
@@ -35,7 +35,11 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 			scrollToFile(filePath: string) {
 				const el = document.getElementById(`file-${filePath}`);
 				if (!el) return;
-				const top = el.getBoundingClientRect().top + window.scrollY - STICKY_HEADER_OFFSET;
+				const stickyOffset = parseFloat(
+					getComputedStyle(el).getPropertyValue("--content-top") || "0",
+				);
+				const top =
+					el.getBoundingClientRect().top + window.scrollY - stickyOffset - FILE_TOP_PADDING;
 				window.scrollTo({ top });
 			},
 		}),
