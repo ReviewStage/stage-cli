@@ -144,7 +144,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 				</header>
 				<nav
 					ref={navRef}
-					className="-mx-6 lg:-mx-8 sticky top-12 z-10 mb-6 flex items-center justify-between gap-4 border-border border-b bg-background/95 px-6 lg:px-8 pt-1 pb-2 backdrop-blur"
+					className="-mx-6 lg:-mx-8 sticky top-12 z-10 mb-6 flex items-center justify-between gap-4 bg-background/95 px-6 lg:px-8 pt-1 pb-2 backdrop-blur"
 				>
 					<div className="flex shrink-0 items-center gap-1">
 						{tabs.map((tab) => (
