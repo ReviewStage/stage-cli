@@ -85,3 +85,25 @@ export function sortFileNodes(nodes: FileNode[]): FileNode[] {
 		return a.name.localeCompare(b.name);
 	});
 }
+
+/**
+ * Comparator that orders flat file paths the same way `FilePicker` walks its
+ * tree: at each path segment, folders come before files, alphabetical within
+ * each group. Keeps the diff list in lockstep with the sidebar.
+ */
+export function compareFilePaths(a: string, b: string): number {
+	const aParts = a.split("/");
+	const bParts = b.split("/");
+	const minLen = Math.min(aParts.length, bParts.length);
+	for (let i = 0; i < minLen; i++) {
+		const aPart = aParts[i];
+		const bPart = bParts[i];
+		if (aPart === undefined || bPart === undefined) break;
+		if (aPart === bPart) continue;
+		const aIsFile = i === aParts.length - 1;
+		const bIsFile = i === bParts.length - 1;
+		if (aIsFile !== bIsFile) return aIsFile ? 1 : -1;
+		return aPart.localeCompare(bPart);
+	}
+	return aParts.length - bParts.length;
+}

@@ -7,6 +7,7 @@ import {
 } from "@/components/files";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FILE_STATUS } from "@/lib/diff-types";
+import { compareFilePaths } from "@/lib/file-tree";
 import { useFileDiffEntries } from "@/lib/parse-diff";
 import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
 import { useDiffPatch } from "@/lib/use-diff-patch";
@@ -21,7 +22,13 @@ interface FilesPageProps {
 export function FilesPage({ runId }: FilesPageProps) {
 	const { data, isLoading, error } = useDiffPatch(runId);
 
-	const entries = useFileDiffEntries(data);
+	const rawEntries = useFileDiffEntries(data);
+	// Match the sidebar tree's order so the flat list, scroll-spy, and j/k
+	// navigation all traverse files in the same sequence the user sees.
+	const entries = useMemo(
+		() => [...rawEntries].sort((a, b) => compareFilePaths(a.file.path, b.file.path)),
+		[rawEntries],
+	);
 	const files = useMemo(() => entries.map((e) => e.file), [entries]);
 
 	const { filePathSet, markFileViewed, unmarkFileViewed } = useViewState(runId);
