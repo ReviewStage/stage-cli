@@ -243,6 +243,7 @@ export function FileHeader({
 						<button
 							type="button"
 							onClick={handleCommentClick}
+							aria-label="Comment on this file"
 							className="relative z-10 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
 						>
 							<MessageSquare className="size-3.5" aria-hidden="true" />
