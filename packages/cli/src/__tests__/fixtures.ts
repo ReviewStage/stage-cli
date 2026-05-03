@@ -1,3 +1,4 @@
+import type { RepoContext } from "../git.js";
 import type { ChaptersFile } from "../schema.js";
 
 const SHA = {
@@ -5,6 +6,10 @@ const SHA = {
 	head: "2222222222222222222222222222222222222222",
 	mergeBase: "3333333333333333333333333333333333333333",
 } as const;
+
+export function makeRepoContext(over: Partial<RepoContext> = {}): RepoContext {
+	return { root: "/repo", originUrl: null, ...over };
+}
 
 export function makeFixture(over: Partial<ChaptersFile> = {}): ChaptersFile {
 	return {

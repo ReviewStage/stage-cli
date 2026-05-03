@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getRepoRoot, NotInGitRepoError } from "../db/path.js";
+import { NotInGitRepoError, readRepoRoot } from "../git.js";
 
 function expectedPath(repoRoot: string): string {
 	const hash = createHash("sha256").update(repoRoot.trim()).digest("hex").slice(0, 12);
@@ -27,7 +27,7 @@ describe("getDbPath layout", () => {
 	});
 });
 
-describe("getRepoRoot outside a git repo", () => {
+describe("readRepoRoot outside a git repo", () => {
 	let tmpDir: string;
 	let originalCwd: string;
 
@@ -43,6 +43,6 @@ describe("getRepoRoot outside a git repo", () => {
 	});
 
 	it("throws NotInGitRepoError instead of silently falling back to cwd", () => {
-		expect(() => getRepoRoot()).toThrow(NotInGitRepoError);
+		expect(() => readRepoRoot()).toThrow(NotInGitRepoError);
 	});
 });

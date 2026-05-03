@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, getDb } from "../db/client.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
 import { importChaptersFile, insertChaptersFile } from "../runs/import-chapters.js";
-import { makeFixture } from "./fixtures.js";
+import { makeFixture, makeRepoContext } from "./fixtures.js";
 
 let tmpDir: string;
 let dbPath: string;
@@ -60,8 +60,8 @@ describe("chapter import", () => {
 		const db = getDb({ dbPath });
 		const fixture = makeFixture();
 
-		const first = insertChaptersFile(db, fixture, "/repo");
-		const second = insertChaptersFile(db, fixture, "/repo");
+		const first = insertChaptersFile(db, fixture, makeRepoContext());
+		const second = insertChaptersFile(db, fixture, makeRepoContext());
 
 		expect(first.runId).not.toBe(second.runId);
 		expect(db.select().from(chapterRun).all()).toHaveLength(2);
@@ -72,8 +72,8 @@ describe("chapter import", () => {
 		const db = getDb({ dbPath });
 		const fixture = makeFixture();
 
-		insertChaptersFile(db, fixture, "/repo");
-		insertChaptersFile(db, fixture, "/repo");
+		insertChaptersFile(db, fixture, makeRepoContext());
+		insertChaptersFile(db, fixture, makeRepoContext());
 
 		const all = db.select().from(keyChange).all();
 		expect(all).toHaveLength(2);
@@ -82,8 +82,8 @@ describe("chapter import", () => {
 
 	it("derives stable chapter externalIds across repeated imports of the same scope", () => {
 		const db = getDb({ dbPath });
-		insertChaptersFile(db, makeFixture(), "/repo");
-		insertChaptersFile(db, makeFixture(), "/repo");
+		insertChaptersFile(db, makeFixture(), makeRepoContext());
+		insertChaptersFile(db, makeFixture(), makeRepoContext());
 
 		const all = db.select().from(chapter).all();
 		expect(all).toHaveLength(2);
@@ -100,8 +100,8 @@ describe("chapter import", () => {
 		};
 		const scopeB = { ...scopeA, headSha: "4".repeat(40) };
 
-		insertChaptersFile(db, makeFixture({ scope: scopeA }), "/repo");
-		insertChaptersFile(db, makeFixture({ scope: scopeB }), "/repo");
+		insertChaptersFile(db, makeFixture({ scope: scopeA }), makeRepoContext());
+		insertChaptersFile(db, makeFixture({ scope: scopeB }), makeRepoContext());
 
 		const chapters = db.select().from(chapter).all();
 		expect(chapters).toHaveLength(2);
@@ -120,11 +120,15 @@ describe("chapter import", () => {
 			mergeBaseSha: "3".repeat(40),
 		};
 
-		insertChaptersFile(db, makeFixture({ scope: { kind: "committed", ...shas } }), "/repo");
+		insertChaptersFile(
+			db,
+			makeFixture({ scope: { kind: "committed", ...shas } }),
+			makeRepoContext(),
+		);
 		insertChaptersFile(
 			db,
 			makeFixture({ scope: { kind: "workingTree", ref: "work", ...shas } }),
-			"/repo",
+			makeRepoContext(),
 		);
 
 		const chapters = db.select().from(chapter).all();
@@ -145,7 +149,7 @@ describe("chapter import", () => {
 					mergeBaseSha: "3".repeat(40),
 				},
 			}),
-			"/repo",
+			makeRepoContext(),
 		);
 
 		const [row] = db.select().from(chapterRun).all();
@@ -172,12 +176,12 @@ describe("chapter import", () => {
 
 	it("runs migrations idempotently across reopens", () => {
 		const db1 = getDb({ dbPath });
-		insertChaptersFile(db1, makeFixture(), "/repo");
+		insertChaptersFile(db1, makeFixture(), makeRepoContext());
 		closeDb();
 
 		const db2 = getDb({ dbPath });
 		expect(db2.select().from(chapterRun).all()).toHaveLength(1);
-		insertChaptersFile(db2, makeFixture(), "/repo");
+		insertChaptersFile(db2, makeFixture(), makeRepoContext());
 		expect(db2.select().from(chapterRun).all()).toHaveLength(2);
 	});
 
@@ -186,7 +190,7 @@ describe("chapter import", () => {
 		const dbPathB = path.join(tmpDir, "b.sqlite");
 
 		const dbA = getDb({ dbPath: dbPathA });
-		insertChaptersFile(dbA, makeFixture(), "/repo-a");
+		insertChaptersFile(dbA, makeFixture(), makeRepoContext({ root: "/repo-a" }));
 		closeDb();
 
 		const dbB = getDb({ dbPath: dbPathB });

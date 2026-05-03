@@ -1,8 +1,8 @@
-import path from "node:path";
 import type { Chapter, ChapterRun, KeyChange } from "@stage-cli/types/chapters";
 import { asc, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
+import { parseRepoName } from "../git.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
 
@@ -36,7 +36,7 @@ function mapChapter(ch: ChapterRow, kcs: KeyChangeRow[]): Chapter {
 }
 
 function mapRun(run: ChapterRunRow): ChapterRun {
-	return { id: run.id, repoName: path.basename(run.repoRoot) };
+	return { id: run.id, repoName: parseRepoName(run.originUrl, run.repoRoot) };
 }
 
 export function runRoutes(db: StageDb): Route[] {

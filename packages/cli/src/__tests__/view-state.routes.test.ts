@@ -10,7 +10,7 @@ import { runRoutes } from "../routes/runs.js";
 import { viewStateRoutes } from "../routes/view-state.js";
 import { insertChaptersFile } from "../runs/import-chapters.js";
 import { LOOPBACK_HOST, type ServerHandle, startServer } from "../server.js";
-import { makeFixture } from "./fixtures.js";
+import { makeFixture, makeRepoContext } from "./fixtures.js";
 
 let tmpDir: string;
 let dbPath: string;
@@ -79,7 +79,7 @@ function seedRun(): {
 	keyChangeExternalId: string;
 } {
 	const db = getDb({ dbPath });
-	insertChaptersFile(db, makeFixture(), "/repo");
+	insertChaptersFile(db, makeFixture(), makeRepoContext());
 	const [chapterRow] = db.select().from(chapter).limit(1).all();
 	if (!chapterRow) throw new Error("seed: missing chapter");
 	const [keyChangeRow] = db
@@ -245,8 +245,8 @@ describe("view-state API", () => {
 				mergeBaseSha: "f".repeat(40),
 			},
 		});
-		const runA = insertChaptersFile(db, fixtureA, "/repo");
-		const runB = insertChaptersFile(db, fixtureB, "/repo");
+		const runA = insertChaptersFile(db, fixtureA, makeRepoContext());
+		const runB = insertChaptersFile(db, fixtureB, makeRepoContext());
 
 		const [chapterA] = db.select().from(chapter).where(eq(chapter.runId, runA.runId)).all();
 		const [chapterB] = db.select().from(chapter).where(eq(chapter.runId, runB.runId)).all();
@@ -294,9 +294,9 @@ describe("view-state API", () => {
 		// POST to that externalId must mark both runs viewed; otherwise GET on whichever run
 		// was missed comes back empty even though the content is identical.
 		const db = getDb({ dbPath });
-		insertChaptersFile(db, makeFixture(), "/repo");
+		insertChaptersFile(db, makeFixture(), makeRepoContext());
 		const runA = db.select().from(chapter).all();
-		insertChaptersFile(db, makeFixture(), "/repo");
+		insertChaptersFile(db, makeFixture(), makeRepoContext());
 		const allChapters = db.select().from(chapter).all();
 		const chapterB = allChapters.find((c) => !runA.some((a) => a.id === c.id));
 		if (!chapterB) throw new Error("seed: expected a second chapter row from the re-import");
