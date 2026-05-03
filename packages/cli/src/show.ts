@@ -1,5 +1,6 @@
 import open from "open";
 import { closeDb, getDb } from "./db/client.js";
+import { diffRoutes } from "./routes/diff.js";
 import { runRoutes } from "./routes/runs.js";
 import { viewStateRoutes } from "./routes/view-state.js";
 import { importChaptersFile } from "./runs/import-chapters.js";
@@ -9,7 +10,9 @@ export async function show(jsonPath: string): Promise<void> {
 	const db = getDb();
 	const { runId } = importChaptersFile(jsonPath, db);
 
-	const handle = await startServer({ routes: [...runRoutes(db), ...viewStateRoutes(db)] });
+	const handle = await startServer({
+		routes: [...runRoutes(db), ...viewStateRoutes(db), ...diffRoutes(db)],
+	});
 	const { port } = handle;
 	const url = `http://${LOOPBACK_HOST}:${port}/#/runs/${runId}`;
 
