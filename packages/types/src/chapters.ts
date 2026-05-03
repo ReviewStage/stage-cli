@@ -48,6 +48,7 @@ export type Chapter = z.infer<typeof ChapterSchema>;
 
 export const ChapterRunSchema = z.object({
 	id: z.string(),
+	repoName: z.string(),
 });
 export type ChapterRun = z.infer<typeof ChapterRunSchema>;
 

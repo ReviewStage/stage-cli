@@ -1,10 +1,9 @@
-import { type ChaptersResponse, ChaptersResponseSchema } from "@stage-cli/types/chapters";
-import { useQuery } from "@tanstack/react-query";
 import { BookOpen, FileText } from "lucide-react";
 import { useMemo, useState } from "react";
 import { SectionLabel } from "@/components/pull-request/section-label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { jsonFetch, useViewStateData } from "@/lib/use-view-state";
+import { useChapters } from "@/lib/use-chapters";
+import { useViewStateData } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
 import { ChaptersIndexPage } from "./chapters-index-page";
 
@@ -77,7 +76,7 @@ function TabLink({ tab, isActive, onSelect, countLabel }: TabLinkProps) {
 
 function ErrorState({ error }: { error: unknown }) {
 	return (
-		<div className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
+		<div className="flex flex-1 items-center justify-center p-6">
 			<div className="max-w-md text-center">
 				<h1 className="font-semibold text-lg">Couldn't load chapters</h1>
 				<p className="mt-2 text-muted-foreground text-sm">
@@ -89,15 +88,7 @@ function ErrorState({ error }: { error: unknown }) {
 }
 
 export function PullRequestLayout({ runId }: { runId: string }) {
-	const { data, isLoading, error } = useQuery<ChaptersResponse>({
-		queryKey: ["chapters", runId],
-		// Parse at the boundary — schema drift surfaces here as a query error,
-		// not as a render crash inside ChaptersIndexPage.
-		queryFn: async () => {
-			const raw = await jsonFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}/chapters`);
-			return ChaptersResponseSchema.parse(raw);
-		},
-	});
+	const { data, isLoading, error } = useChapters(runId);
 	const [activeTab, setActiveTab] = useState<PrTab>(PR_TAB.CHAPTERS);
 
 	// Lift the viewed count out of ChaptersIndexPage so the tab strip can render
@@ -125,13 +116,13 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 	if (error) return <ErrorState error={error} />;
 
 	return (
-		<div className="flex min-h-screen flex-col bg-background text-foreground">
+		<div className="flex flex-1 flex-col">
 			<div className="flex-1 px-6 pt-6 pb-16 lg:px-8">
 				<header className="mb-4 space-y-1">
 					<SectionLabel>Run</SectionLabel>
 					<p className="break-all font-mono text-foreground/80 text-xs">{data?.run.id ?? runId}</p>
 				</header>
-				<nav className="-mx-6 lg:-mx-8 sticky top-0 z-10 mb-6 flex items-center justify-between gap-4 border-border border-b bg-background/95 px-6 lg:px-8 pt-1 pb-2 backdrop-blur">
+				<nav className="-mx-6 lg:-mx-8 sticky top-12 z-10 mb-6 flex items-center justify-between gap-4 border-border border-b bg-background/95 px-6 lg:px-8 pt-1 pb-2 backdrop-blur">
 					<div className="flex shrink-0 items-center gap-1">
 						{tabs.map((tab) => (
 							<TabLink
