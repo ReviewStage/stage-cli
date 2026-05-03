@@ -45,7 +45,7 @@ describe("useViewState — writes", () => {
 
 	it("unmarkChapterViewed deletes and removes from cache", async () => {
 		const script = makeFetchScript({
-			viewState: { run1: { chapterIds: ["chap-1"], keyChangeIds: [] } },
+			viewState: { run1: { chapterIds: ["chap-1"], keyChangeIds: [], filePaths: [] } },
 		});
 		installFetch(script);
 		const { Wrapper } = makeWrapper();
@@ -84,6 +84,32 @@ describe("useViewState — writes", () => {
 		await waitFor(() => expect(result.current.isKeyChangeChecked("kc-1")).toBe(false));
 		expect(
 			script.calls.some((c) => c.method === "DELETE" && c.url === "/api/key-change-view/kc-1"),
+		).toBe(true);
+	});
+
+	it("markFileViewed / unmarkFileViewed round-trip via /api/runs/:runId/file-views", async () => {
+		const script = makeFetchScript({ mutateRuns: ["run1"] });
+		installFetch(script);
+		const { Wrapper } = makeWrapper();
+
+		const { result } = renderHook(() => useViewState("run1"), { wrapper: Wrapper });
+		await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+		act(() => {
+			result.current.markFileViewed("src/foo.ts");
+		});
+		await waitFor(() => expect(result.current.isFileViewed("src/foo.ts")).toBe(true));
+		expect(
+			script.calls.some((c) => c.method === "POST" && c.url === "/api/runs/run1/file-views"),
+		).toBe(true);
+		expect(script.viewState.run1?.filePaths).toContain("src/foo.ts");
+
+		act(() => {
+			result.current.unmarkFileViewed("src/foo.ts");
+		});
+		await waitFor(() => expect(result.current.isFileViewed("src/foo.ts")).toBe(false));
+		expect(
+			script.calls.some((c) => c.method === "DELETE" && c.url === "/api/runs/run1/file-views"),
 		).toBe(true);
 	});
 

@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { ThemeProvider } from "./lib/theme";
+import { DiffSettingsProvider } from "./lib/use-diff-settings";
 import "./styles/globals.css";
 
 const rootElement = document.getElementById("root");
@@ -25,7 +26,9 @@ createRoot(rootElement).render(
 	<StrictMode>
 		<ThemeProvider>
 			<QueryClientProvider client={queryClient}>
-				<App />
+				<DiffSettingsProvider>
+					<App />
+				</DiffSettingsProvider>
 			</QueryClientProvider>
 		</ThemeProvider>
 	</StrictMode>,
