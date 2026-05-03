@@ -226,6 +226,7 @@ function runExists(db: StageDb, runId: string): boolean {
 		.select({ id: chapterRun.id })
 		.from(chapterRun)
 		.where(eq(chapterRun.id, runId))
+		.limit(1)
 		.all();
 	return rows.length > 0;
 }
