@@ -12,7 +12,6 @@ import { useFileDiffEntries } from "@/lib/parse-diff";
 import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
-import { useFileNavigationKeys } from "@/lib/use-file-navigation-keys";
 import { useViewState } from "@/lib/use-view-state";
 
 interface FilesPageProps {
@@ -23,8 +22,8 @@ export function FilesPage({ runId }: FilesPageProps) {
 	const { data, isLoading, error } = useDiffPatch(runId);
 
 	const rawEntries = useFileDiffEntries(data);
-	// Match the sidebar tree's order so the flat list, scroll-spy, and j/k
-	// navigation all traverse files in the same sequence the user sees.
+	// Match the sidebar tree's order so the flat list and scroll-spy traverse
+	// files in the same sequence the user sees.
 	const entries = useMemo(
 		() => [...rawEntries].sort((a, b) => compareFilePaths(a.file.path, b.file.path)),
 		[rawEntries],
@@ -65,8 +64,6 @@ export function FilesPage({ runId }: FilesPageProps) {
 		},
 		[setActiveFileManually],
 	);
-
-	useFileNavigationKeys(files, handleSelectFile, files.length > 0);
 
 	if (error) return <FilesPageError error={error} />;
 	if (isLoading || data === undefined) return <FilesPageSkeleton />;
