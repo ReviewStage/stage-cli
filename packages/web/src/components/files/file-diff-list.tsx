@@ -36,7 +36,7 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 				const el = document.getElementById(`file-${filePath}`);
 				if (!el) return;
 				const top = el.getBoundingClientRect().top + window.scrollY - STICKY_HEADER_OFFSET;
-				window.scrollTo({ top, behavior: "smooth" });
+				window.scrollTo({ top });
 			},
 		}),
 		[],
