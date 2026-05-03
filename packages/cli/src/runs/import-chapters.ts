@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { getDb, type StageDb } from "../db/client.js";
-import { getRepoRoot } from "../db/path.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
+import { type RepoContext, readRepoContext } from "../git.js";
 import { type ChaptersFile, ChaptersFileSchema, SCOPE_KIND, type Scope } from "../schema.js";
 
 export interface ImportChaptersResult {
@@ -17,19 +17,20 @@ export function importChaptersFile(jsonPath: string, db: StageDb = getDb()): Imp
 	const raw = readFileSync(absolute, "utf8");
 	const parsed = JSON.parse(raw) as unknown;
 	const file = ChaptersFileSchema.parse(parsed);
-	return insertChaptersFile(db, file, getRepoRoot());
+	return insertChaptersFile(db, file, readRepoContext());
 }
 
 export function insertChaptersFile(
 	db: StageDb,
 	file: ChaptersFile,
-	repoRoot: string,
+	repo: RepoContext,
 ): ImportChaptersResult {
 	return db.transaction((tx) => {
 		const [runRow] = tx
 			.insert(chapterRun)
 			.values({
-				repoRoot,
+				repoRoot: repo.root,
+				originUrl: repo.originUrl,
 				scopeKind: file.scope.kind,
 				workingTreeRef: file.scope.kind === SCOPE_KIND.WORKING_TREE ? file.scope.ref : null,
 				baseSha: file.scope.baseSha,

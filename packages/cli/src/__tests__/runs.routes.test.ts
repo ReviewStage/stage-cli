@@ -7,7 +7,7 @@ import { closeDb, getDb } from "../db/client.js";
 import { runRoutes } from "../routes/runs.js";
 import { insertChaptersFile } from "../runs/import-chapters.js";
 import { LOOPBACK_HOST, type ServerHandle, startServer } from "../server.js";
-import { makeFixture } from "./fixtures.js";
+import { makeFixture, makeRepoContext } from "./fixtures.js";
 
 let tmpDir: string;
 let dbPath: string;
@@ -93,7 +93,7 @@ describe("runs API", () => {
 				},
 			],
 		});
-		const { runId } = insertChaptersFile(db, fixture, "/repo");
+		const { runId } = insertChaptersFile(db, fixture, makeRepoContext());
 
 		const { port } = await startWithRoutes();
 		const res = await getJson(port, `/api/runs/${runId}/chapters`);
@@ -144,7 +144,7 @@ describe("runs API", () => {
 				},
 			],
 		});
-		const { runId } = insertChaptersFile(db, fixture, "/repo");
+		const { runId } = insertChaptersFile(db, fixture, makeRepoContext());
 
 		const { port } = await startWithRoutes();
 		const res = await getJson(port, `/api/runs/${runId}/chapters`);
@@ -161,7 +161,7 @@ describe("runs API", () => {
 
 	it("omits the denormalized chapter.keyChanges content array from the response", async () => {
 		const db = getDb({ dbPath });
-		const { runId } = insertChaptersFile(db, makeFixture(), "/repo");
+		const { runId } = insertChaptersFile(db, makeFixture(), makeRepoContext());
 
 		const { port } = await startWithRoutes();
 		const res = await getJson(port, `/api/runs/${runId}/chapters`);

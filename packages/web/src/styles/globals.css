@@ -169,9 +169,10 @@
   --hunk-highlight-focused-bg: rgba(59, 130, 246, 0.18);
   --hunk-highlight-focused-border: rgba(59, 130, 246, 0.72);
 
-  /* Top offset for sticky chapter file headers — 0 unless an ancestor
-     overrides (e.g. a sticky chapter nav above the diff list). */
-  --content-top: 0px;
+  /* Top offset for sticky chapter file headers — clears the topbar
+     (h-12 / 3rem) plus the tab nav that sticks below it (also ~3rem).
+     Ancestors can override when a layout omits the tab nav. */
+  --content-top: 6rem;
 }
 
 /* Dark theme - Veil: slightly warmer, lighter than pure black */

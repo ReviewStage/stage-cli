@@ -4,6 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Stage CLI</title>
+    <script>
+      // Apply the persisted theme before paint to avoid a flash of the wrong
+      // theme. Mirrors the runtime logic in src/lib/theme.tsx.
+      (function () {
+        try {
+          var stored = localStorage.getItem("ui-theme");
+          var theme = stored && ["light", "dark", "system"].indexOf(stored) !== -1 ? stored : "system";
+          var resolved =
+            theme === "system"
+              ? window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : theme;
+          document.documentElement.classList.add(resolved);
+        } catch (e) {
+          var fallback = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          document.documentElement.classList.add(fallback);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
