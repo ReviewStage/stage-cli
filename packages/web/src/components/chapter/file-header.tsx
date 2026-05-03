@@ -51,7 +51,7 @@ interface FileHeaderProps {
 	onToggle: () => void;
 	onToggleAll: () => void;
 	onToggleExpand: () => void;
-	onComment: () => void;
+	onComment?: () => void;
 	onToggleViewed?: () => void;
 	onCopyPath?: (path: string, label: string) => void;
 }
@@ -82,11 +82,6 @@ export function FileHeader({
 		[onCopyPath],
 	);
 
-	const handleCommentClick = (e: MouseEvent) => {
-		e.stopPropagation();
-		onComment();
-	};
-
 	const handleToggleClick = (e: MouseEvent<HTMLElement>) => {
 		e.stopPropagation();
 		if (e.altKey) {
@@ -95,6 +90,13 @@ export function FileHeader({
 		}
 		onToggle();
 	};
+
+	const handleCommentClick = onComment
+		? (e: MouseEvent) => {
+				e.stopPropagation();
+				onComment();
+			}
+		: undefined;
 
 	const handleExpandClick = (e: MouseEvent) => {
 		e.stopPropagation();
@@ -235,18 +237,21 @@ export function FileHeader({
 					<TooltipContent>{isViewed ? "Mark as unviewed" : "Mark as viewed"}</TooltipContent>
 				</Tooltip>
 			)}
-			<Tooltip>
-				<TooltipTrigger asChild>
-					<button
-						type="button"
-						onClick={handleCommentClick}
-						className="relative z-10 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-					>
-						<MessageSquare className="size-3.5" aria-hidden="true" />
-					</button>
-				</TooltipTrigger>
-				<TooltipContent>Comment on this file</TooltipContent>
-			</Tooltip>
+			{handleCommentClick && (
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<button
+							type="button"
+							onClick={handleCommentClick}
+							aria-label="Comment on this file"
+							className="relative z-10 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+						>
+							<MessageSquare className="size-3.5" aria-hidden="true" />
+						</button>
+					</TooltipTrigger>
+					<TooltipContent>Comment on this file</TooltipContent>
+				</Tooltip>
+			)}
 		</div>
 	);
 }
