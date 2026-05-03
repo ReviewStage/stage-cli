@@ -430,31 +430,59 @@ describe("view-state API", () => {
 		);
 	});
 
-	it("DELETE /api/runs/:runId/file-views cascades to remove chapter_file_view rows for that path", async () => {
+	it("DELETE /api/runs/:runId/file-views cascades to remove chapter state for that path", async () => {
 		// Without the cascade, a direct file unmark followed by a chapter mark/unmark
 		// cycle could resurrect file_view via the coverage rule. The cascade clears
-		// chapter_file_view across every chapter in the run that touches the path.
-		const { chapterUuid, runId } = seedRun();
+		// chapter state across every chapter in the run that touches the path.
+		const db = getDb({ dbPath });
+		const fixture = makeFixture({
+			chapters: [
+				{
+					id: "ch-a",
+					order: 1,
+					title: "A",
+					summary: "",
+					hunkRefs: [{ filePath: "x.ts", oldStart: 1 }],
+					keyChanges: [],
+				},
+				{
+					id: "ch-b",
+					order: 2,
+					title: "B",
+					summary: "",
+					hunkRefs: [{ filePath: "y.ts", oldStart: 1 }],
+					keyChanges: [],
+				},
+			],
+		});
+		insertChaptersFile(db, fixture, makeRepoContext());
+		const chapters = db.select().from(chapter).all();
+		const chapterA = chapters.find((c) => c.chapterIndex === 1);
+		const chapterB = chapters.find((c) => c.chapterIndex === 2);
+		if (!chapterA || !chapterB) throw new Error("seed: missing chapters");
 		const { port } = await startWithRoutes();
 
-		await request(port, "POST", `/api/chapter-view/${chapterUuid}`);
-		const db = getDb({ dbPath });
-		// Sanity: chapter mark inserted both chapter_file_view and file_view.
-		const cfvBefore = db.select().from(chapterFileView).all();
-		expect(cfvBefore.length).toBeGreaterThan(0);
-		const path = cfvBefore[0]?.filePath;
-		if (!path) throw new Error("seed: expected a chapter_file_view row");
+		await request(port, "POST", `/api/chapter-view/${chapterA.id}`);
+		await request(port, "POST", `/api/chapter-view/${chapterB.id}`);
+		expect(db.select().from(chapterView).all()).toHaveLength(2);
 
 		// Direct unmark from the Files tab.
-		const res = await requestWithBody(port, "DELETE", `/api/runs/${runId}/file-views`, { path });
+		const res = await requestWithBody(port, "DELETE", `/api/runs/${chapterA.runId}/file-views`, {
+			path: "x.ts",
+		});
 		expect(res.status).toBe(200);
 
-		expect(db.select().from(fileView).where(eq(fileView.filePath, path)).all()).toHaveLength(0);
-		// And the chapter_file_view rows for that path are wiped, so a chapter
-		// mark/unmark cycle can no longer resurrect file_view via coverage.
+		expect(db.select().from(fileView).where(eq(fileView.filePath, "x.ts")).all()).toHaveLength(0);
+		expect(db.select().from(fileView).where(eq(fileView.filePath, "y.ts")).all()).toHaveLength(1);
 		expect(
-			db.select().from(chapterFileView).where(eq(chapterFileView.filePath, path)).all(),
+			db.select().from(chapterFileView).where(eq(chapterFileView.filePath, "x.ts")).all(),
 		).toHaveLength(0);
+		expect(
+			db.select().from(chapterView).where(eq(chapterView.chapterId, chapterA.id)).all(),
+		).toHaveLength(0);
+		expect(
+			db.select().from(chapterView).where(eq(chapterView.chapterId, chapterB.id)).all(),
+		).toHaveLength(1);
 	});
 
 	it("POST /api/chapter-view/:chapterId returns 404 for unknown chapter (no FK 500)", async () => {

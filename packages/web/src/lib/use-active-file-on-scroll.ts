@@ -7,14 +7,6 @@ const HEADER_OFFSET = 96;
 // scroll settles can't override the user's manual selection.
 const MANUAL_SELECTION_SUPPRESS_MS = 800;
 
-/**
- * Tracks which file diff is currently active based on scroll position.
- *
- * Uses `scrollend` events for reliable, flicker-free updates — the active file
- * advances once when scrolling settles, not continuously during the animation.
- *
- * Returns `activeFilePath` plus `setActiveFileManually` for clicks/keyboard nav.
- */
 export function useActiveFileOnScroll(files: PullRequestFile[]) {
 	const [activeFilePath, setActiveFilePath] = useState<string | undefined>();
 	const suppressUntilRef = useRef(0);

@@ -81,9 +81,8 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		return n;
 	}, [chapters, chapterIdSet]);
 
-	// Fetch diff at the layout level so the Files-changed tab can show a
-	// "viewed" count that reflects the same patch the FilesPage will render.
-	// react-query dedupes the request when FilesPage runs the same query key.
+	// Fetched here so the Files tab's "N/M viewed" label can render before the
+	// user clicks into the tab; react-query dedupes the same fetch from FilesPage.
 	const { data: patch } = useDiffPatch(runId);
 	const fileEntries = useFileDiffEntries(patch);
 	const totalFileCount = fileEntries.length;
@@ -96,9 +95,8 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		return n;
 	}, [fileEntries, filePathSet, totalFileCount]);
 
-	// Mirrors hosted's chapterCountLabel: just the total when nothing's been
-	// viewed yet, otherwise "X/N viewed". Drops the count entirely if the
-	// chapters API hasn't responded yet.
+	// `undefined` while loading so the count chip is suppressed entirely;
+	// otherwise the bare total until at least one item is viewed.
 	const chapterCountLabel = (() => {
 		if (chapters === undefined) return undefined;
 		if (viewedChapterCount > 0) return `${viewedChapterCount}/${chapters.length} viewed`;
@@ -111,10 +109,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		return String(totalFileCount);
 	})();
 
-	// `--content-top` (height of the sticky tab nav) and `--main-height` (visible
-	// scroll viewport) are read by `SidebarLayout` / `CollapsiblePicker` so the
-	// file-picker sticks below the nav and stretches to the bottom of the page.
-	// Mirrors hosted-stage's `AppShell` + nav-measurement pattern.
+	// `--content-top` and `--main-height` are read by the sticky file picker.
 	const navRef = useRef<HTMLElement>(null);
 	const [navHeight, setNavHeight] = useState(0);
 	useEffect(() => {
@@ -128,8 +123,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 
 	if (error) return <ErrorState error={error} />;
 
-	// Topbar is 48px (h-12) and sticks above the PR layout, so the picker sticks
-	// 48px + the measured PR-nav height from the top of the viewport.
+	// 48 = the app-shell Topbar's `h-12`, which the picker also has to clear.
 	const layoutStyle = {
 		"--content-top": `${48 + navHeight}px`,
 		"--main-height": "100vh",
@@ -163,8 +157,6 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 							/>
 						))}
 					</div>
-					{/* Right-side action group reserved for collapse-all / display
-              settings in a follow-up. */}
 					<div className="flex shrink-0 items-center gap-3" />
 				</nav>
 				{activeTab === PR_TAB.CHAPTERS && (

@@ -4,12 +4,9 @@ import { chapter } from "./chapter.js";
 import { baseColumns } from "./columns.js";
 
 /**
- * Per-(chapter, file) viewed mark. Inserted when a chapter is marked viewed
- * for every file in its hunkRefs. Mirrors hosted-stage's `chapter_file_view`.
- *
- * The global `file_view` row for a path is only set once *every* chapter in
- * the run that touches that path has a row here — so a file shared across
- * chapters stays unviewed in the Files tab until each chapter has marked it.
+ * Per-(chapter, file) viewed mark. The global `file_view` row for a path is
+ * only set once every chapter in the run touching that path has a row here,
+ * so a file shared across chapters stays unviewed until each one marks it.
  */
 export const chapterFileView = sqliteTable(
 	"chapter_file_view",
@@ -27,9 +24,8 @@ export const chapterFileView = sqliteTable(
 			table.chapterId,
 			table.filePath,
 		),
-		// Bulk-delete-by-chapter (chapter unmark) is the dominant write pattern,
-		// so keep an index on chapterId; the unique constraint above already
-		// covers (userId, chapterId, filePath) lookups.
+		// Chapter unmark bulk-deletes by chapterId; the unique above only helps
+		// (userId, chapterId, filePath) lookups, not chapterId alone.
 		index("chapter_file_view_chapter_id_idx").on(table.chapterId),
 	],
 );

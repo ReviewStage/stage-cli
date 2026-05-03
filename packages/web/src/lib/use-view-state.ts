@@ -95,13 +95,8 @@ export interface UseViewStateResult extends UseViewStateDataResult {
 	unmarkFileViewed: (filePath: string) => void;
 }
 
-/**
- * Read-only view-state for components that just need to know what's viewed.
- * Returns memoized Sets so callers can include them as effect/memo deps
- * without re-running on every render. Components that also need to mutate
- * view-state should use `useViewState` instead — calling this hook avoids
- * instantiating the four mutation hooks.
- */
+// Returns stable Sets so callers can use them as effect/memo deps.
+// Read-only — `useViewState` adds the mutation hooks on top of this.
 export function useViewStateData(runId: string): UseViewStateDataResult {
 	const { data, isLoading, error } = useQuery<ViewState>({
 		queryKey: viewStateQueryKey(runId),

@@ -8,12 +8,9 @@ interface SidebarLayoutProps {
 }
 
 /**
- * Two-column layout used by the Files-changed tab. Mirrors hosted-stage's
- * `SidebarLayout`: the sidebar pulls left to align with the page edge (counter
- * to the route's `px-6 lg:px-8`) and the main column gets `min-w-0` so its
- * children can overflow within the column instead of pushing it wider.
- *
- * The sidebar itself owns its sticky/scroll behavior via CollapsiblePicker.
+ * The sidebar pulls left to align with the page edge (counter to the route's
+ * `px-6 lg:px-8`); the main column needs `min-w-0` so its children can
+ * overflow within the column instead of pushing it wider.
  */
 export function SidebarLayout({ children, sidebar, className }: SidebarLayoutProps) {
 	return (

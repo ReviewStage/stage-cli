@@ -15,11 +15,6 @@ interface CollapsiblePickerProps {
 	defaultExpanded?: boolean;
 }
 
-/**
- * Sticky sidebar picker with collapse/expand behavior. Mirrors hosted-stage's
- * `CollapsiblePicker` — auto-collapses on narrow viewports and slides the panel
- * out as a hover overlay when collapsed so the file list is one mouse-over away.
- */
 export function CollapsiblePicker({
 	icon: Icon,
 	title,
@@ -87,7 +82,6 @@ export function CollapsiblePicker({
 				)}
 				style={{ zIndex }}
 			>
-				{/* Collapsed strip — icon + indicator dots */}
 				<aside className="flex h-[calc(var(--main-height,100vh)_-_var(--content-top))] w-10 flex-col items-center pt-[14px] pb-3">
 					<Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 					<div className="scrollbar-none mt-2 flex flex-col items-center gap-1 overflow-y-auto pb-1">
@@ -95,7 +89,7 @@ export function CollapsiblePicker({
 					</div>
 				</aside>
 
-				{/* Hover overlay — clip wrapper hides the panel when slid left */}
+				{/* Clip wrapper hides the slid-left panel until the strip is hovered. */}
 				<div
 					className="pointer-events-none absolute top-0 left-0 h-full w-64 overflow-hidden group-hover/picker:pointer-events-auto"
 					style={{ zIndex }}

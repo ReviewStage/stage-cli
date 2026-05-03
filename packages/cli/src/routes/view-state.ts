@@ -27,18 +27,16 @@ export function viewStateRoutes(db: StageDb): Route[] {
 					writeJson(res, 404, { error: `Chapter ${params.chapterId} not found` });
 					return;
 				}
-				// Fan out across every chapter row sharing this externalId so view-state survives
-				// re-imports of the same diff (PLA-117). For a uuid param this collapses to one row.
+				// External-id fan-out: re-imports of the same diff produce multiple chapter
+				// rows sharing one externalId, and view-state must survive across them.
 				db.transaction((tx) => {
 					tx.insert(chapterView)
 						.values(rows.map((r) => ({ userId: LOCAL_USER_ID, chapterId: r.id })))
 						.onConflictDoNothing()
 						.run();
 
-					// Per-chapter mark: one chapter_file_view row per (chapter, file). The
-					// global file_view row is only set further down once *every* chapter in
-					// the run that touches that path has a row here — mirrors hosted's "all
-					// chapters covered → file is viewed" rule.
+					// file_view is only promoted once every chapter in the run touching a
+					// path has a chapter_file_view row for it — see promoteFullyCoveredFiles.
 					const cfvInserts = chapterFileViewInserts(rows);
 					if (cfvInserts.length === 0) {
 						writeJson(res, 200, {});
@@ -81,11 +79,9 @@ export function viewStateRoutes(db: StageDb): Route[] {
 						)
 						.run();
 
-					// "Any chapter unmarked → unmark the files in that chapter" — clears the
-					// global file_view row for every path the unmarked chapter touched, even
-					// if other chapters still have chapter_file_view rows for it. Mirrors
-					// hosted's rule 4. The next chapter mark on a covering chapter will
-					// re-promote it via promoteFullyCoveredFiles.
+					// Unconditional file_view clear for every path the unmarked chapter
+					// touched, even if other chapters still cover the path. A future mark
+					// on any covering chapter re-promotes via promoteFullyCoveredFiles.
 					const touched = touchedRunPaths(rows);
 					if (touched.length === 0) return;
 					const runIds = Array.from(new Set(touched.map((t) => t.runId)));
@@ -136,8 +132,8 @@ export function viewStateRoutes(db: StageDb): Route[] {
 				writeJson(res, 200, {});
 			},
 		},
-		// File-view endpoints take the path in the body so file paths with `/` separators
-		// don't have to be URL-encoded into route segments.
+		// File-view endpoints carry the path in the body so `/` separators don't
+		// have to be URL-encoded into route segments.
 		{
 			method: "POST",
 			pattern: "/api/runs/:runId/file-views",
@@ -155,9 +151,8 @@ export function viewStateRoutes(db: StageDb): Route[] {
 				const parsed = await parseFileViewBody(req, res);
 				if (!parsed) return;
 
-				// Direct mark from the Files tab: only writes file_view. We deliberately
-				// don't backfill chapter_file_view — the user's intent is "I've reviewed
-				// this file globally", not "this file is covered by every chapter".
+				// Direct file mark deliberately doesn't backfill chapter_file_view — the
+				// intent is "I've reviewed this file", not "every chapter covers it".
 				db.insert(fileView)
 					.values({ userId: LOCAL_USER_ID, runId, filePath: parsed.path })
 					.onConflictDoNothing()
@@ -182,10 +177,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 				const parsed = await parseFileViewBody(req, res);
 				if (!parsed) return;
 
-				// Cascade direct file unmark across every chapter in this run that's
-				// marked the same file — without this, a chapter mark/unmark cycle
-				// after the unmark would resurrect file_view via the coverage rule.
-				// Mirrors hosted's per-file unmark cascade.
+				// Cascade to chapter state too, matching hosted's file-unview behavior.
 				db.transaction((tx) => {
 					tx.delete(fileView)
 						.where(
@@ -197,19 +189,22 @@ export function viewStateRoutes(db: StageDb): Route[] {
 						)
 						.run();
 
-					const chapterIds = tx
-						.select({ id: chapter.id })
-						.from(chapter)
-						.where(eq(chapter.runId, runId))
-						.all()
-						.map((r) => r.id);
-					if (chapterIds.length === 0) return;
+					const affectedChapterIds = chaptersContainingFile(tx, runId, parsed.path);
+					if (affectedChapterIds.length === 0) return;
 					tx.delete(chapterFileView)
 						.where(
 							and(
 								eq(chapterFileView.userId, LOCAL_USER_ID),
 								eq(chapterFileView.filePath, parsed.path),
-								inArray(chapterFileView.chapterId, chapterIds),
+								inArray(chapterFileView.chapterId, affectedChapterIds),
+							),
+						)
+						.run();
+					tx.delete(chapterView)
+						.where(
+							and(
+								eq(chapterView.userId, LOCAL_USER_ID),
+								inArray(chapterView.chapterId, affectedChapterIds),
 							),
 						)
 						.run();
@@ -232,8 +227,8 @@ export function viewStateRoutes(db: StageDb): Route[] {
 					return;
 				}
 
-				// Returning external_id (not the uuid PK) is what makes view-state survive content
-				// regenerations — see PLA-116 for the externalId derivation.
+				// Returning external_id (not the uuid PK) is what makes view-state
+				// survive content regenerations.
 				const viewedChapters = db
 					.select({ externalId: chapter.externalId })
 					.from(chapterView)
@@ -271,8 +266,8 @@ interface ResolvedChapterRow {
 	hunkRefs: typeof chapter.$inferSelect.hunkRefs;
 }
 
-// Returns every chapter row matching the param: a singleton when given a uuid, or every
-// chapter sharing an externalId (re-imports of the same scope). Empty array means 404.
+// Looks up by uuid first, falling back to externalId so re-imports of the same
+// scope (which share an externalId across chapter rows) all get the cascade.
 function resolveChapterRows(db: StageDb, idOrExternalId: string | undefined): ResolvedChapterRow[] {
 	if (!idOrExternalId) return [];
 	const cols = { id: chapter.id, runId: chapter.runId, hunkRefs: chapter.hunkRefs };
@@ -281,7 +276,6 @@ function resolveChapterRows(db: StageDb, idOrExternalId: string | undefined): Re
 	return db.select(cols).from(chapter).where(eq(chapter.externalId, idOrExternalId)).all();
 }
 
-// One chapter_file_view row per (chapter, distinct hunkRef path).
 function chapterFileViewInserts(
 	rows: ResolvedChapterRow[],
 ): Array<{ userId: string; chapterId: string; filePath: string }> {
@@ -302,8 +296,6 @@ interface RunPath {
 	filePath: string;
 }
 
-// Distinct (runId, filePath) pairs touched by the affected chapters' hunkRefs.
-// Used as the input set for both promotion (POST) and unmarking (DELETE).
 function touchedRunPaths(rows: ResolvedChapterRow[]): RunPath[] {
 	const seen = new Set<string>();
 	const out: RunPath[] = [];
@@ -319,22 +311,16 @@ function touchedRunPaths(rows: ResolvedChapterRow[]): RunPath[] {
 }
 
 /**
- * For each (runId, filePath) just touched by a chapter mark, promote the file
- * to globally-viewed (insert into file_view) iff every chapter in the run
- * whose hunkRefs contain that path has a chapter_file_view row for it.
- *
- * Two queries: one to count "containing" chapters per (runId, filePath),
- * one to count "marked" chapters. When the counts match (and are non-zero),
- * the file is fully covered.
+ * Promotes file_view for each touched (runId, filePath) iff every chapter in
+ * the run whose hunkRefs contain that path has a chapter_file_view row for it.
  */
 function promoteFullyCoveredFiles(tx: Tx, touched: RunPath[]): void {
 	if (touched.length === 0) return;
 	const runIds = Array.from(new Set(touched.map((t) => t.runId)));
 	const paths = Array.from(new Set(touched.map((t) => t.filePath)));
 
-	// "Containing" chapters: count chapters in the affected runs whose hunkRefs
-	// reference each path. hunkRefs is JSON, so we do the filter in JS — bounded
-	// by the chapter count of the affected runs (typically a few dozen).
+	// hunkRefs is JSON-stored, so we filter in JS. Bounded by the chapter count
+	// of the affected runs (typically a few dozen).
 	const allChapters = tx
 		.select({ id: chapter.id, runId: chapter.runId, hunkRefs: chapter.hunkRefs })
 		.from(chapter)
@@ -343,7 +329,6 @@ function promoteFullyCoveredFiles(tx: Tx, touched: RunPath[]): void {
 
 	const containing = countChaptersPerPath(allChapters, runIds, paths);
 
-	// "Marked" chapters: chapter_file_view rows joined back to chapter to recover runId.
 	const markedRows = tx
 		.select({
 			chapterId: chapterFileView.chapterId,
@@ -362,9 +347,9 @@ function promoteFullyCoveredFiles(tx: Tx, touched: RunPath[]): void {
 		.all();
 	const marked = countChaptersFromRows(markedRows);
 
-	// Promote where containing == marked (and > 0). marked is always a subset of
-	// containing because chapter_file_view rows are only inserted for the chapter's
-	// own hunkRefs, so the equality check is sufficient.
+	// `marked` is always a subset of `containing` (chapter_file_view rows are
+	// only inserted for files in the chapter's own hunkRefs), so size equality
+	// is enough to detect full coverage.
 	const inserts: Array<{ userId: string; runId: string; filePath: string }> = [];
 	for (const t of touched) {
 		const have = marked.get(t.runId)?.get(t.filePath) ?? 0;
@@ -415,6 +400,16 @@ function countChaptersFromRows(
 	const out: CountMap = new Map();
 	for (const row of rows) bumpCount(out, row.runId, row.filePath);
 	return out;
+}
+
+function chaptersContainingFile(tx: Tx, runId: string, filePath: string): string[] {
+	return tx
+		.select({ id: chapter.id, hunkRefs: chapter.hunkRefs })
+		.from(chapter)
+		.where(eq(chapter.runId, runId))
+		.all()
+		.filter((row) => row.hunkRefs.some((ref) => ref.filePath === filePath))
+		.map((row) => row.id);
 }
 
 function resolveKeyChangeIds(db: StageDb, idOrExternalId: string | undefined): string[] {

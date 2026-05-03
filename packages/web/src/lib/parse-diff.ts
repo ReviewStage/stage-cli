@@ -2,23 +2,15 @@ import { type FileDiffMetadata, parsePatchFiles } from "@pierre/diffs";
 import { useMemo } from "react";
 import { FILE_STATUS, type FileStatus, type PullRequestFile } from "./diff-types";
 
-/**
- * `parsePatchFiles` returns one ParsedPatch per `From <commit>` block in the
- * input. `git diff` output (no commit envelope) yields a single ParsedPatch.
- * We flatten across patches so callers see one flat list of files regardless.
- */
+// Flatten across ParsedPatch envelopes — `parsePatchFiles` returns one per
+// `From <commit>` block, but plain `git diff` output yields a single envelope
+// and callers don't need to care which.
 export function parsePatchToFileDiffs(patch: string): FileDiffMetadata[] {
 	if (!patch.trim()) return [];
 	const parsed = parsePatchFiles(patch);
 	return parsed.flatMap((p) => p.files);
 }
 
-/**
- * Bridge from `@pierre/diffs`'s `FileDiffMetadata` to stage-cli's
- * `PullRequestFile`. Hosted's diff viewer expects `PullRequestFile` shape
- * (path, additions, deletions, status, hunks) — we adapt parsed metadata so
- * the existing FileHeader / FileViewRow components work unchanged.
- */
 export function fileDiffToPullRequestFile(diff: FileDiffMetadata): PullRequestFile {
 	let additions = 0;
 	let deletions = 0;
@@ -36,9 +28,8 @@ export function fileDiffToPullRequestFile(diff: FileDiffMetadata): PullRequestFi
 		status,
 		additions,
 		deletions,
-		// FileHeader / parents only consume additions/deletions counts on the
-		// PullRequestFile; the actual hunks come from the FileDiffMetadata when
-		// rendering. We don't translate them here.
+		// Hunks live on the FileDiffMetadata; PullRequestFile only carries
+		// additions/deletions for header rendering, so we don't translate them.
 		hunks: [],
 	};
 }

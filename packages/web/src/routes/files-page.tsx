@@ -39,9 +39,8 @@ export function FilesPage({ runId }: FilesPageProps) {
 		[filePathSet, markFileViewed, unmarkFileViewed],
 	);
 
-	// Deleted files and viewed files start collapsed; recomputes reactively when
-	// viewed state changes so toggling a file's viewed state automatically
-	// flips its collapsed state.
+	// Deleted and viewed files start collapsed; useFileCollapseState lets the
+	// user override per-file while keeping these defaults reactive.
 	const defaultCollapsedFileIds = useMemo(() => {
 		const ids = new Set<string>();
 		for (const file of files) {
