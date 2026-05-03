@@ -54,20 +54,23 @@ const postKeyChangeView = (id: string) =>
 const deleteKeyChangeView = (id: string) =>
 	jsonFetch<unknown>(`/api/key-change-view/${encodeURIComponent(id)}`, { method: "DELETE" });
 
-const fileViewBody = (path: string): RequestInit => ({
-	method: "POST",
+const fileViewRequest = (method: "POST" | "DELETE", path: string): RequestInit => ({
+	method,
 	headers: { "Content-Type": "application/json" },
 	body: JSON.stringify({ path }),
 });
 
 const postFileView = (runId: string, path: string) =>
-	jsonFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}/file-views`, fileViewBody(path));
+	jsonFetch<unknown>(
+		`/api/runs/${encodeURIComponent(runId)}/file-views`,
+		fileViewRequest("POST", path),
+	);
 
 const deleteFileView = (runId: string, path: string) =>
-	jsonFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}/file-views`, {
-		...fileViewBody(path),
-		method: "DELETE",
-	});
+	jsonFetch<unknown>(
+		`/api/runs/${encodeURIComponent(runId)}/file-views`,
+		fileViewRequest("DELETE", path),
+	);
 
 export interface UseViewStateDataResult {
 	/** Stable reference; mutates only when the underlying query data changes. */
