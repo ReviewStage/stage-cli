@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4a488e7a-37e2-4c4a-a5e0-c32c200ccd00",
+  "id": "536350ff-7be0-4c61-829c-54a834aaba84",
   "prevId": "298158d7-c4df-4a0c-a849-4b8b25cdfb25",
   "tables": {
     "chapter": {
@@ -96,6 +96,90 @@
           "tableTo": "chapter_run",
           "columnsFrom": [
             "runId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "chapter_file_view": {
+      "name": "chapter_file_view",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "userId": {
+          "name": "userId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'local'"
+        },
+        "chapterId": {
+          "name": "chapterId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "filePath": {
+          "name": "filePath",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "chapter_file_view_chapter_id_idx": {
+          "name": "chapter_file_view_chapter_id_idx",
+          "columns": [
+            "chapterId"
+          ],
+          "isUnique": false
+        },
+        "chapter_file_view_user_chapter_path_unique": {
+          "name": "chapter_file_view_user_chapter_path_unique",
+          "columns": [
+            "userId",
+            "chapterId",
+            "filePath"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "chapter_file_view_chapterId_chapter_id_fk": {
+          "name": "chapter_file_view_chapterId_chapter_id_fk",
+          "tableFrom": "chapter_file_view",
+          "tableTo": "chapter",
+          "columnsFrom": [
+            "chapterId"
           ],
           "columnsTo": [
             "id"

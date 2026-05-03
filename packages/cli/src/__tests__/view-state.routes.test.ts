@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, getDb } from "../db/client.js";
 import {
 	chapter,
+	chapterFileView,
 	chapterRun,
 	chapterView,
 	fileView,
@@ -236,12 +237,19 @@ describe("view-state API", () => {
 		expect(
 			db.select().from(fileView).where(eq(fileView.runId, runId)).all().length,
 		).toBeGreaterThan(0);
+		expect(
+			db.select().from(chapterFileView).where(eq(chapterFileView.chapterId, chapterUuid)).all()
+				.length,
+		).toBeGreaterThan(0);
 
 		await request(port, "DELETE", `/api/chapter-view/${chapterUuid}`);
-		// Symmetric with POST: unmarking the chapter clears the file_view rows it
-		// inserted so the Files-changed tab's "N/M viewed" count reflects the
-		// chapter being unviewed.
+		// Symmetric with POST: unmarking the chapter clears chapter_view, the
+		// chapter's chapter_file_view rows, and (per rule 4) the global file_view
+		// rows for every path the unmarked chapter touched.
 		expect(db.select().from(chapterView).all()).toHaveLength(0);
+		expect(
+			db.select().from(chapterFileView).where(eq(chapterFileView.chapterId, chapterUuid)).all(),
+		).toHaveLength(0);
 		expect(db.select().from(fileView).where(eq(fileView.runId, runId)).all()).toHaveLength(0);
 	});
 
@@ -287,6 +295,166 @@ describe("view-state API", () => {
 			.where(eq(fileView.runId, chapterA.runId))
 			.all();
 		expect(remaining.map((r) => r.filePath)).toEqual(["y.ts"]);
+	});
+
+	it("POST /api/chapter-view/:chapterId only promotes file_view once every chapter containing the file is marked", async () => {
+		// Two chapters share file `shared.ts`. Marking the first should leave file_view
+		// empty for it (only one of two containing chapters covered); marking the second
+		// promotes it. Mirrors hosted's "all chapters covered → file viewed" rule.
+		const db = getDb({ dbPath });
+		const fixture = makeFixture({
+			chapters: [
+				{
+					id: "ch-a",
+					order: 1,
+					title: "A",
+					summary: "",
+					hunkRefs: [
+						{ filePath: "shared.ts", oldStart: 1 },
+						{ filePath: "only-a.ts", oldStart: 1 },
+					],
+					keyChanges: [],
+				},
+				{
+					id: "ch-b",
+					order: 2,
+					title: "B",
+					summary: "",
+					hunkRefs: [{ filePath: "shared.ts", oldStart: 50 }],
+					keyChanges: [],
+				},
+			],
+		});
+		insertChaptersFile(db, fixture, makeRepoContext());
+		const chapters = db.select().from(chapter).all();
+		const chapterA = chapters.find((c) => c.chapterIndex === 1);
+		const chapterB = chapters.find((c) => c.chapterIndex === 2);
+		if (!chapterA || !chapterB) throw new Error("seed: missing chapters");
+
+		const { port } = await startWithRoutes();
+
+		// After marking only A: only-a.ts is fully covered (only A contains it),
+		// shared.ts is NOT (B still hasn't marked it).
+		await request(port, "POST", `/api/chapter-view/${chapterA.id}`);
+		const afterA = db
+			.select({ filePath: fileView.filePath })
+			.from(fileView)
+			.where(eq(fileView.runId, chapterA.runId))
+			.all()
+			.map((r) => r.filePath)
+			.sort();
+		expect(afterA).toEqual(["only-a.ts"]);
+
+		// chapter_file_view records both chapter A's hunkRef paths even though
+		// shared.ts hasn't been promoted globally.
+		const cfvAfterA = db
+			.select({ chapterId: chapterFileView.chapterId, filePath: chapterFileView.filePath })
+			.from(chapterFileView)
+			.where(eq(chapterFileView.chapterId, chapterA.id))
+			.all();
+		expect(cfvAfterA.map((r) => r.filePath).sort()).toEqual(["only-a.ts", "shared.ts"]);
+
+		// Marking B closes the coverage for shared.ts → it gets promoted.
+		await request(port, "POST", `/api/chapter-view/${chapterB.id}`);
+		const afterB = db
+			.select({ filePath: fileView.filePath })
+			.from(fileView)
+			.where(eq(fileView.runId, chapterA.runId))
+			.all()
+			.map((r) => r.filePath)
+			.sort();
+		expect(afterB).toEqual(["only-a.ts", "shared.ts"]);
+	});
+
+	it("DELETE /api/chapter-view/:chapterId clears file_view for the chapter's files even when other chapters still cover them", async () => {
+		// File `shared.ts` covered by both chapters. After marking both,
+		// unmarking either chapter must drop file_view for shared.ts (rule 4),
+		// even though the other chapter's chapter_file_view row survives so a
+		// future re-mark can re-promote.
+		const db = getDb({ dbPath });
+		const fixture = makeFixture({
+			chapters: [
+				{
+					id: "ch-a",
+					order: 1,
+					title: "A",
+					summary: "",
+					hunkRefs: [{ filePath: "shared.ts", oldStart: 1 }],
+					keyChanges: [],
+				},
+				{
+					id: "ch-b",
+					order: 2,
+					title: "B",
+					summary: "",
+					hunkRefs: [{ filePath: "shared.ts", oldStart: 50 }],
+					keyChanges: [],
+				},
+			],
+		});
+		insertChaptersFile(db, fixture, makeRepoContext());
+		const chapters = db.select().from(chapter).all();
+		const chapterA = chapters.find((c) => c.chapterIndex === 1);
+		const chapterB = chapters.find((c) => c.chapterIndex === 2);
+		if (!chapterA || !chapterB) throw new Error("seed: missing chapters");
+
+		const { port } = await startWithRoutes();
+		await request(port, "POST", `/api/chapter-view/${chapterA.id}`);
+		await request(port, "POST", `/api/chapter-view/${chapterB.id}`);
+		// Sanity: shared.ts is fully covered.
+		expect(db.select().from(fileView).where(eq(fileView.runId, chapterA.runId)).all()).toHaveLength(
+			1,
+		);
+
+		await request(port, "DELETE", `/api/chapter-view/${chapterA.id}`);
+
+		// file_view cleared for shared.ts even though B's chapter_file_view row stays,
+		// because rule 4 unmarks every file the unmarked chapter touches unconditionally.
+		expect(db.select().from(fileView).where(eq(fileView.runId, chapterA.runId)).all()).toHaveLength(
+			0,
+		);
+		// B's per-chapter mark for shared.ts survives, and so does B's chapter_view.
+		const cfvB = db
+			.select()
+			.from(chapterFileView)
+			.where(eq(chapterFileView.chapterId, chapterB.id))
+			.all();
+		expect(cfvB).toHaveLength(1);
+		expect(cfvB[0]?.filePath).toBe("shared.ts");
+
+		// Re-marking A re-promotes shared.ts because A's chapter_file_view row
+		// returns and B's row is still there → coverage is complete again.
+		await request(port, "POST", `/api/chapter-view/${chapterA.id}`);
+		expect(db.select().from(fileView).where(eq(fileView.runId, chapterA.runId)).all()).toHaveLength(
+			1,
+		);
+	});
+
+	it("DELETE /api/runs/:runId/file-views cascades to remove chapter_file_view rows for that path", async () => {
+		// Without the cascade, a direct file unmark followed by a chapter mark/unmark
+		// cycle could resurrect file_view via the coverage rule. The cascade clears
+		// chapter_file_view across every chapter in the run that touches the path.
+		const { chapterUuid, runId } = seedRun();
+		const { port } = await startWithRoutes();
+
+		await request(port, "POST", `/api/chapter-view/${chapterUuid}`);
+		const db = getDb({ dbPath });
+		// Sanity: chapter mark inserted both chapter_file_view and file_view.
+		const cfvBefore = db.select().from(chapterFileView).all();
+		expect(cfvBefore.length).toBeGreaterThan(0);
+		const path = cfvBefore[0]?.filePath;
+		if (!path) throw new Error("seed: expected a chapter_file_view row");
+
+		// Direct unmark from the Files tab.
+		const res = await requestWithBody(port, "DELETE", `/api/runs/${runId}/file-views`, { path });
+		expect(res.status).toBe(200);
+
+		expect(db.select().from(fileView).where(eq(fileView.filePath, path)).all()).toHaveLength(0);
+		// And the chapter_file_view rows for that path are wiped, so a chapter
+		// mark/unmark cycle can no longer resurrect file_view via coverage.
+		expect(
+			db.select().from(chapterFileView).where(eq(chapterFileView.filePath, path)).all(),
+		).toHaveLength(0);
 	});
 
 	it("POST /api/chapter-view/:chapterId returns 404 for unknown chapter (no FK 500)", async () => {
