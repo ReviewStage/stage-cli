@@ -133,7 +133,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 
 	return (
 		<div className="flex flex-1 flex-col" style={layoutStyle}>
-			<div className="flex-1 px-6 pt-6 pb-16 lg:px-8">
+			<div className="flex-1 px-6 pt-6 lg:px-8">
 				<header className="mb-4 space-y-1">
 					<SectionLabel>Run</SectionLabel>
 					<p className="break-all font-mono text-foreground/80 text-xs">{data?.run.id ?? runId}</p>
