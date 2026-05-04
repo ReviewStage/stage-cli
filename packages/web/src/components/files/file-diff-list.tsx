@@ -96,8 +96,6 @@ interface FileDiffSectionProps {
 	chapterOverlay?: ChapterOverlayProps;
 }
 
-const noop = () => {};
-
 function FileDiffSection({
 	entry,
 	isViewed,
@@ -132,7 +130,6 @@ function FileDiffSection({
 				onToggle={handleToggle}
 				onToggleAll={handleToggleAll}
 				onToggleExpand={handleToggleExpand}
-				onComment={noop}
 				onToggleViewed={onToggleViewed ? handleToggleViewed : undefined}
 			/>
 			{!isCollapsed && (
