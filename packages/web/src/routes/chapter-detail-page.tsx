@@ -1,4 +1,5 @@
 import type { Chapter, LineRef } from "@stagereview/types/chapters";
+import type { FileContentsMap } from "@stagereview/types/diff";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -38,7 +39,7 @@ interface ChapterDetailPageProps {
 export function ChapterDetailPage({ runId, chapterNumber }: ChapterDetailPageProps) {
 	const { chapters } = useChapterContext();
 	const { isLoading: chaptersLoading, error: chaptersError } = useChapters(runId);
-	const { data: patch, isLoading: patchLoading, error: patchError } = useDiffPatch(runId);
+	const { data: diffData, isLoading: patchLoading, error: patchError } = useDiffPatch(runId);
 
 	const chapter =
 		chapterNumber === null ? undefined : chapters.find((c) => c.order === chapterNumber);
@@ -51,23 +52,33 @@ export function ChapterDetailPage({ runId, chapterNumber }: ChapterDetailPagePro
 	if (error) return <ErrorState runId={runId} error={error} />;
 	if (isLoading) return <LoadingState />;
 	if (!chapter) return <NotFoundState runId={runId} />;
-	// Distinguish "still loading / errored" (undefined) from "valid empty diff"
-	// (""): a chapter with no hunks against an empty PR is rendered as the
-	// "No changes in this chapter" empty state by FileDiffList, not an error.
-	if (patch === undefined) {
+	if (diffData === undefined) {
 		return <ErrorState runId={runId} error={new Error("Diff patch unavailable")} />;
 	}
 
-	return <ChapterDetailContent chapter={chapter} chapterIndex={chapterIndex} patch={patch} />;
+	return (
+		<ChapterDetailContent
+			chapter={chapter}
+			chapterIndex={chapterIndex}
+			patch={diffData.patch}
+			fileContents={diffData.fileContents}
+		/>
+	);
 }
 
 interface ChapterDetailContentProps {
 	chapter: Chapter;
 	chapterIndex: number;
 	patch: string;
+	fileContents: FileContentsMap;
 }
 
-function ChapterDetailContent({ chapter, chapterIndex, patch }: ChapterDetailContentProps) {
+function ChapterDetailContent({
+	chapter,
+	chapterIndex,
+	patch,
+	fileContents,
+}: ChapterDetailContentProps) {
 	const { runId, chapters: allChapters } = useChapterContext();
 	const view = useViewState(runId);
 	const [focusedKeyChangeId, setFocusedKeyChangeId] = useState<string | null>(null);
@@ -81,8 +92,8 @@ function ChapterDetailContent({ chapter, chapterIndex, patch }: ChapterDetailCon
 	}
 
 	const chapterEntries = useMemo(
-		() => filterFilesForChapter(patch, chapter.hunkRefs),
-		[patch, chapter.hunkRefs],
+		() => filterFilesForChapter(patch, chapter.hunkRefs, fileContents),
+		[patch, chapter.hunkRefs, fileContents],
 	);
 
 	const allLineRefsByFile = useMemo(

@@ -23,9 +23,9 @@ interface FilesPageProps {
 }
 
 export function FilesPage({ runId, scrollTo }: FilesPageProps) {
-	const { data, isLoading, error } = useDiffPatch(runId);
+	const { data: diffData, isLoading, error } = useDiffPatch(runId);
 
-	const rawEntries = useFileDiffEntries(data);
+	const rawEntries = useFileDiffEntries(diffData?.patch, diffData?.fileContents);
 	const entries = useMemo(() => sortFileDiffEntries(rawEntries), [rawEntries]);
 	const files = useMemo(() => entries.map((e) => e.file), [entries]);
 
@@ -77,7 +77,7 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 	useFileNavigationKeys(files, activeFilePath, handleSelectFile);
 
 	if (error) return <FilesPageError error={error} />;
-	if (isLoading || data === undefined) return <FilesPageSkeleton />;
+	if (isLoading || diffData === undefined) return <FilesPageSkeleton />;
 
 	return (
 		<SidebarLayout

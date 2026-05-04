@@ -1,6 +1,8 @@
 import { type FileDiffMetadata, parsePatchFiles } from "@pierre/diffs";
+import type { FileContentsMap } from "@stage-cli/types/diff";
 import { useMemo } from "react";
 import { FILE_STATUS, type FileStatus, type PullRequestFile } from "./diff-types";
+import { splitWithNewlines } from "./split-with-newlines";
 
 // Flatten across ParsedPatch envelopes — `parsePatchFiles` returns one per
 // `From <commit>` block, but plain `git diff` output yields a single envelope
@@ -54,10 +56,36 @@ export interface FileDiffEntry {
 	diff: FileDiffMetadata;
 }
 
-export function useFileDiffEntries(patch: string | undefined): FileDiffEntry[] {
+export function enrichFileDiff(
+	diff: FileDiffMetadata,
+	fileContents: FileContentsMap | undefined,
+): FileDiffMetadata {
+	if (!fileContents) return diff;
+	const contents = fileContents[diff.name];
+	if (!contents) return diff;
+
+	const oldLines = splitWithNewlines(contents.oldContent);
+	const newLines = splitWithNewlines(contents.newContent);
+	if (!oldLines && !newLines) return diff;
+
+	return {
+		...diff,
+		isPartial: false,
+		...(oldLines ? { deletionLines: oldLines } : {}),
+		...(newLines ? { additionLines: newLines } : {}),
+	};
+}
+
+export function useFileDiffEntries(
+	patch: string | undefined,
+	fileContents?: FileContentsMap,
+): FileDiffEntry[] {
 	return useMemo(() => {
 		if (!patch) return [];
 		const diffs = parsePatchToFileDiffs(patch);
-		return diffs.map((diff) => ({ file: fileDiffToPullRequestFile(diff), diff }));
-	}, [patch]);
+		return diffs.map((diff) => {
+			const enriched = enrichFileDiff(diff, fileContents);
+			return { file: fileDiffToPullRequestFile(enriched), diff: enriched };
+		});
+	}, [patch, fileContents]);
 }

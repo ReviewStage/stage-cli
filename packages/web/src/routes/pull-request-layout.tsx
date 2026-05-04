@@ -90,8 +90,8 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 
 	// Fetched here so the Files tab's "N/M viewed" label can render before the
 	// user clicks into the tab; react-query dedupes the same fetch from FilesPage.
-	const { data: patch } = useDiffPatch(runId);
-	const fileEntries = useFileDiffEntries(patch);
+	const { data: diffData } = useDiffPatch(runId);
+	const fileEntries = useFileDiffEntries(diffData?.patch, diffData?.fileContents);
 	const totalFileCount = fileEntries.length;
 	const viewedFileCount = useMemo(() => {
 		if (totalFileCount === 0) return 0;
@@ -111,7 +111,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 	})();
 
 	const fileCountLabel = (() => {
-		if (patch === undefined) return undefined;
+		if (diffData === undefined) return undefined;
 		if (viewedFileCount > 0) return `${viewedFileCount}/${totalFileCount} viewed`;
 		return String(totalFileCount);
 	})();
