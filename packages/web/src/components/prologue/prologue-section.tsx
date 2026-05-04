@@ -18,20 +18,24 @@ function PrologueDisplay({ prologue }: { prologue: Prologue }) {
 
 	return (
 		<div className="space-y-4 rounded-lg border bg-card p-4">
-			{prologue.motivation && prologue.outcome && (
+			{(prologue.motivation || prologue.outcome) && (
 				<section className="space-y-3">
-					<div>
-						<h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-							Why this change?
-						</h3>
-						<p className="text-sm text-foreground">{prologue.motivation}</p>
-					</div>
-					<div>
-						<h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-							What it does
-						</h3>
-						<p className="text-sm text-foreground">{prologue.outcome}</p>
-					</div>
+					{prologue.motivation && (
+						<div>
+							<h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+								Why this change?
+							</h3>
+							<p className="text-sm text-foreground">{prologue.motivation}</p>
+						</div>
+					)}
+					{prologue.outcome && (
+						<div>
+							<h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+								What it does
+							</h3>
+							<p className="text-sm text-foreground">{prologue.outcome}</p>
+						</div>
+					)}
 				</section>
 			)}
 
