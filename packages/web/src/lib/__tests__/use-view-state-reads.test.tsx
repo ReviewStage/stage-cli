@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import type { ViewState } from "@stage-cli/types/view-state";
+import type { ViewState } from "@stagereview/types/view-state";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useViewState, viewStateQueryKey } from "../use-view-state";

@@ -1,4 +1,4 @@
-import type { LineRef } from "@stage-cli/types/chapters";
+import type { LineRef } from "@stagereview/types/chapters";
 import type { AnnotatedLineRef } from "./diff-types";
 
 // `externalId` (not `id`) because that's what view-state, the side panel, and

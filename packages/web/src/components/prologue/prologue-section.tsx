@@ -1,5 +1,5 @@
-import type { FocusArea, FocusAreaSeverity, Prologue } from "@stage-cli/types/prologue";
-import { FOCUS_AREA_SEVERITY } from "@stage-cli/types/prologue";
+import type { FocusArea, FocusAreaSeverity, Prologue } from "@stagereview/types/prologue";
+import { FOCUS_AREA_SEVERITY } from "@stagereview/types/prologue";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";

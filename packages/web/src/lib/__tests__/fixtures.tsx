@@ -2,7 +2,7 @@
 // __tests__/ as a sibling of the test files so the cross-file scope rule
 // (per-file mock budget) stays obvious.
 
-import type { ViewState } from "@stage-cli/types/view-state";
+import type { ViewState } from "@stagereview/types/view-state";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement, ReactNode } from "react";
 import { vi } from "vitest";

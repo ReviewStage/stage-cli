@@ -12,5 +12,5 @@ export default defineConfig({
 	outExtensions: () => ({ js: ".js" }),
 	// Inline workspace deps — they won't exist in the published package's
 	// node_modules, so the bundle has to carry their source.
-	deps: { alwaysBundle: [/^@stage-cli\//] },
+	deps: { alwaysBundle: [/^@stagereview\//] },
 });

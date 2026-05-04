@@ -1,4 +1,4 @@
-import { type ChaptersResponse, ChaptersResponseSchema } from "@stage-cli/types/chapters";
+import { type ChaptersResponse, ChaptersResponseSchema } from "@stagereview/types/chapters";
 import { skipToken, useQuery } from "@tanstack/react-query";
 import { jsonFetch } from "@/lib/use-view-state";
 

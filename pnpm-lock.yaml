@@ -51,7 +51,7 @@ importers:
         specifier: ^4.3.6
         version: 4.4.2
     devDependencies:
-      '@stage-cli/types':
+      '@stagereview/types':
         specifier: workspace:*
         version: link:../types
       '@types/better-sqlite3':
@@ -109,7 +109,7 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
-      '@stage-cli/types':
+      '@stagereview/types':
         specifier: workspace:*
         version: link:../types
       '@tanstack/react-query':

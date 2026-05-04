@@ -1,4 +1,4 @@
-import type { Chapter, HunkReference } from "@stage-cli/types/chapters";
+import type { Chapter, HunkReference } from "@stagereview/types/chapters";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, Circle, CircleCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";

@@ -1,5 +1,5 @@
 {
-  "name": "@stage-cli/web",
+  "name": "@stagereview/web",
   "version": "0.1.0",
   "private": true,
   "description": "stage-cli SPA bundled into the published CLI's web-dist/.",
@@ -19,7 +19,7 @@
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tooltip": "^1.2.8",
-    "@stage-cli/types": "workspace:*",
+    "@stagereview/types": "workspace:*",
     "@tanstack/react-query": "^5.100.7",
     "@tanstack/react-router": "^1.169.1",
     "class-variance-authority": "^0.7.1",

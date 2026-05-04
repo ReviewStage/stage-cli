@@ -19,8 +19,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "pnpm --filter @stage-cli/web build && pnpm --filter stagereview build",
-    "dev:web": "pnpm --filter @stage-cli/web dev",
+    "build": "pnpm --filter @stagereview/web build && pnpm --filter stagereview build",
+    "dev:web": "pnpm --filter @stagereview/web dev",
     "test": "vitest run",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",

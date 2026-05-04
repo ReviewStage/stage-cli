@@ -1,4 +1,4 @@
-import type { Prologue } from "@stage-cli/types/prologue";
+import type { Prologue } from "@stagereview/types/prologue";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../../schema.js";
 import { baseColumns } from "./columns.js";

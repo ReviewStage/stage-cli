@@ -1,5 +1,5 @@
 import { getSingularPatch } from "@pierre/diffs";
-import type { HunkReference } from "@stage-cli/types/chapters";
+import type { HunkReference } from "@stagereview/types/chapters";
 import type { FileDiffEntry } from "./parse-diff";
 import { fileDiffToPullRequestFile } from "./parse-diff";
 

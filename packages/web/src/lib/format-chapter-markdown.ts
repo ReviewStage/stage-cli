@@ -1,4 +1,4 @@
-import type { Chapter } from "@stage-cli/types/chapters";
+import type { Chapter } from "@stagereview/types/chapters";
 import { FILE_STATUS, type PullRequestFile } from "./diff-types";
 
 interface ChapterFileInput {
