@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import {
 	FileDiffList,
 	type FileDiffListHandle,
@@ -8,10 +9,12 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { FILE_STATUS } from "@/lib/diff-types";
 import { buildFileTree, flattenFileTree, sortFileTree } from "@/lib/file-tree";
+import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import { type FileDiffEntry, useFileDiffEntries } from "@/lib/parse-diff";
 import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
+import { useFileNavigationKeys } from "@/lib/use-file-navigation-keys";
 import { useViewState } from "@/lib/use-view-state";
 
 interface FilesPageProps {
@@ -59,6 +62,13 @@ export function FilesPage({ runId }: FilesPageProps) {
 		[setActiveFileManually],
 	);
 
+	const [isPickerCollapsed, setIsPickerCollapsed] = useState(false);
+	useHotkeys(KEYBOARD_SHORTCUTS.TOGGLE_FILES.hotkey, () => setIsPickerCollapsed((c) => !c), {
+		preventDefault: true,
+		enableOnFormTags: false,
+	});
+	useFileNavigationKeys(files, activeFilePath, handleSelectFile);
+
 	if (error) return <FilesPageError error={error} />;
 	if (isLoading || data === undefined) return <FilesPageSkeleton />;
 
@@ -70,6 +80,8 @@ export function FilesPage({ runId }: FilesPageProps) {
 					activeFilePath={activeFilePath}
 					viewedPathSet={filePathSet}
 					onSelectFile={handleSelectFile}
+					isCollapsed={isPickerCollapsed}
+					onCollapsedChange={setIsPickerCollapsed}
 				/>
 			}
 		>
