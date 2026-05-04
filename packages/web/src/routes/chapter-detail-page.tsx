@@ -1,5 +1,5 @@
 import type { Chapter, LineRef } from "@stage-cli/types/chapters";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { ChapterSidePanel } from "@/components/chapter";
@@ -18,6 +18,11 @@ import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import { groupAnnotatedLineRefsByFile, groupLineRefsByFile } from "@/lib/line-refs-by-file";
 import { sortLineRefsByChapterOrder } from "@/lib/sort-line-refs";
 import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
+import {
+	NAVIGATION_DIRECTION,
+	type NavigationDirection,
+	useChapterNavigationKeys,
+} from "@/lib/use-chapter-navigation-keys";
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
@@ -190,6 +195,22 @@ function ChapterDetailContent({
 	);
 
 	useFileNavigationKeys(chapterFiles, activeFilePath, handleSelectFile);
+
+	const navigate = useNavigate();
+	const handleChapterNavigate = useCallback(
+		(direction: NavigationDirection) => {
+			const targetIndex =
+				direction === NAVIGATION_DIRECTION.NEXT ? chapterIndex + 1 : chapterIndex - 1;
+			const target = allChapters[targetIndex];
+			if (!target) return;
+			void navigate({
+				to: "/runs/$runId/chapters/$chapterNumber",
+				params: { runId, chapterNumber: String(target.order) },
+			});
+		},
+		[allChapters, chapterIndex, navigate, runId],
+	);
+	useChapterNavigationKeys(handleChapterNavigate);
 
 	useHotkeys(
 		KEYBOARD_SHORTCUTS.MARK_CHAPTER_AS_VIEWED.hotkey,

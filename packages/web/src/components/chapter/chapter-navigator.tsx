@@ -19,7 +19,6 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SHORTCUT_KEY } from "@/lib/keyboard-shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -70,23 +69,19 @@ export function ChapterNavigator({
 					</Button>
 				</ShortcutTooltip>
 
-				<Tooltip>
-					<TooltipTrigger asChild>
-						{prevChapter ? (
-							<Link
-								to="/runs/$runId/chapters/$chapterNumber"
-								params={{ runId, chapterNumber: String(prevChapter.order) }}
-								className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-								aria-label="Previous chapter"
-							>
-								<ChevronLeft className="size-4" />
-							</Link>
-						) : (
-							<span className="invisible inline-flex size-7" aria-hidden="true" />
-						)}
-					</TooltipTrigger>
-					<TooltipContent>Previous chapter</TooltipContent>
-				</Tooltip>
+				{prevChapter ? (
+					<ShortcutTooltip shortcutKey={SHORTCUT_KEY.PREV_CHAPTER} label="Previous chapter">
+						<Link
+							to="/runs/$runId/chapters/$chapterNumber"
+							params={{ runId, chapterNumber: String(prevChapter.order) }}
+							className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						>
+							<ChevronLeft className="size-4" />
+						</Link>
+					</ShortcutTooltip>
+				) : (
+					<span className="invisible inline-flex size-7" aria-hidden="true" />
+				)}
 
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
@@ -139,23 +134,19 @@ export function ChapterNavigator({
 					</DropdownMenuContent>
 				</DropdownMenu>
 
-				<Tooltip>
-					<TooltipTrigger asChild>
-						{nextChapter ? (
-							<Link
-								to="/runs/$runId/chapters/$chapterNumber"
-								params={{ runId, chapterNumber: String(nextChapter.order) }}
-								className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-								aria-label="Next chapter"
-							>
-								<ChevronRight className="size-4" />
-							</Link>
-						) : (
-							<span className="invisible inline-flex size-7" aria-hidden="true" />
-						)}
-					</TooltipTrigger>
-					<TooltipContent>Next chapter</TooltipContent>
-				</Tooltip>
+				{nextChapter ? (
+					<ShortcutTooltip shortcutKey={SHORTCUT_KEY.NEXT_CHAPTER} label="Next chapter">
+						<Link
+							to="/runs/$runId/chapters/$chapterNumber"
+							params={{ runId, chapterNumber: String(nextChapter.order) }}
+							className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						>
+							<ChevronRight className="size-4" />
+						</Link>
+					</ShortcutTooltip>
+				) : (
+					<span className="invisible inline-flex size-7" aria-hidden="true" />
+				)}
 
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
