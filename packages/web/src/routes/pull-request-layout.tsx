@@ -1,6 +1,6 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { BookOpen, FileText } from "lucide-react";
-import { type CSSProperties, type ElementType, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { SectionLabel } from "@/components/pull-request/section-label";
 import { useFileDiffEntries } from "@/lib/parse-diff";
 import { useChapters } from "@/lib/use-chapters";
@@ -14,20 +14,18 @@ const PR_TAB = {
 } as const;
 type PrTab = (typeof PR_TAB)[keyof typeof PR_TAB];
 
-interface TabDef {
-	id: PrTab;
-	label: string;
-	icon: ElementType;
-	to: "/runs/$runId" | "/runs/$runId/files";
-}
-
-const tabs: TabDef[] = [
-	{ id: PR_TAB.CHAPTERS, label: "Chapters", icon: BookOpen, to: "/runs/$runId" },
-	{ id: PR_TAB.FILES, label: "Files changed", icon: FileText, to: "/runs/$runId/files" },
+const tabs = [
+	{ id: PR_TAB.CHAPTERS, label: "Chapters", icon: BookOpen, to: "/runs/$runId" as const },
+	{
+		id: PR_TAB.FILES,
+		label: "Files changed",
+		icon: FileText,
+		to: "/runs/$runId/files" as const,
+	},
 ];
 
 interface TabLinkProps {
-	tab: TabDef;
+	tab: (typeof tabs)[number];
 	runId: string;
 	isActive: boolean;
 	countLabel?: string;
