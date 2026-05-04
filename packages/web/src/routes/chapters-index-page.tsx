@@ -61,7 +61,6 @@ function FileCollapsible({
 
 interface ChapterEntryProps {
 	chapter: Chapter;
-	index: number;
 	isViewed: boolean;
 	filePaths: string[];
 	isFilesOpen: boolean;
@@ -73,7 +72,6 @@ interface ChapterEntryProps {
 
 function ChapterEntry({
 	chapter,
-	index,
 	isViewed,
 	filePaths,
 	isFilesOpen,
@@ -123,7 +121,7 @@ function ChapterEntry({
 							isViewed && "text-muted-foreground",
 						)}
 					>
-						{index + 1}. {chapter.title}
+						{chapter.order}. {chapter.title}
 					</span>
 				</Link>
 			</div>
@@ -212,14 +210,13 @@ function ChaptersList({ chapters, runId, viewedCount }: ChaptersListProps) {
 				</span>
 			</div>
 			<div className="space-y-4">
-				{chapters.map((c, index) => {
+				{chapters.map((c) => {
 					const externalId = c.externalId;
 					const isViewed = view.isChapterViewed(externalId);
 					return (
 						<ChapterEntry
 							key={c.id}
 							chapter={c}
-							index={index}
 							isViewed={isViewed}
 							filePaths={filePathsByChapter.get(c.id) ?? []}
 							isFilesOpen={openFiles.has(c.id)}
