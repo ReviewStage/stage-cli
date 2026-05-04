@@ -1,8 +1,13 @@
 import type { LineRef } from "@stage-cli/types/chapters";
 import type { AnnotatedLineRef } from "./diff-types";
 
+// `externalId` (not `id`) because that's what view-state, the side panel, and
+// the chapter detail page's focus state all key on. Annotating with the
+// internal DB id would silently break overlay ↔ side-panel sync: a side-panel
+// click sets focus to externalId, while an overlay click would set it to id,
+// and view-state checked-state lookups would never find the row.
 interface KeyChangeWithLineRefs {
-	id: string;
+	externalId: string;
 	lineRefs: LineRef[];
 }
 
@@ -30,7 +35,7 @@ export function groupAnnotatedLineRefsByFile(
 	return groupLineRefsByFile(
 		keyChanges.flatMap((keyChange) =>
 			keyChange.lineRefs.map(
-				(lineRef): AnnotatedLineRef => ({ ...lineRef, keyChangeId: keyChange.id }),
+				(lineRef): AnnotatedLineRef => ({ ...lineRef, keyChangeId: keyChange.externalId }),
 			),
 		),
 	);
