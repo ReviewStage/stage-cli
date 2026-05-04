@@ -48,19 +48,20 @@ No default branch detected. Tried origin/HEAD, main, and master.
 
 ## Step 2 — Get the diff
 
-Compute the merge-base, capture the relevant SHAs, and dump the unified diff:
+Compute the merge-base and dump the unified diff for the committed range only:
 
 ```bash
 MERGE_BASE=$(git merge-base <base> HEAD)
-BASE_SHA=$(git rev-parse <base>)
 HEAD_SHA=$(git rev-parse HEAD)
 
-git diff "$MERGE_BASE"
+git diff "$MERGE_BASE..HEAD"
 ```
 
-`git diff <commit>` (no `..`) compares `<commit>` to the working tree, so the output covers committed changes on the branch *plus* uncommitted edits to tracked files. Save the full diff text into context for Step 3.
+`git diff <merge-base>..HEAD` covers exactly the commits on the branch since it diverged from the base — the same range the SPA renders for a `committed` run (`baseSha..headSha` in `packages/cli/src/routes/diff.ts`). Save the full diff text into context for Step 3.
 
-`BASE_SHA`, `HEAD_SHA`, and `MERGE_BASE` are full 40-character SHAs and feed directly into the JSON `scope` field in Step 4.
+This skill scopes review to *committed* work. If the user has uncommitted changes to tracked files, instruct them to commit first; mixing committed and working-tree changes into a single run would produce `hunkRefs`/`lineRefs` that don't line up with the diff the SPA serves.
+
+`MERGE_BASE` and `HEAD_SHA` are full 40-character SHAs that feed directly into the JSON `scope` field in Step 4.
 
 ## Step 3 — Cluster + narrate
 
@@ -68,11 +69,13 @@ git diff "$MERGE_BASE"
 
 ## Step 4 — Write JSON file
 
-Compute a unique temp path. `mktemp` with an `XXXXXX` template is portable across macOS and Linux and avoids collisions even within the same second:
+Compute a unique temp path. The trailing `XXXXXX` (with no suffix after) is required by macOS BSD `mktemp` — placing characters after the X's causes BSD `mktemp` to return the template verbatim instead of substituting random characters:
 
 ```bash
-TMPFILE=$(mktemp "${TMPDIR:-/tmp}/stage-chapters-XXXXXX.json")
+TMPFILE=$(mktemp "${TMPDIR:-/tmp}/stage-chapters.XXXXXX")
 ```
+
+`stage-cli show` reads JSON regardless of file extension, so the missing `.json` suffix is fine.
 
 The `${TMPDIR:-/tmp}` fallback matters on macOS, where `os.tmpdir()` resolves to `/var/folders/...` but `$TMPDIR` is not always set in every shell. Avoid `date +%s%N` — the `%N` (nanoseconds) format is a GNU extension and on macOS BSD `date` it emits a literal `N`, breaking uniqueness.
 
@@ -89,18 +92,12 @@ Full example:
 ```jsonc
 {
   "scope": {
-    // Either committed (no working-tree changes):
     "kind": "committed",
-    "baseSha": "<40-char SHA>",
-    "headSha": "<40-char SHA>",
-    "mergeBaseSha": "<40-char SHA>"
-
-    // Or workingTree (when the diff includes uncommitted tracked changes):
-    // "kind": "workingTree",
-    // "ref": "work" | "staged" | "unstaged",
-    // "baseSha": "<40-char SHA>",
-    // "headSha": "<40-char SHA>",
-    // "mergeBaseSha": "<40-char SHA>"
+    // Set baseSha = mergeBaseSha = $MERGE_BASE so the SPA renders
+    // baseSha..headSha — the same range chapters were generated from.
+    "baseSha": "<MERGE_BASE>",
+    "headSha": "<HEAD_SHA>",
+    "mergeBaseSha": "<MERGE_BASE>"
   },
   "chapters": [
     {
