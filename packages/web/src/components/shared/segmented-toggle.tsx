@@ -11,12 +11,17 @@ export function SegmentedToggle<T extends string>({
 	options: { value: T; label: string; icon?: React.ComponentType<{ className?: string }> }[];
 }) {
 	return (
-		<div className="flex w-full items-center rounded-lg border border-border/50 bg-muted/30 p-0.5">
+		<div
+			role="radiogroup"
+			className="flex w-full items-center rounded-lg border border-border/50 bg-muted/30 p-0.5"
+		>
 			{options.map((opt) => (
 				<Button
 					key={opt.value}
 					variant="ghost"
 					size="sm"
+					role="radio"
+					aria-checked={value === opt.value}
 					className={cn(
 						"h-7 flex-1 rounded-md px-2.5 transition-all cursor-pointer",
 						value === opt.value
