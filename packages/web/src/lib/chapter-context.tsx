@@ -1,4 +1,4 @@
-import type { Chapter } from "@stage-cli/types/chapters";
+import type { Chapter } from "@stagereview/types/chapters";
 import { createContext, type ReactNode, use, useMemo } from "react";
 import { filterFilesForChapter } from "./filter-files-for-chapter";
 import { useChapters } from "./use-chapters";

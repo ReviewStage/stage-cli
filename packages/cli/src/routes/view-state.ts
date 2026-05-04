@@ -1,4 +1,4 @@
-import { FileViewBodySchema } from "@stage-cli/types/view-state";
+import { FileViewBodySchema } from "@stagereview/types/view-state";
 import { and, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { LOCAL_USER_ID } from "../db/local-user.js";

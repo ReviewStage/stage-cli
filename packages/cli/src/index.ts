@@ -4,7 +4,7 @@ import { show } from "./show.js";
 
 const program = new Command();
 
-program.name("stage-cli").description("Chapter-style code review against your local git branch.");
+program.name("stagereview").description("Chapter-style code review against your local git branch.");
 
 program
 	.command("show")

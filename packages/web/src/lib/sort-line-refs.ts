@@ -1,4 +1,4 @@
-import type { HunkReference, LineRef } from "@stage-cli/types/chapters";
+import type { HunkReference, LineRef } from "@stagereview/types/chapters";
 import { DIFF_SIDE } from "./diff-types";
 
 /**

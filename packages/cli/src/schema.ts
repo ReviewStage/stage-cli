@@ -1,9 +1,9 @@
-import { hunkReferenceSchema, lineRefSchema } from "@stage-cli/types/chapters";
-import { PrologueSchema } from "@stage-cli/types/prologue";
+import { hunkReferenceSchema, lineRefSchema } from "@stagereview/types/chapters";
+import { PrologueSchema } from "@stagereview/types/prologue";
 import { z } from "zod";
 
-export type { DiffSide, HunkReference, LineRef } from "@stage-cli/types/chapters";
-export { DIFF_SIDE, hunkReferenceSchema, lineRefSchema } from "@stage-cli/types/chapters";
+export type { DiffSide, HunkReference, LineRef } from "@stagereview/types/chapters";
+export { DIFF_SIDE, hunkReferenceSchema, lineRefSchema } from "@stagereview/types/chapters";
 
 export const SCOPE_KIND = {
 	COMMITTED: "committed",

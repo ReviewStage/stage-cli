@@ -81,8 +81,8 @@ pnpm typecheck # runs tsc --noEmit across every workspace package
 
 This is a pnpm workspace with three packages, each with its own `tsconfig.json`:
 - **CLI** (`packages/cli`): `pnpm --filter stagereview typecheck`
-- **Types** (`packages/types`): `pnpm --filter @stage-cli/types typecheck`
-- **Web UI** (`packages/web`): `pnpm --filter @stage-cli/web typecheck`
+- **Types** (`packages/types`): `pnpm --filter @stagereview/types typecheck`
+- **Web UI** (`packages/web`): `pnpm --filter @stagereview/web typecheck`
 
 `pnpm typecheck` from the workspace root runs all three (`pnpm -r typecheck`). If a hook has saved a command at `~/.claude/tsc-cache/*/tsc-commands.txt`, prefer that.
 

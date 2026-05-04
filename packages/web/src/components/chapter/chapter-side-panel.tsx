@@ -1,4 +1,4 @@
-import type { Chapter } from "@stage-cli/types/chapters";
+import type { Chapter } from "@stagereview/types/chapters";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LineCounts } from "@/components/shared/line-counts";
 import { Markdown } from "@/components/ui/markdown";

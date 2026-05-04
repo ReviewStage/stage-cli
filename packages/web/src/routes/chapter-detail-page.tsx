@@ -1,4 +1,4 @@
-import type { Chapter, LineRef } from "@stage-cli/types/chapters";
+import type { Chapter, LineRef } from "@stagereview/types/chapters";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";

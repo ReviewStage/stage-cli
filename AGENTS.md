@@ -35,7 +35,7 @@ Components land under `packages/web/src/components/ui/` per `packages/web/compon
 
 ## Architecture
 
-**pnpm workspace.** Three packages with real boundaries — no path-alias indirection. The published unit is `packages/cli` (npm name `stagereview`, binary `stage-cli`); the rest are private workspace deps that get inlined at build time.
+**pnpm workspace.** Three packages with real boundaries — no path-alias indirection. The published unit is `packages/cli` (npm name `stagereview`, binary `stagereview`); the rest are private workspace deps that get inlined at build time.
 
 ```
 pnpm-workspace.yaml         # packages: ["packages/*"]
@@ -43,7 +43,7 @@ packages/
   cli/                      # stagereview — published npm package
     src/                    # CLI + local HTTP server (Node, ESM)
       index.ts              # CLI entry (Commander)
-      show.ts               # `stage-cli show <path>` implementation
+      show.ts               # `stagereview show <path>` implementation
       server.ts             # Plain Node http server with regex-compiled routes
       routes/               # API route handlers (one file per resource)
       runs/                 # Chapter run import + processing
@@ -52,12 +52,12 @@ packages/
       __tests__/            # Vitest tests
     drizzle/                # Generated SQL migrations + meta journal
     drizzle.config.ts       # Drizzle Kit config
-    tsdown.config.ts        # CLI bundler config (inlines @stage-cli/types)
-  types/                    # @stage-cli/types (private, TS-native)
+    tsdown.config.ts        # CLI bundler config (inlines @stagereview/types)
+  types/                    # @stagereview/types (private, TS-native)
     src/chapters.ts         # Wire-format chapter/key-change schemas + shared HunkReference/LineRef
     src/view-state.ts       # Wire-format view-state schema
     src/index.ts            # Barrel re-export
-  web/                      # @stage-cli/web (private) — built into ../cli/web-dist
+  web/                      # @stagereview/web (private) — built into ../cli/web-dist
     src/components/         # UI components (shadcn/ui under components/ui/)
     src/lib/                # Frontend utilities + tests
     src/routes/             # SPA route components
@@ -87,7 +87,7 @@ Plain Node `http` server bound to `127.0.0.1`. Route patterns use `:name` placeh
 
 ### Shared Types (`packages/types/`)
 
-Wire-format types shared between the CLI's HTTP routes and the SPA. The package exports `.ts` source directly (no compile step) — `tsdown` and `vite` resolve TypeScript natively. The CLI bundle inlines this package via `deps.alwaysBundle` in `tsdown.config.ts`, so the published tarball never has a runtime require for `@stage-cli/types`.
+Wire-format types shared between the CLI's HTTP routes and the SPA. The package exports `.ts` source directly (no compile step) — `tsdown` and `vite` resolve TypeScript natively. The CLI bundle inlines this package via `deps.alwaysBundle` in `tsdown.config.ts`, so the published tarball never has a runtime require for `@stagereview/types`.
 
 Building blocks like `HunkReference`, `LineRef`, and `DIFF_SIDE` live here; the strict ingestion schema (`ChaptersFileSchema`) stays in `packages/cli/src/schema.ts` and re-exports them.
 
@@ -120,7 +120,7 @@ A `pre-commit` hook (husky + lint-staged) runs `biome check --write` against sta
 
 ## Package Naming
 
-The published npm package is `stagereview` (lives in `packages/cli`); the CLI binary is `stage-cli`. Internal workspace packages use the `@stage-cli/*` scope (`@stage-cli/types`, `@stage-cli/web`) — they are private and never published.
+The published npm package is `stagereview` (lives in `packages/cli`); the CLI binary is also `stagereview`. Internal workspace packages use the `@stagereview/*` scope (`@stagereview/types`, `@stagereview/web`) — they are private and never published.
 
 ## Testing
 

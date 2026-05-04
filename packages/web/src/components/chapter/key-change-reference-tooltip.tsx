@@ -1,4 +1,4 @@
-import type { HunkReference, LineRef } from "@stage-cli/types/chapters";
+import type { HunkReference, LineRef } from "@stagereview/types/chapters";
 import type { ReactNode } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { sortLineRefsByChapterOrder } from "@/lib/sort-line-refs";

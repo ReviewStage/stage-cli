@@ -8,7 +8,7 @@ Chapter-style code review against your local git branch. Run it from your AI cod
 npm install -g stagereview
 ```
 
-This installs the `stage-cli` command.
+This installs the `stagereview` command.
 
 Then add the skill to your agent:
 
@@ -29,7 +29,7 @@ This breaks your branch's diff into reviewable "chapters".
 To open a generated chapters file directly:
 
 ```bash
-stage-cli show path/to/chapters.json
+stagereview show path/to/chapters.json
 ```
 
 ## What it does

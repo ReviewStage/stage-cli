@@ -6,16 +6,16 @@ user-invocable: true
 
 # stage-chapters
 
-Generates a Stage chapter run for the current local git branch and opens it in a browser. The skill detects the base ref, computes the diff, generates chapters from it, writes a JSON file matching the `stage-cli` schema, and hands the file to `stage-cli show` to launch the SPA.
+Generates a Stage chapter run for the current local git branch and opens it in a browser. The skill detects the base ref, computes the diff, generates chapters from it, writes a JSON file matching the `stagereview` schema, and hands the file to `stagereview show` to launch the SPA.
 
 ## Prerequisites
 
 Run these checks before any other work. If either fails, stop with the error message — do not continue.
 
-1. **`stage-cli` is installed.** Run `which stage-cli`. If it exits non-zero, instruct the user:
+1. **`stagereview` is installed.** Run `which stagereview`. If it exits non-zero, instruct the user:
 
    ```
-   stage-cli is not installed. Run:
+   stagereview is not installed. Run:
 
        npm install -g stagereview
 
@@ -244,11 +244,11 @@ Compute a unique temp path. The trailing `XXXXXX` (with no suffix after) is requ
 TMPFILE=$(mktemp "${TMPDIR:-/tmp}/stage-chapters.XXXXXX")
 ```
 
-`stage-cli show` reads JSON regardless of file extension, so the missing `.json` suffix is fine.
+`stagereview show` reads JSON regardless of file extension, so the missing `.json` suffix is fine.
 
 The `${TMPDIR:-/tmp}` fallback matters on macOS, where `os.tmpdir()` resolves to `/var/folders/...` but `$TMPDIR` is not always set in every shell. Avoid `date +%s%N` — the `%N` (nanoseconds) format is a GNU extension and on macOS BSD `date` it emits a literal `N`, breaking uniqueness.
 
-Write a JSON file at `"$TMPFILE"` matching the shape below. The file must validate against `ChaptersFileSchema` in `packages/cli/src/schema.ts`; mismatched fields will be rejected by `stage-cli show`.
+Write a JSON file at `"$TMPFILE"` matching the shape below. The file must validate against `ChaptersFileSchema` in `packages/cli/src/schema.ts`; mismatched fields will be rejected by `stagereview show`.
 
 High-level shape:
 
@@ -344,12 +344,12 @@ Field rules:
 
 ## Step 6 — Display generated chapters
 
-Hand the file to `stage-cli`:
+Hand the file to `stagereview`:
 
 ```bash
-stage-cli show "$TMPFILE"
+stagereview show "$TMPFILE"
 ```
 
-`stage-cli show` validates the JSON, inserts a new `chapter_run` plus chapters and key changes into the local SQLite database, boots a loopback HTTP server, and opens the browser to the new run. The command stays running and serves the SPA until the user kills it with Ctrl+C — invoke it as the final command in the workflow rather than expecting it to print a value and exit.
+`stagereview show` validates the JSON, inserts a new `chapter_run` plus chapters and key changes into the local SQLite database, boots a loopback HTTP server, and opens the browser to the new run. The command stays running and serves the SPA until the user kills it with Ctrl+C — invoke it as the final command in the workflow rather than expecting it to print a value and exit.
 
-Do not pass a `runId` and do not call a separate `stage-cli ingest`. `show <path>` does ingestion and serving in one step.
+Do not pass a `runId` and do not call a separate `stagereview ingest`. `show <path>` does ingestion and serving in one step.
