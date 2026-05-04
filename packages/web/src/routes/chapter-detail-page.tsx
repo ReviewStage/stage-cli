@@ -36,23 +36,13 @@ interface ChapterDetailPageProps {
 }
 
 export function ChapterDetailPage({ runId, chapterNumber }: ChapterDetailPageProps) {
-	const {
-		data: chaptersData,
-		isLoading: chaptersLoading,
-		error: chaptersError,
-	} = useChapters(runId);
+	const { chapters } = useChapterContext();
+	const { isLoading: chaptersLoading, error: chaptersError } = useChapters(runId);
 	const { data: patch, isLoading: patchLoading, error: patchError } = useDiffPatch(runId);
 
-	const allChapters = useMemo<Chapter[]>(() => {
-		if (!chaptersData?.chapters) return [];
-		return [...chaptersData.chapters].sort((a, b) => a.order - b.order);
-	}, [chaptersData?.chapters]);
-	// Look up by `order` rather than indexing — the schema only requires
-	// positive ints, so chapters can have gaps (1, 3, 5) and array position
-	// won't match the URL chapter number.
 	const chapter =
-		chapterNumber === null ? undefined : allChapters.find((c) => c.order === chapterNumber);
-	const chapterIndex = chapter ? allChapters.indexOf(chapter) : -1;
+		chapterNumber === null ? undefined : chapters.find((c) => c.order === chapterNumber);
+	const chapterIndex = chapter ? chapters.indexOf(chapter) : -1;
 
 	const isLoading = chaptersLoading || patchLoading;
 	const error = chaptersError ?? patchError;
