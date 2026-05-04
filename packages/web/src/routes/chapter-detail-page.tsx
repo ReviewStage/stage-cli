@@ -224,9 +224,9 @@ function ChapterDetailContent({
 	);
 
 	const handleCopyChapter = useCallback(() => {
-		const markdown = formatChapterAsMarkdown(chapter, chapterIndex, chapterEntries);
+		const markdown = formatChapterAsMarkdown(chapter, chapterEntries);
 		void navigator.clipboard.writeText(markdown);
-	}, [chapter, chapterIndex, chapterEntries]);
+	}, [chapter, chapterEntries]);
 
 	const chapterOverlay = useMemo<ChapterOverlayProps>(
 		() => ({

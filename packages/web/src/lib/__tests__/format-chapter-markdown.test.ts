@@ -26,13 +26,31 @@ describe("formatChapterAsMarkdown", () => {
 					{ id: "k2", externalId: "ext-k2", content: "Verify the SQL query", lineRefs: [] },
 				],
 			},
-			0,
 			[{ file: baseFile }],
 		);
 		expect(md).toContain("# Chapter 1: Wire org ID");
 		expect(md).toContain("Threads orgId through.");
 		expect(md).toContain("## What to Review\n- Check the auth path\n- Verify the SQL query");
 		expect(md).toContain("## Files\n- src/foo.ts (modified, +5 -2)");
+	});
+
+	it("uses chapter.order rather than array position in the heading", () => {
+		// Regression: previously the heading was `Chapter ${chapterIndex + 1}`,
+		// which disagreed with the navigator display when chapters had gaps
+		// in their order values.
+		const md = formatChapterAsMarkdown(
+			{
+				id: "c1",
+				externalId: "ext-c1",
+				order: 5,
+				title: "Fifth",
+				summary: "",
+				hunkRefs: [],
+				keyChanges: [],
+			},
+			[],
+		);
+		expect(md).toBe("# Chapter 5: Fifth");
 	});
 
 	it("renders rename arrows when oldPath differs from path", () => {
@@ -46,7 +64,6 @@ describe("formatChapterAsMarkdown", () => {
 				hunkRefs: [],
 				keyChanges: [],
 			},
-			0,
 			[
 				{
 					file: {
@@ -74,7 +91,6 @@ describe("formatChapterAsMarkdown", () => {
 				hunkRefs: [],
 				keyChanges: [],
 			},
-			0,
 			[],
 		);
 		expect(md).toBe("# Chapter 1: Empty");

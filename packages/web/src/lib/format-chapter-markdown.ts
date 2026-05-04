@@ -20,17 +20,16 @@ function formatFileEntry(file: PullRequestFile): string {
 
 /**
  * Renders a chapter as portable Markdown for the "Copy chapter summary" action.
- * Mirrors hosted's `formatChapterAsMarkdown` so output is consistent across
- * stage-cli and the hosted reviewer.
+ * Uses `chapter.order` (not array index) so the heading matches what the
+ * navigator displays, even when chapters have gaps in their `order` values.
  */
 export function formatChapterAsMarkdown(
 	chapter: Chapter,
-	chapterIndex: number,
 	chapterFiles: ChapterFileInput[],
 ): string {
 	const sections: string[] = [];
 
-	sections.push(`# Chapter ${chapterIndex + 1}: ${chapter.title}`);
+	sections.push(`# Chapter ${chapter.order}: ${chapter.title}`);
 
 	if (chapter.summary) sections.push(chapter.summary);
 
