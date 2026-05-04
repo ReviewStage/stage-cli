@@ -44,12 +44,11 @@ export function getShortcutsByGroup() {
 		ShortcutGroup,
 		{ key: ShortcutKey; entry: (typeof KEYBOARD_SHORTCUTS)[ShortcutKey] }[]
 	>();
-	for (const [key, entry] of Object.entries(KEYBOARD_SHORTCUTS)) {
-		const typedKey = key as ShortcutKey;
-		const typedEntry = entry as (typeof KEYBOARD_SHORTCUTS)[ShortcutKey];
-		const list = groups.get(typedEntry.group) ?? [];
-		list.push({ key: typedKey, entry: typedEntry });
-		groups.set(typedEntry.group, list);
+	for (const key of Object.keys(KEYBOARD_SHORTCUTS) as ShortcutKey[]) {
+		const entry = KEYBOARD_SHORTCUTS[key];
+		const list = groups.get(entry.group) ?? [];
+		list.push({ key, entry });
+		groups.set(entry.group, list);
 	}
 	return groups;
 }
