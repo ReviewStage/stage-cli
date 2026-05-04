@@ -1,7 +1,11 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { BookOpen, FileText } from "lucide-react";
+import { BookOpen, FileText, Settings2 } from "lucide-react";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { DiffSettingsForm } from "@/components/diff/diff-settings-form";
 import { SectionLabel } from "@/components/pull-request/section-label";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useFileDiffEntries } from "@/lib/parse-diff";
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
@@ -159,7 +163,29 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 							/>
 						))}
 					</div>
-					<div className="flex shrink-0 items-center gap-3" />
+					<div className="flex shrink-0 items-center gap-3">
+						<Popover>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<PopoverTrigger asChild>
+										<Button
+											variant="outline"
+											size="sm"
+											className="h-7 cursor-pointer px-2"
+											aria-label="Display settings"
+										>
+											<Settings2 className="size-3.5" />
+											<span className="ml-1 hidden text-xs sm:inline">Display</span>
+										</Button>
+									</PopoverTrigger>
+								</TooltipTrigger>
+								<TooltipContent>Display settings</TooltipContent>
+							</Tooltip>
+							<PopoverContent align="end" className="w-80">
+								<DiffSettingsForm compact />
+							</PopoverContent>
+						</Popover>
+					</div>
 				</nav>
 				<Outlet />
 			</div>
