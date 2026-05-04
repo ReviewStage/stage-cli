@@ -1,0 +1,158 @@
+---
+name: stage-chapters
+description: Generate Stage chapters for the current local git branch and open them in a browser for review.
+user-invocable: true
+---
+
+# stage-chapters
+
+Generates a Stage chapter run for the current local git branch and opens it in a browser. The skill detects the base ref, computes the diff, generates chapters from it, writes a JSON file matching the `stage-cli` schema, and hands the file to `stage-cli show` to launch the SPA.
+
+## Prerequisites
+
+Run these checks before any other work. If either fails, stop with the error message — do not continue.
+
+1. **`stage-cli` is installed.** Run `which stage-cli`. If it exits non-zero, instruct the user:
+
+   ```
+   stage-cli is not installed. Run:
+
+       npm install -g stage-cli
+
+   Then retry /stage-chapters.
+   ```
+
+   Stop.
+
+2. **The current directory is a git repo.** Run `git rev-parse --is-inside-work-tree`. If it does not print `true`, stop with:
+
+   ```
+   /stage-chapters must be run inside a git repository.
+   ```
+
+## Step 1 — Detect base ref
+
+Find the branch the user reviews against. Try each of the following in order; use the first that succeeds:
+
+1. `git rev-parse --verify origin/HEAD 2>/dev/null` — typically resolves to `refs/remotes/origin/main`. Strip the leading `refs/remotes/origin/` to recover the bare base name.
+2. `git rev-parse --verify main` — fall back to a local `main` branch.
+3. `git rev-parse --verify master` — final fallback for older repos.
+
+If all three fail, stop with:
+
+```
+No default branch detected. Tried origin/HEAD, main, and master.
+```
+
+Save the resolved base name (e.g. `main`) as `<base>` for the next steps.
+
+## Step 2 — Get the diff
+
+Compute the merge-base, capture the relevant SHAs, and dump the unified diff:
+
+```bash
+MERGE_BASE=$(git merge-base <base> HEAD)
+BASE_SHA=$(git rev-parse <base>)
+HEAD_SHA=$(git rev-parse HEAD)
+
+git diff "$MERGE_BASE"..
+```
+
+The trailing `..` is intentional — it includes working-tree changes for tracked files alongside committed changes on the branch. Save the full diff text into context for Step 3.
+
+`BASE_SHA`, `HEAD_SHA`, and `MERGE_BASE` are full 40-character SHAs and feed directly into the JSON `scope` field in Step 4.
+
+## Step 3 — Cluster + narrate
+
+> **TODO:** See Issue 11 for the chapter generation prompt port. For now, leave this step as a placeholder. The next revision of this skill will produce a `chapters` array shaped per the schema documented in Step 4.
+
+## Step 4 — Write JSON file
+
+Compute a unique temp path. Epoch nanoseconds keep concurrent runs from colliding:
+
+```bash
+TMPFILE="${TMPDIR:-/tmp}/stage-chapters-$(date +%s%N).json"
+```
+
+The `${TMPDIR:-/tmp}` fallback matters on macOS, where `os.tmpdir()` resolves to `/var/folders/...` but `$TMPDIR` is not always set in every shell.
+
+Write a JSON file at `"$TMPFILE"` matching the shape below. The file must validate against `ChaptersFileSchema` in `packages/cli/src/schema.ts`; mismatched fields will be rejected by `stage-cli show`.
+
+High-level shape:
+
+```
+{ scope: {...}, chapters: [...], generatedAt: "..." }
+```
+
+Full example:
+
+```jsonc
+{
+  "scope": {
+    // Either committed (no working-tree changes):
+    "kind": "committed",
+    "baseSha": "<40-char SHA>",
+    "headSha": "<40-char SHA>",
+    "mergeBaseSha": "<40-char SHA>"
+
+    // Or workingTree (when the diff includes uncommitted tracked changes):
+    // "kind": "workingTree",
+    // "ref": "work" | "staged" | "unstaged",
+    // "baseSha": "<40-char SHA>",
+    // "headSha": "<40-char SHA>",
+    // "mergeBaseSha": "<40-char SHA>"
+  },
+  "chapters": [
+    {
+      "id": "ch-1",
+      "order": 1,
+      "title": "Short imperative title",
+      "summary": "Why this chapter matters to the reviewer.",
+      "hunkRefs": [
+        { "filePath": "path/to/file.ts", "oldStart": 42 }
+      ],
+      "keyChanges": [
+        {
+          "content": "A judgment-call question for the reviewer (not source code).",
+          "lineRefs": [
+            {
+              "filePath": "path/to/file.ts",
+              "side": "additions",
+              "startLine": 50,
+              "endLine": 55
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "generatedAt": "2026-05-04T12:34:56.000Z"
+}
+```
+
+Field rules:
+
+| Field | Constraint |
+|-------|------------|
+| `scope.kind` | `"committed"` or `"workingTree"` |
+| `scope.ref` | Required when `kind` is `"workingTree"`; one of `"work"`, `"staged"`, `"unstaged"` |
+| `scope.baseSha` / `headSha` / `mergeBaseSha` | Full 40-character lowercase hex SHAs |
+| `chapters[].id` | Non-empty, unique within the run |
+| `chapters[].order` | Positive integer (1-indexed) |
+| `chapters[].hunkRefs[].oldStart` | Non-negative integer — the pre-image start line from the unified-diff `@@` header (`0` for new files) |
+| `chapters[].keyChanges[].lineRefs` | Array with at least one entry |
+| `lineRefs[].side` | `"additions"` (right side) or `"deletions"` (left side) |
+| `lineRefs[].startLine` / `endLine` | Positive integers; `endLine >= startLine` |
+| `generatedAt` | ISO 8601 datetime string |
+
+## Step 5 — Display generated chapters
+
+Hand the file to `stage-cli`:
+
+```bash
+stage-cli show "$TMPFILE"
+```
+
+`stage-cli show` validates the JSON, inserts a new `chapter_run` plus chapters and key changes into the local SQLite database, boots a loopback HTTP server, and opens the browser to the new run. The command stays running and serves the SPA until the user kills it with Ctrl+C — invoke it as the final command in the workflow rather than expecting it to print a value and exit.
+
+Do not pass a `runId` and do not call a separate `stage-cli ingest`. `show <path>` does ingestion and serving in one step.
