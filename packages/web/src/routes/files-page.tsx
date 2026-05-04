@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import {
 	FileDiffList,
@@ -19,9 +19,10 @@ import { useViewState } from "@/lib/use-view-state";
 
 interface FilesPageProps {
 	runId: string;
+	scrollTo?: string;
 }
 
-export function FilesPage({ runId }: FilesPageProps) {
+export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 	const { data, isLoading, error } = useDiffPatch(runId);
 
 	const rawEntries = useFileDiffEntries(data);
@@ -61,6 +62,12 @@ export function FilesPage({ runId }: FilesPageProps) {
 		},
 		[setActiveFileManually],
 	);
+
+	useEffect(() => {
+		if (scrollTo && !isLoading) {
+			diffListRef.current?.scrollToFile(scrollTo);
+		}
+	}, [scrollTo, isLoading]);
 
 	const [isPickerCollapsed, setIsPickerCollapsed] = useState(false);
 	useHotkeys(KEYBOARD_SHORTCUTS.TOGGLE_FILES.hotkey, () => setIsPickerCollapsed((c) => !c), {

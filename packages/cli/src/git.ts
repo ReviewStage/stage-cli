@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
+import type { ChapterRunRow } from "./db/schema/chapter-run.js";
+import { SCOPE_KIND, WORKING_TREE_REF } from "./schema.js";
 
 export class NotInGitRepoError extends Error {
 	constructor() {
@@ -45,6 +47,23 @@ function readOriginUrl(repoRoot: string): string | null {
 		return out || null;
 	} catch {
 		return null;
+	}
+}
+
+export function buildDiffArgs(run: ChapterRunRow): string[] {
+	if (run.scopeKind === SCOPE_KIND.COMMITTED) {
+		return ["diff", "--no-color", `${run.baseSha}..${run.headSha}`];
+	}
+	if (run.workingTreeRef === null) {
+		throw new Error("workingTree run is missing workingTreeRef");
+	}
+	switch (run.workingTreeRef) {
+		case WORKING_TREE_REF.UNSTAGED:
+			return ["diff", "--no-color"];
+		case WORKING_TREE_REF.STAGED:
+			return ["diff", "--no-color", "--cached"];
+		case WORKING_TREE_REF.WORK:
+			return ["diff", "--no-color", "HEAD"];
 	}
 }
 

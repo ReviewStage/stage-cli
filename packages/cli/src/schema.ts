@@ -1,4 +1,5 @@
 import { hunkReferenceSchema, lineRefSchema } from "@stage-cli/types/chapters";
+import { PrologueSchema } from "@stage-cli/types/prologue";
 import { z } from "zod";
 
 export type { DiffSide, HunkReference, LineRef } from "@stage-cli/types/chapters";
@@ -62,6 +63,7 @@ export type Scope = z.infer<typeof scopeSchema>;
 export const ChaptersFileSchema = z.strictObject({
 	scope: scopeSchema,
 	chapters: z.array(chapterSchema),
+	prologue: PrologueSchema.optional(),
 	generatedAt: z.iso.datetime(),
 });
 export type ChaptersFile = z.infer<typeof ChaptersFileSchema>;

@@ -4,11 +4,10 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { chapterRun } from "../db/schema/index.js";
-import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
+import { buildDiffArgs } from "../git.js";
+import { SCOPE_KIND } from "../schema.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
-
-type ChapterRunRow = typeof chapterRun.$inferSelect;
 
 export function diffRoutes(db: StageDb): Route[] {
 	return [
@@ -47,25 +46,6 @@ export function diffRoutes(db: StageDb): Route[] {
 			},
 		},
 	];
-}
-
-function buildDiffArgs(run: ChapterRunRow): string[] {
-	if (run.scopeKind === SCOPE_KIND.COMMITTED) {
-		// `..` (not `...`) — we want the literal diff between the two SHAs, not the
-		// merge-base diff that `...` would produce.
-		return ["diff", "--no-color", `${run.baseSha}..${run.headSha}`];
-	}
-	if (run.workingTreeRef === null) {
-		throw new Error("workingTree run is missing workingTreeRef");
-	}
-	switch (run.workingTreeRef) {
-		case WORKING_TREE_REF.UNSTAGED:
-			return ["diff", "--no-color"];
-		case WORKING_TREE_REF.STAGED:
-			return ["diff", "--no-color", "--cached"];
-		case WORKING_TREE_REF.WORK:
-			return ["diff", "--no-color", "HEAD"];
-	}
 }
 
 function streamGitDiff(

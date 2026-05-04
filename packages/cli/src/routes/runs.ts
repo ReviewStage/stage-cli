@@ -80,6 +80,7 @@ export function runRoutes(db: StageDb): Route[] {
 				writeJson(res, 200, {
 					run: mapRun(run),
 					chapters: chapters.map((ch) => mapChapter(ch, byChapter.get(ch.id) ?? [])),
+					prologue: run.prologue ?? null,
 				});
 			},
 		},

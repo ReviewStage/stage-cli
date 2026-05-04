@@ -147,6 +147,42 @@ describe("ChaptersFileSchema", () => {
 		expectInvalidAt(makeFixture({ generatedAt: "yesterday" }), "generatedAt");
 	});
 
+	it("accepts a file with a valid prologue", () => {
+		const prologue = {
+			motivation: "Users couldn't reset their password without getting logged out.",
+			outcome: "Password reset now preserves the session.",
+			keyChanges: [
+				{
+					summary: "Session token survives password reset",
+					description: "Token refresh logic moved earlier in the reset flow",
+				},
+			],
+			focusAreas: [
+				{
+					type: "security",
+					severity: "high",
+					title: "Session token handling",
+					description:
+						"Session persists across password change — confirm token rotation still occurs",
+					locations: ["src/auth/reset.ts"],
+				},
+			],
+			complexity: { level: "medium", reasoning: "Touches auth and session layers" },
+		};
+		const result = ChaptersFileSchema.parse(makeFixture({ prologue }));
+		expect(result.prologue).toBeDefined();
+		expect(result.prologue?.motivation).toBe(prologue.motivation);
+	});
+
+	it("accepts a file without a prologue (backward compatibility)", () => {
+		const result = ChaptersFileSchema.parse(makeFixture());
+		expect(result.prologue).toBeUndefined();
+	});
+
+	it("rejects a file with a malformed prologue", () => {
+		expectInvalidAt(makeFixture({ prologue: { motivation: "test" } }), "prologue.keyChanges");
+	});
+
 	it("rejects line references the UI cannot anchor safely", () => {
 		expectInvalidAt(
 			makeFixture({

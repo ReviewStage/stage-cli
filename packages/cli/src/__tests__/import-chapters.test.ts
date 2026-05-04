@@ -185,6 +185,43 @@ describe("chapter import", () => {
 		expect(db2.select().from(chapterRun).all()).toHaveLength(2);
 	});
 
+	it("stores the prologue on chapter_run when present", () => {
+		const db = getDb({ dbPath });
+		const prologue = {
+			motivation: "Dashboards would break during deploys.",
+			outcome: "Dashboards stay up during deploys now.",
+			keyChanges: [
+				{
+					summary: "Deploy-safe dashboard rendering",
+					description: "Uses cached data during deploys",
+				},
+			],
+			focusAreas: [
+				{
+					type: "architecture" as const,
+					severity: "info" as const,
+					title: "New caching layer",
+					description: "Confirm cache invalidation on deploy completion",
+					locations: ["src/dashboard.ts"],
+				},
+			],
+			complexity: { level: "medium" as const, reasoning: "Touches caching and rendering" },
+		};
+
+		insertChaptersFile(db, makeFixture({ prologue }), makeRepoContext());
+
+		const [row] = db.select().from(chapterRun).all();
+		expect(row?.prologue).toEqual(prologue);
+	});
+
+	it("stores null prologue when omitted from the fixture", () => {
+		const db = getDb({ dbPath });
+		insertChaptersFile(db, makeFixture(), makeRepoContext());
+
+		const [row] = db.select().from(chapterRun).all();
+		expect(row?.prologue).toBeNull();
+	});
+
 	it("uses isolated databases for distinct dbPaths", async () => {
 		const dbPathA = path.join(tmpDir, "a.sqlite");
 		const dbPathB = path.join(tmpDir, "b.sqlite");

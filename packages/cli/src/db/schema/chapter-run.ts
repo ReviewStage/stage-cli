@@ -1,3 +1,4 @@
+import type { Prologue } from "@stage-cli/types/prologue";
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../../schema.js";
 import { baseColumns } from "./columns.js";
@@ -16,6 +17,7 @@ export const chapterRun = sqliteTable(
 		headSha: text().notNull(),
 		mergeBaseSha: text().notNull(),
 		generatedAt: integer({ mode: "timestamp_ms" }).notNull(),
+		prologue: text({ mode: "json" }).$type<Prologue>(),
 	},
 	(table) => [index("chapter_run_created_at_idx").on(table.createdAt)],
 );

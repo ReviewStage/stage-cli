@@ -1,0 +1,1 @@
+ALTER TABLE `chapter_run` ADD `prologue` text;
