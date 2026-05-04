@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from "./app/index";
 import { Route as RunsRunIdRouteImport } from "./app/runs.$runId";
 import { Route as RunsRunIdIndexRouteImport } from "./app/runs.$runId.index";
 import { Route as RunsRunIdFilesRouteImport } from "./app/runs.$runId.files";
+import { Route as RunsRunIdChaptersChapterNumberRouteImport } from "./app/runs.$runId.chapters.$chapterNumber";
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
@@ -34,17 +35,25 @@ const RunsRunIdFilesRoute = RunsRunIdFilesRouteImport.update({
   path: "/files",
   getParentRoute: () => RunsRunIdRoute,
 } as any);
+const RunsRunIdChaptersChapterNumberRoute =
+  RunsRunIdChaptersChapterNumberRouteImport.update({
+    id: "/chapters/$chapterNumber",
+    path: "/chapters/$chapterNumber",
+    getParentRoute: () => RunsRunIdRoute,
+  } as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/runs/$runId": typeof RunsRunIdRouteWithChildren;
   "/runs/$runId/files": typeof RunsRunIdFilesRoute;
   "/runs/$runId/": typeof RunsRunIdIndexRoute;
+  "/runs/$runId/chapters/$chapterNumber": typeof RunsRunIdChaptersChapterNumberRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
   "/runs/$runId/files": typeof RunsRunIdFilesRoute;
   "/runs/$runId": typeof RunsRunIdIndexRoute;
+  "/runs/$runId/chapters/$chapterNumber": typeof RunsRunIdChaptersChapterNumberRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
@@ -52,18 +61,29 @@ export interface FileRoutesById {
   "/runs/$runId": typeof RunsRunIdRouteWithChildren;
   "/runs/$runId/files": typeof RunsRunIdFilesRoute;
   "/runs/$runId/": typeof RunsRunIdIndexRoute;
+  "/runs/$runId/chapters/$chapterNumber": typeof RunsRunIdChaptersChapterNumberRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: "/" | "/runs/$runId" | "/runs/$runId/files" | "/runs/$runId/";
+  fullPaths:
+    | "/"
+    | "/runs/$runId"
+    | "/runs/$runId/files"
+    | "/runs/$runId/"
+    | "/runs/$runId/chapters/$chapterNumber";
   fileRoutesByTo: FileRoutesByTo;
-  to: "/" | "/runs/$runId/files" | "/runs/$runId";
+  to:
+    | "/"
+    | "/runs/$runId/files"
+    | "/runs/$runId"
+    | "/runs/$runId/chapters/$chapterNumber";
   id:
     | "__root__"
     | "/"
     | "/runs/$runId"
     | "/runs/$runId/files"
-    | "/runs/$runId/";
+    | "/runs/$runId/"
+    | "/runs/$runId/chapters/$chapterNumber";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -101,17 +121,26 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof RunsRunIdFilesRouteImport;
       parentRoute: typeof RunsRunIdRoute;
     };
+    "/runs/$runId/chapters/$chapterNumber": {
+      id: "/runs/$runId/chapters/$chapterNumber";
+      path: "/chapters/$chapterNumber";
+      fullPath: "/runs/$runId/chapters/$chapterNumber";
+      preLoaderRoute: typeof RunsRunIdChaptersChapterNumberRouteImport;
+      parentRoute: typeof RunsRunIdRoute;
+    };
   }
 }
 
 interface RunsRunIdRouteChildren {
   RunsRunIdFilesRoute: typeof RunsRunIdFilesRoute;
   RunsRunIdIndexRoute: typeof RunsRunIdIndexRoute;
+  RunsRunIdChaptersChapterNumberRoute: typeof RunsRunIdChaptersChapterNumberRoute;
 }
 
 const RunsRunIdRouteChildren: RunsRunIdRouteChildren = {
   RunsRunIdFilesRoute: RunsRunIdFilesRoute,
   RunsRunIdIndexRoute: RunsRunIdIndexRoute,
+  RunsRunIdChaptersChapterNumberRoute: RunsRunIdChaptersChapterNumberRoute,
 };
 
 const RunsRunIdRouteWithChildren = RunsRunIdRoute._addFileChildren(

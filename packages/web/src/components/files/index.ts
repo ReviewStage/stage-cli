@@ -1,4 +1,5 @@
 export {
+	type ChapterOverlayProps,
 	type CollapseState,
 	FileDiffList,
 	type FileDiffListHandle,

@@ -28,6 +28,28 @@ export const KEYBOARD_SHORTCUTS = {
 		mac: { label: "k", ariaKeyshortcuts: "K" },
 		nonMac: { label: "k", ariaKeyshortcuts: "K" },
 	},
+	NEXT_CHAPTER: {
+		hotkey: "right",
+		description: "Next chapter",
+		group: "Navigation",
+		mac: { label: "→", ariaKeyshortcuts: "ArrowRight" },
+		nonMac: { label: "→", ariaKeyshortcuts: "ArrowRight" },
+	},
+	PREV_CHAPTER: {
+		hotkey: "left",
+		description: "Previous chapter",
+		group: "Navigation",
+		mac: { label: "←", ariaKeyshortcuts: "ArrowLeft" },
+		nonMac: { label: "←", ariaKeyshortcuts: "ArrowLeft" },
+	},
+	MARK_CHAPTER_AS_VIEWED: {
+		hotkey: "v",
+		hotkeyOptions: { useKey: true },
+		description: "Toggle mark chapter as viewed",
+		group: "Review",
+		mac: { label: "v", ariaKeyshortcuts: "V" },
+		nonMac: { label: "v", ariaKeyshortcuts: "V" },
+	},
 } as const;
 
 export type ShortcutKey = keyof typeof KEYBOARD_SHORTCUTS;

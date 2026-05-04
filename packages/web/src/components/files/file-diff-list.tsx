@@ -2,6 +2,7 @@ import { FileCode } from "lucide-react";
 import { forwardRef, useCallback, useImperativeHandle, useState } from "react";
 import { FileHeader } from "@/components/chapter/file-header";
 import { PierreDiffViewer } from "@/components/chapter/pierre-diff-viewer";
+import type { AnnotatedLineRef, LineRef } from "@/lib/diff-types";
 import type { FileDiffEntry } from "@/lib/parse-diff";
 
 export interface FileDiffListHandle {
@@ -15,18 +16,34 @@ export interface CollapseState {
 	expandAllFiles: () => void;
 }
 
+/**
+ * Chapter line-ref overlay configuration. Bundled together because each prop
+ * is meaningless without the others — passing one without the rest produces a
+ * non-functional overlay.
+ */
+export interface ChapterOverlayProps {
+	allLineRefsByFile: Map<string, AnnotatedLineRef[]> | null;
+	focusedLineRefsByFile: Map<string, LineRef[]> | null;
+	focusedKeyChangeId: string | null;
+	isKeyChangeChecked: (keyChangeId: string) => boolean;
+	onMarkKeyChangeChecked: (keyChangeId: string) => void;
+	onUnmarkKeyChangeChecked: (keyChangeId: string) => void;
+	onFocusKeyChange: (keyChangeId: string | null, scrollTarget?: LineRef | null) => void;
+}
+
 interface FileDiffListProps {
 	entries: FileDiffEntry[];
 	emptyMessage: string;
 	viewedPathSet?: ReadonlySet<string>;
 	onToggleViewed?: (path: string) => void;
 	collapseState: CollapseState;
+	chapterOverlay?: ChapterOverlayProps;
 }
 
 const FILE_TOP_PADDING = 16;
 
 export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(function FileDiffList(
-	{ entries, emptyMessage, viewedPathSet, onToggleViewed, collapseState },
+	{ entries, emptyMessage, viewedPathSet, onToggleViewed, collapseState, chapterOverlay },
 	ref,
 ) {
 	useImperativeHandle(
@@ -64,6 +81,7 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 					isViewed={viewedPathSet?.has(entry.file.path) ?? false}
 					onToggleViewed={onToggleViewed}
 					collapseState={collapseState}
+					chapterOverlay={chapterOverlay}
 				/>
 			))}
 		</div>
@@ -75,11 +93,18 @@ interface FileDiffSectionProps {
 	isViewed: boolean;
 	onToggleViewed?: (path: string) => void;
 	collapseState: CollapseState;
+	chapterOverlay?: ChapterOverlayProps;
 }
 
 const noop = () => {};
 
-function FileDiffSection({ entry, isViewed, onToggleViewed, collapseState }: FileDiffSectionProps) {
+function FileDiffSection({
+	entry,
+	isViewed,
+	onToggleViewed,
+	collapseState,
+	chapterOverlay,
+}: FileDiffSectionProps) {
 	const { file, diff } = entry;
 	const isCollapsed = collapseState.collapsedFiles.has(file.path);
 	const [isExpanded, setIsExpanded] = useState(false);
@@ -111,7 +136,18 @@ function FileDiffSection({ entry, isViewed, onToggleViewed, collapseState }: Fil
 				onToggleViewed={onToggleViewed ? handleToggleViewed : undefined}
 			/>
 			{!isCollapsed && (
-				<PierreDiffViewer fileDiff={diff} filePath={file.path} expandUnchanged={isExpanded} />
+				<PierreDiffViewer
+					fileDiff={diff}
+					filePath={file.path}
+					expandUnchanged={isExpanded}
+					allLineRefsByFile={chapterOverlay?.allLineRefsByFile}
+					focusedLineRefsByFile={chapterOverlay?.focusedLineRefsByFile}
+					focusedKeyChangeId={chapterOverlay?.focusedKeyChangeId ?? null}
+					isKeyChangeChecked={chapterOverlay?.isKeyChangeChecked}
+					onMarkKeyChangeChecked={chapterOverlay?.onMarkKeyChangeChecked}
+					onUnmarkKeyChangeChecked={chapterOverlay?.onUnmarkKeyChangeChecked}
+					onFocusKeyChange={chapterOverlay?.onFocusKeyChange}
+				/>
 			)}
 		</div>
 	);

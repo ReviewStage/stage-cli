@@ -1,4 +1,5 @@
 import type { Chapter, HunkReference } from "@stage-cli/types/chapters";
+import { Link } from "@tanstack/react-router";
 import { ChevronRight, Circle, CircleCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileViewRow } from "@/components/chapter";
@@ -60,10 +61,10 @@ function FileCollapsible({
 
 interface ChapterEntryProps {
 	chapter: Chapter;
-	index: number;
 	isViewed: boolean;
 	filePaths: string[];
 	isFilesOpen: boolean;
+	runId: string;
 	onToggleViewed: () => void;
 	onToggleFiles: () => void;
 	onToggleAllFiles: () => void;
@@ -71,10 +72,10 @@ interface ChapterEntryProps {
 
 function ChapterEntry({
 	chapter,
-	index,
 	isViewed,
 	filePaths,
 	isFilesOpen,
+	runId,
 	onToggleViewed,
 	onToggleFiles,
 	onToggleAllFiles,
@@ -102,10 +103,10 @@ function ChapterEntry({
 						{isViewed ? "Unmark as viewed" : "Mark as viewed"}
 					</TooltipContent>
 				</Tooltip>
-				{/* Non-interactive title with the hosted dotted-leader styling. When the
-            chapter-detail route lands this becomes a Link/button to navigate. */}
-				<div
-					className="min-w-0 flex-1 overflow-hidden text-left"
+				<Link
+					to="/runs/$runId/chapters/$chapterNumber"
+					params={{ runId, chapterNumber: String(chapter.order) }}
+					className="min-w-0 flex-1 overflow-hidden rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
 					style={{
 						backgroundImage:
 							"radial-gradient(circle, color-mix(in oklch, var(--muted-foreground) 30%, transparent) 1px, transparent 1px)",
@@ -116,13 +117,13 @@ function ChapterEntry({
 				>
 					<span
 						className={cn(
-							"[box-decoration-break:clone] bg-background pr-1.5 font-semibold text-base",
+							"[box-decoration-break:clone] bg-background pr-1.5 font-semibold text-base hover:underline",
 							isViewed && "text-muted-foreground",
 						)}
 					>
-						{index + 1}. {chapter.title}
+						{chapter.order}. {chapter.title}
 					</span>
-				</div>
+				</Link>
 			</div>
 
 			{filePaths.length > 0 && (
@@ -209,17 +210,17 @@ function ChaptersList({ chapters, runId, viewedCount }: ChaptersListProps) {
 				</span>
 			</div>
 			<div className="space-y-4">
-				{chapters.map((c, index) => {
+				{chapters.map((c) => {
 					const externalId = c.externalId;
 					const isViewed = view.isChapterViewed(externalId);
 					return (
 						<ChapterEntry
 							key={c.id}
 							chapter={c}
-							index={index}
 							isViewed={isViewed}
 							filePaths={filePathsByChapter.get(c.id) ?? []}
 							isFilesOpen={openFiles.has(c.id)}
+							runId={runId}
 							onToggleViewed={() =>
 								isViewed ? view.unmarkChapterViewed(externalId) : view.markChapterViewed(externalId)
 							}
