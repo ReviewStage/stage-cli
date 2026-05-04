@@ -6,6 +6,7 @@ import { SectionLabel } from "@/components/pull-request/section-label";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ChapterProvider } from "@/lib/chapter-context";
 import { useFileDiffEntries } from "@/lib/parse-diff";
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
@@ -187,7 +188,9 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 						</Popover>
 					</div>
 				</nav>
-				<Outlet />
+				<ChapterProvider runId={runId}>
+					<Outlet />
+				</ChapterProvider>
 			</div>
 		</div>
 	);
