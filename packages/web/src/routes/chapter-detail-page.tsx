@@ -37,8 +37,12 @@ export function ChapterDetailPage({ runId, chapterNumber }: ChapterDetailPagePro
 		if (!chaptersData?.chapters) return [];
 		return [...chaptersData.chapters].sort((a, b) => a.order - b.order);
 	}, [chaptersData?.chapters]);
-	const chapterIndex = chapterNumber === null ? -1 : chapterNumber - 1;
-	const chapter = chapterIndex >= 0 ? allChapters[chapterIndex] : undefined;
+	// Look up by `order` rather than indexing — the schema only requires
+	// positive ints, so chapters can have gaps (1, 3, 5) and array position
+	// won't match the URL chapter number.
+	const chapter =
+		chapterNumber === null ? undefined : allChapters.find((c) => c.order === chapterNumber);
+	const chapterIndex = chapter ? allChapters.indexOf(chapter) : -1;
 
 	const isLoading = chaptersLoading || patchLoading;
 	const error = chaptersError ?? patchError;
@@ -47,7 +51,12 @@ export function ChapterDetailPage({ runId, chapterNumber }: ChapterDetailPagePro
 	if (error) return <ErrorState runId={runId} error={error} />;
 	if (isLoading) return <LoadingState />;
 	if (!chapter) return <NotFoundState runId={runId} />;
-	if (!patch) return <ErrorState runId={runId} error={new Error("Diff patch unavailable")} />;
+	// Distinguish "still loading / errored" (undefined) from "valid empty diff"
+	// (""): a chapter with no hunks against an empty PR is rendered as the
+	// "No changes in this chapter" empty state by FileDiffList, not an error.
+	if (patch === undefined) {
+		return <ErrorState runId={runId} error={new Error("Diff patch unavailable")} />;
+	}
 
 	return (
 		<ChapterDetailContent

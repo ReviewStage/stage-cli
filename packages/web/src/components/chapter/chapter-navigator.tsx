@@ -81,7 +81,7 @@ export function ChapterNavigator({
 							variant="ghost"
 							className="h-7 min-w-0 flex-1 cursor-pointer gap-1 px-2 font-medium text-sm"
 						>
-							<span className="truncate">Chapter {chapterIndex + 1}</span>
+							<span className="truncate">Chapter {chapter.order}</span>
 							<ChevronDown className="size-3.5 shrink-0 opacity-50" />
 						</Button>
 					</DropdownMenuTrigger>
@@ -107,7 +107,7 @@ export function ChapterNavigator({
 													: "bg-muted text-muted-foreground",
 											)}
 										>
-											{index + 1}
+											{ch.order}
 										</div>
 										<span className="min-w-0 flex-1 truncate text-sm">{ch.title}</span>
 										{isChViewed && (
