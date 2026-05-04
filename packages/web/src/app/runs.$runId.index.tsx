@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { PrologueSection } from "@/components/prologue/prologue-section";
 import { useChapters } from "@/lib/use-chapters";
 import { countViewedChapters, useViewStateData } from "@/lib/use-view-state";
 import { ChaptersIndexPage } from "@/routes/chapters-index-page";
@@ -19,11 +20,14 @@ function ChaptersRoute() {
 	);
 
 	return (
-		<ChaptersIndexPage
-			chapters={chapters}
-			runId={runId}
-			viewedCount={viewedCount}
-			isLoading={isLoading}
-		/>
+		<>
+			<PrologueSection prologue={data?.prologue} />
+			<ChaptersIndexPage
+				chapters={chapters}
+				runId={runId}
+				viewedCount={viewedCount}
+				isLoading={isLoading}
+			/>
+		</>
 	);
 }

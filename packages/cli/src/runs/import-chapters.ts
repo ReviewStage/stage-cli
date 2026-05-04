@@ -37,6 +37,7 @@ export function insertChaptersFile(
 				headSha: file.scope.headSha,
 				mergeBaseSha: file.scope.mergeBaseSha,
 				generatedAt: new Date(file.generatedAt),
+				prologue: file.prologue ?? null,
 			})
 			.returning({ id: chapterRun.id })
 			.all();

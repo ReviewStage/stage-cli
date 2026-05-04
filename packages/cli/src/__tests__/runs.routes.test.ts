@@ -170,6 +170,47 @@ describe("runs API", () => {
 		expect(body.chapters[0]?.keyChanges.every((k) => typeof k === "object")).toBe(true);
 	});
 
+	it("GET /api/runs/:runId/chapters returns prologue: null when no prologue was imported", async () => {
+		const db = getDb({ dbPath });
+		const { runId } = insertChaptersFile(db, makeFixture(), makeRepoContext());
+
+		const { port } = await startWithRoutes();
+		const res = await getJson(port, `/api/runs/${runId}/chapters`);
+
+		expect(res.status).toBe(200);
+		const body = res.body as { prologue: unknown };
+		expect(body.prologue).toBeNull();
+	});
+
+	it("GET /api/runs/:runId/chapters includes the prologue when imported", async () => {
+		const db = getDb({ dbPath });
+		const prologue = {
+			motivation: "Slow page loads on large repos.",
+			outcome: "Pages load fast now.",
+			keyChanges: [
+				{ summary: "Pagination added to repo list", description: "Limits to 50 repos per page" },
+			],
+			focusAreas: [
+				{
+					type: "performance" as const,
+					severity: "info" as const,
+					title: "Pagination boundary",
+					description: "Verify off-by-one at page boundaries",
+					locations: ["src/repos.ts"],
+				},
+			],
+			complexity: { level: "low" as const, reasoning: "Simple pagination" },
+		};
+		const { runId } = insertChaptersFile(db, makeFixture({ prologue }), makeRepoContext());
+
+		const { port } = await startWithRoutes();
+		const res = await getJson(port, `/api/runs/${runId}/chapters`);
+
+		expect(res.status).toBe(200);
+		const body = res.body as { prologue: typeof prologue };
+		expect(body.prologue).toEqual(prologue);
+	});
+
 	it("GET /api/runs/:runId/chapters returns 404 for unknown runs", async () => {
 		const { port } = await startWithRoutes();
 		const res = await getJson(port, "/api/runs/00000000-0000-0000-0000-000000000000/chapters");

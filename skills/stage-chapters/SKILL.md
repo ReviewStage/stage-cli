@@ -177,7 +177,66 @@ Produce an array of chapter objects. Each chapter:
 - Do **not** invent `hunkRefs` — only use `(filePath, oldStart)` tuples that actually appear in the diff's `@@` headers.
 - `keyChanges[].lineRefs` must have at least one entry per key change.
 
-## Step 4 — Write JSON file
+## Step 4 — Generate prologue
+
+After building the chapters, generate a **prologue** — a high-level overview of the entire change. The prologue helps reviewers orient themselves before diving into individual chapters.
+
+Read the commit messages for context:
+
+```bash
+git log --oneline "$MERGE_BASE..HEAD"
+```
+
+Using the diff, chapters, and commit messages, produce a `prologue` object with the following fields:
+
+### motivation (string or null)
+
+One sentence a non-engineer would understand. What was broken, annoying, or missing — from a person's perspective. If the commit messages are generic and the diff doesn't make the motivation obvious, use `null`.
+
+**Good:** "Dashboards would break during deploys, so people had to keep refreshing until things came back."
+**Bad:** "The API client had no retry logic for 503 errors." (too technical — no one outside the team knows what that means)
+
+### outcome (string or null)
+
+One sentence a non-engineer would understand. What's better now. Same null rule as motivation.
+
+**Good:** "Dashboards stay up during deploys now."
+**Bad:** "Added exponential backoff with a base delay of 100ms." (implementation detail)
+
+### keyChanges (array of 2–5 objects)
+
+Each object has:
+- `summary`: 6–10 words describing what's different now. **Outcome-focused**, not action-focused.
+- `description`: Capitalized sentence, 10–15 words of additional context.
+
+**Good:** `summary: "Audit runs are now tracked in a database"`, `description: "Uses new Drizzle ORM schema with full history retention"`
+**Bad:** `summary: "Adds Drizzle ORM layer"` (action-focused — describe what changed, not what you did)
+
+### focusAreas (array of 1–5 objects)
+
+Always provide at least 1 focus area. Even clean changes have spots worth a reviewer's attention.
+
+Each object has:
+- `type`: one of `security`, `breaking-change`, `high-complexity`, `data-integrity`, `new-pattern`, `architecture`, `performance`, `testing-gap`
+- `severity`: one of `critical`, `high`, `medium` (for problems) or `info` (for points of interest)
+- `title`: 3–5 word noun phrase (e.g., "Unvalidated user input")
+- `description`: WHY this was flagged + a declarative action for the reviewer. Use "confirm", "verify", or "check" to give the reviewer a specific task.
+- `locations`: array of file paths where this applies
+
+**Good:** `type: "security", severity: "high", title: "Unvalidated user input", description: "User-provided ID passed directly to database query — confirm input is validated and parameterized"`
+**Bad:** `description: "Worth understanding"` (no action, vague)
+
+### complexity
+
+Object with:
+- `level`: one of `low`, `medium`, `high`, `very-high`
+- `reasoning`: brief explanation (e.g., "New DB schema plus multiple service changes")
+
+### Style
+
+Talk like a coworker, not a changelog. No jargon, no filler phrases, no "this change introduces/implements/adds". Just say what happened and why it matters.
+
+## Step 5 — Write JSON file
 
 Compute a unique temp path. The trailing `XXXXXX` (with no suffix after) is required by macOS BSD `mktemp` — placing characters after the X's causes BSD `mktemp` to return the template verbatim instead of substituting random characters:
 
@@ -194,7 +253,7 @@ Write a JSON file at `"$TMPFILE"` matching the shape below. The file must valida
 High-level shape:
 
 ```
-{ scope: {...}, chapters: [...], generatedAt: "..." }
+{ scope: {...}, chapters: [...], prologue: {...}, generatedAt: "..." }
 ```
 
 Full example:
@@ -233,6 +292,29 @@ Full example:
       ]
     }
   ],
+  "prologue": {
+    "motivation": "What was broken or annoying, in plain English (or null).",
+    "outcome": "What's better now, in plain English (or null).",
+    "keyChanges": [
+      {
+        "summary": "Outcome-focused summary, 6-10 words",
+        "description": "Capitalized sentence, 10-15 words of context"
+      }
+    ],
+    "focusAreas": [
+      {
+        "type": "architecture",
+        "severity": "info",
+        "title": "3-5 word noun phrase",
+        "description": "WHY flagged + action for the reviewer",
+        "locations": ["path/to/file.ts"]
+      }
+    ],
+    "complexity": {
+      "level": "medium",
+      "reasoning": "Brief explanation"
+    }
+  },
   "generatedAt": "2026-05-04T12:34:56.000Z"
 }
 ```
@@ -250,9 +332,17 @@ Field rules:
 | `chapters[].keyChanges[].lineRefs` | Array with at least one entry |
 | `lineRefs[].side` | `"additions"` (right side) or `"deletions"` (left side) |
 | `lineRefs[].startLine` / `endLine` | Positive integers; `endLine >= startLine` |
+| `prologue` | Optional object; omit entirely if not desired |
+| `prologue.motivation` | String or `null` |
+| `prologue.outcome` | String or `null` |
+| `prologue.keyChanges` | Array of 2–5 objects with `summary` and `description` |
+| `prologue.focusAreas` | Array of 1–5 objects |
+| `prologue.focusAreas[].type` | One of: `security`, `breaking-change`, `high-complexity`, `data-integrity`, `new-pattern`, `architecture`, `performance`, `testing-gap` |
+| `prologue.focusAreas[].severity` | One of: `critical`, `high`, `medium`, `info` |
+| `prologue.complexity.level` | One of: `low`, `medium`, `high`, `very-high` |
 | `generatedAt` | ISO 8601 datetime string |
 
-## Step 5 — Display generated chapters
+## Step 6 — Display generated chapters
 
 Hand the file to `stage-cli`:
 

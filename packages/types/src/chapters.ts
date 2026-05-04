@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PrologueSchema } from "./prologue.ts";
 
 export const DIFF_SIDE = {
 	ADDITIONS: "additions",
@@ -55,5 +56,6 @@ export type ChapterRun = z.infer<typeof ChapterRunSchema>;
 export const ChaptersResponseSchema = z.object({
 	run: ChapterRunSchema,
 	chapters: z.array(ChapterSchema),
+	prologue: PrologueSchema.nullable().optional(),
 });
 export type ChaptersResponse = z.infer<typeof ChaptersResponseSchema>;
