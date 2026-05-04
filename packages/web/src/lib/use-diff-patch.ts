@@ -17,5 +17,6 @@ export function useDiffPatch(runId: string): UseQueryResult<string> {
 			return res.text();
 		},
 		enabled: runId !== "",
+		staleTime: Number.POSITIVE_INFINITY,
 	});
 }

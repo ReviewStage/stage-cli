@@ -95,6 +95,16 @@ export interface UseViewStateResult extends UseViewStateDataResult {
 	unmarkFileViewed: (filePath: string) => void;
 }
 
+export function countViewedChapters(
+	chapters: ReadonlyArray<{ externalId: string }> | undefined,
+	chapterIdSet: ReadonlySet<string>,
+): number {
+	if (!chapters) return 0;
+	let count = 0;
+	for (const c of chapters) if (chapterIdSet.has(c.externalId)) count++;
+	return count;
+}
+
 // Returns stable Sets so callers can use them as effect/memo deps.
 // Read-only — `useViewState` adds the mutation hooks on top of this.
 export function useViewStateData(runId: string): UseViewStateDataResult {

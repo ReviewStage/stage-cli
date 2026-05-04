@@ -17,5 +17,6 @@ export function useChapters(runId: string | null) {
 	return useQuery<ChaptersResponse>({
 		queryKey: ["chapters", runId],
 		queryFn: runId === null ? skipToken : () => fetchChapters(runId),
+		staleTime: Number.POSITIVE_INFINITY,
 	});
 }
