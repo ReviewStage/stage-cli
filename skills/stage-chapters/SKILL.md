@@ -17,7 +17,7 @@ Run these checks before any other work. If either fails, stop with the error mes
    ```
    stage-cli is not installed. Run:
 
-       npm install -g stage-cli
+       npm install -g stagereview
 
    Then retry /stage-chapters.
    ```
@@ -34,9 +34,9 @@ Run these checks before any other work. If either fails, stop with the error mes
 
 Find the branch the user reviews against. Try each of the following in order; use the first that succeeds:
 
-1. `git rev-parse --verify origin/HEAD 2>/dev/null` — typically resolves to `refs/remotes/origin/main`. Strip the leading `refs/remotes/origin/` to recover the bare base name.
-2. `git rev-parse --verify main` — fall back to a local `main` branch.
-3. `git rev-parse --verify master` — final fallback for older repos.
+1. `git rev-parse --abbrev-ref origin/HEAD 2>/dev/null` — typically resolves to `origin/main` (exits non-zero when `origin/HEAD` is unset). Strip the leading `origin/` to recover the bare base name.
+2. `git rev-parse --verify main 2>/dev/null` — fall back to a local `main` branch.
+3. `git rev-parse --verify master 2>/dev/null` — final fallback for older repos.
 
 If all three fail, stop with:
 
@@ -55,10 +55,10 @@ MERGE_BASE=$(git merge-base <base> HEAD)
 BASE_SHA=$(git rev-parse <base>)
 HEAD_SHA=$(git rev-parse HEAD)
 
-git diff "$MERGE_BASE"..
+git diff "$MERGE_BASE"
 ```
 
-The trailing `..` is intentional — it includes working-tree changes for tracked files alongside committed changes on the branch. Save the full diff text into context for Step 3.
+`git diff <commit>` (no `..`) compares `<commit>` to the working tree, so the output covers committed changes on the branch *plus* uncommitted edits to tracked files. Save the full diff text into context for Step 3.
 
 `BASE_SHA`, `HEAD_SHA`, and `MERGE_BASE` are full 40-character SHAs and feed directly into the JSON `scope` field in Step 4.
 
@@ -68,13 +68,13 @@ The trailing `..` is intentional — it includes working-tree changes for tracke
 
 ## Step 4 — Write JSON file
 
-Compute a unique temp path. Epoch nanoseconds keep concurrent runs from colliding:
+Compute a unique temp path. `mktemp` with an `XXXXXX` template is portable across macOS and Linux and avoids collisions even within the same second:
 
 ```bash
-TMPFILE="${TMPDIR:-/tmp}/stage-chapters-$(date +%s%N).json"
+TMPFILE=$(mktemp "${TMPDIR:-/tmp}/stage-chapters-XXXXXX.json")
 ```
 
-The `${TMPDIR:-/tmp}` fallback matters on macOS, where `os.tmpdir()` resolves to `/var/folders/...` but `$TMPDIR` is not always set in every shell.
+The `${TMPDIR:-/tmp}` fallback matters on macOS, where `os.tmpdir()` resolves to `/var/folders/...` but `$TMPDIR` is not always set in every shell. Avoid `date +%s%N` — the `%N` (nanoseconds) format is a GNU extension and on macOS BSD `date` it emits a literal `N`, breaking uniqueness.
 
 Write a JSON file at `"$TMPFILE"` matching the shape below. The file must validate against `ChaptersFileSchema` in `packages/cli/src/schema.ts`; mismatched fields will be rejected by `stage-cli show`.
 
