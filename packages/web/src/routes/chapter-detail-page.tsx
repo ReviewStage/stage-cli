@@ -11,6 +11,7 @@ import {
 } from "@/components/files";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useChapterContext } from "@/lib/chapter-context";
 import { FILE_STATUS } from "@/lib/diff-types";
 import { filterFilesForChapter } from "@/lib/filter-files-for-chapter";
 import { formatChapterAsMarkdown } from "@/lib/format-chapter-markdown";
@@ -67,32 +68,17 @@ export function ChapterDetailPage({ runId, chapterNumber }: ChapterDetailPagePro
 		return <ErrorState runId={runId} error={new Error("Diff patch unavailable")} />;
 	}
 
-	return (
-		<ChapterDetailContent
-			runId={runId}
-			chapter={chapter}
-			chapterIndex={chapterIndex}
-			allChapters={allChapters}
-			patch={patch}
-		/>
-	);
+	return <ChapterDetailContent chapter={chapter} chapterIndex={chapterIndex} patch={patch} />;
 }
 
 interface ChapterDetailContentProps {
-	runId: string;
 	chapter: Chapter;
 	chapterIndex: number;
-	allChapters: Chapter[];
 	patch: string;
 }
 
-function ChapterDetailContent({
-	runId,
-	chapter,
-	chapterIndex,
-	allChapters,
-	patch,
-}: ChapterDetailContentProps) {
+function ChapterDetailContent({ chapter, chapterIndex, patch }: ChapterDetailContentProps) {
+	const { runId, chapters: allChapters } = useChapterContext();
 	const view = useViewState(runId);
 	const [focusedKeyChangeId, setFocusedKeyChangeId] = useState<string | null>(null);
 
