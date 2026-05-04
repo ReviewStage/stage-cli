@@ -108,7 +108,7 @@ export function ChapterSidePanel({
 					inheritSize
 					className="pb-1 pl-6 pr-4 font-semibold text-base leading-snug [&_.md-p]:my-0 lg:pl-8"
 				/>
-				{lineCounts ? (
+				{lineCounts && (lineCounts.linesAdded > 0 || lineCounts.linesDeleted > 0) ? (
 					<LineCounts
 						additions={lineCounts.linesAdded}
 						deletions={lineCounts.linesDeleted}
