@@ -1,21 +1,24 @@
-import type { FocusArea, FocusAreaSeverity, Prologue } from "@stage-cli/types/prologue";
+import type { FocusAreaSeverity, Prologue } from "@stage-cli/types/prologue";
 import { FOCUS_AREA_SEVERITY } from "@stage-cli/types/prologue";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SEVERITY_COLORS: Record<string, string> = {
 	[FOCUS_AREA_SEVERITY.CRITICAL]: "text-red-500",
 	[FOCUS_AREA_SEVERITY.HIGH]: "text-orange-500",
 	[FOCUS_AREA_SEVERITY.MEDIUM]: "text-yellow-500",
+	[FOCUS_AREA_SEVERITY.INFO]: "text-blue-500",
 };
 
-function getConcerns(focusAreas: FocusArea[]): FocusArea[] {
-	return focusAreas.filter((f) => f.severity !== FOCUS_AREA_SEVERITY.INFO);
+function FocusAreaIcon({ severity }: { severity: FocusAreaSeverity }) {
+	const color = SEVERITY_COLORS[severity];
+	if (severity === FOCUS_AREA_SEVERITY.INFO) {
+		return <Info className={cn("size-3.5 shrink-0", color)} aria-hidden="true" />;
+	}
+	return <AlertTriangle className={cn("size-3.5 shrink-0", color)} aria-hidden="true" />;
 }
 
 function PrologueDisplay({ prologue }: { prologue: Prologue }) {
-	const concerns = getConcerns(prologue.focusAreas);
-
 	return (
 		<div className="space-y-4 rounded-lg border bg-card p-4">
 			{(prologue.motivation || prologue.outcome) && (
@@ -58,22 +61,16 @@ function PrologueDisplay({ prologue }: { prologue: Prologue }) {
 				</ul>
 			</section>
 
-			{concerns.length > 0 && (
+			{prologue.focusAreas.length > 0 && (
 				<section>
 					<h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
 						Review Focus
 					</h3>
 					<ul className="space-y-2">
-						{concerns.map((area) => (
+						{prologue.focusAreas.map((area) => (
 							<li key={`${area.type}-${area.title}`} className="text-sm">
 								<span className="flex items-center gap-2">
-									<AlertTriangle
-										className={cn(
-											"size-3.5 shrink-0",
-											SEVERITY_COLORS[area.severity as Exclude<FocusAreaSeverity, "info">],
-										)}
-										aria-hidden="true"
-									/>
+									<FocusAreaIcon severity={area.severity} />
 									<span className="min-w-0 truncate">{area.title}</span>
 								</span>
 								<p className="mt-0.5 ml-6 text-xs text-muted-foreground">{area.description}</p>
