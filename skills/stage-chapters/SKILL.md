@@ -37,14 +37,16 @@ Find the branch the user reviews against. Try each of the following in order; th
 1. `git rev-parse --abbrev-ref origin/HEAD 2>/dev/null` — typically prints `origin/main`. Use the full output (e.g. `origin/main`) as `<base>`; do **not** strip `origin/`, because the bare name (`main`) may not exist locally in single-branch clones.
 2. `git rev-parse --verify main 2>/dev/null` — local `main` branch; use `main` as `<base>`.
 3. `git rev-parse --verify master 2>/dev/null` — older repos; use `master` as `<base>`.
+4. `git rev-parse --verify origin/main 2>/dev/null` — remote-tracking fallback when `origin/HEAD` is unset; use `origin/main` as `<base>`.
+5. `git rev-parse --verify origin/master 2>/dev/null` — remote-tracking fallback for older repos; use `origin/master` as `<base>`.
 
-If all three fail, stop with:
+If all five fail, stop with:
 
 ```
-No default branch detected. Tried origin/HEAD, main, and master.
+No default branch detected. Tried origin/HEAD, main, master, origin/main, and origin/master.
 ```
 
-`<base>` is whatever ref expression was verified above (`origin/main`, `main`, or `master`) and is passed verbatim to `git merge-base` / `git rev-parse` in Step 2.
+`<base>` is whatever ref expression was verified above and is passed verbatim to `git merge-base` / `git rev-parse` in Step 2.
 
 ## Step 2 — Get the diff
 
