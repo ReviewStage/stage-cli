@@ -59,6 +59,8 @@ HEAD_SHA=$(git rev-parse HEAD)
 git diff "$MERGE_BASE..HEAD"
 ```
 
+If `git merge-base` exits non-zero or `MERGE_BASE` is empty, stop with an error like `Could not compute merge-base between <base> and HEAD (unrelated histories or shallow clone).` Do **not** continue — running `git diff "..HEAD"` with an empty `MERGE_BASE` produces an empty diff that would silently yield zero chapters.
+
 `git diff <merge-base>..HEAD` covers exactly the commits on the branch since it diverged from the base — the same range the SPA renders for a `committed` run (`baseSha..headSha` in `packages/cli/src/routes/diff.ts`). Save the full diff text into context for Step 3.
 
 This skill scopes review to *committed* work. If the user has uncommitted changes to tracked files, instruct them to commit first; mixing committed and working-tree changes into a single run would produce `hunkRefs`/`lineRefs` that don't line up with the diff the SPA serves.
