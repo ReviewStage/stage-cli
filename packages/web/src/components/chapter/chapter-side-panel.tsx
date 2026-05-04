@@ -1,6 +1,8 @@
 import type { Chapter } from "@stage-cli/types/chapters";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LineCounts } from "@/components/shared/line-counts";
 import { Markdown } from "@/components/ui/markdown";
+import { useChapterContext } from "@/lib/chapter-context";
 import type { FileDiffEntry } from "@/lib/parse-diff";
 import { ChapterFileList } from "./chapter-file-list";
 import { ChapterNavigator } from "./chapter-navigator";
@@ -42,6 +44,8 @@ export function ChapterSidePanel({
 	onSelectFile,
 	onCopyChapter,
 }: ChapterSidePanelProps) {
+	const { chapterLineCountsMap } = useChapterContext();
+	const lineCounts = chapterLineCountsMap.get(chapter.id);
 	const [width, setWidth] = useState(SSR_FALLBACK_WIDTH);
 	const cleanupRef = useRef<(() => void) | null>(null);
 
@@ -102,8 +106,17 @@ export function ChapterSidePanel({
 				<Markdown
 					content={chapter.title}
 					inheritSize
-					className="pb-3 pl-6 pr-4 font-semibold text-base leading-snug [&_.md-p]:my-0 lg:pl-8"
+					className="pb-1 pl-6 pr-4 font-semibold text-base leading-snug [&_.md-p]:my-0 lg:pl-8"
 				/>
+				{lineCounts ? (
+					<LineCounts
+						additions={lineCounts.linesAdded}
+						deletions={lineCounts.linesDeleted}
+						className="pb-3 pl-6 pr-4 lg:pl-8"
+					/>
+				) : (
+					<div className="pb-2" />
+				)}
 			</div>
 			<div className="flex-1 overflow-y-auto">
 				<ChapterSummary
