@@ -32,11 +32,11 @@ Run these checks before any other work. If either fails, stop with the error mes
 
 ## Step 1 — Detect base ref
 
-Find the branch the user reviews against. Try each of the following in order; use the first that succeeds:
+Find the branch the user reviews against. Try each of the following in order; the first that succeeds becomes `<base>`:
 
-1. `git rev-parse --abbrev-ref origin/HEAD 2>/dev/null` — typically resolves to `origin/main` (exits non-zero when `origin/HEAD` is unset). Strip the leading `origin/` to recover the bare base name.
-2. `git rev-parse --verify main 2>/dev/null` — fall back to a local `main` branch.
-3. `git rev-parse --verify master 2>/dev/null` — final fallback for older repos.
+1. `git rev-parse --abbrev-ref origin/HEAD 2>/dev/null` — typically prints `origin/main`. Use the full output (e.g. `origin/main`) as `<base>`; do **not** strip `origin/`, because the bare name (`main`) may not exist locally in single-branch clones.
+2. `git rev-parse --verify main 2>/dev/null` — local `main` branch; use `main` as `<base>`.
+3. `git rev-parse --verify master 2>/dev/null` — older repos; use `master` as `<base>`.
 
 If all three fail, stop with:
 
@@ -44,7 +44,7 @@ If all three fail, stop with:
 No default branch detected. Tried origin/HEAD, main, and master.
 ```
 
-Save the resolved base name (e.g. `main`) as `<base>` for the next steps.
+`<base>` is whatever ref expression was verified above (`origin/main`, `main`, or `master`) and is passed verbatim to `git merge-base` / `git rev-parse` in Step 2.
 
 ## Step 2 — Get the diff
 
