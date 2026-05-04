@@ -1,12 +1,15 @@
 import { FileCode } from "lucide-react";
-import { forwardRef, useCallback, useImperativeHandle, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { FileHeader } from "@/components/chapter/file-header";
 import { PierreDiffViewer } from "@/components/chapter/pierre-diff-viewer";
-import type { AnnotatedLineRef, LineRef } from "@/lib/diff-types";
+import { findRenderedDiffLine } from "@/components/chapter/rendered-line-target";
+import type { AnnotatedLineRef, DiffSide, LineRef } from "@/lib/diff-types";
 import type { FileDiffEntry } from "@/lib/parse-diff";
 
 export interface FileDiffListHandle {
 	scrollToFile: (filePath: string) => void;
+	scrollToLine: (filePath: string, side: DiffSide, line: number) => void;
+	cancelScrollToLine: () => void;
 }
 
 export interface CollapseState {
@@ -41,15 +44,115 @@ interface FileDiffListProps {
 }
 
 const FILE_TOP_PADDING = 16;
+const SCROLL_TO_LINE_POLL_MS = 100;
+const SCROLL_TO_LINE_TIMEOUT_MS = 3000;
 
 export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(function FileDiffList(
 	{ entries, emptyMessage, viewedPathSet, onToggleViewed, collapseState, chapterOverlay },
 	ref,
 ) {
-	useImperativeHandle(
-		ref,
-		() => ({
+	const scrollRequestRef = useRef(0);
+	const pendingDisconnectsRef = useRef<Set<() => void>>(new Set());
+
+	useEffect(() => {
+		const pending = pendingDisconnectsRef.current;
+		return () => {
+			scrollRequestRef.current += 1;
+			for (const disconnect of pending) disconnect();
+			pending.clear();
+		};
+	}, []);
+
+	useImperativeHandle(ref, () => {
+		const cancelPending = () => {
+			scrollRequestRef.current += 1;
+			const pending = pendingDisconnectsRef.current;
+			for (const disconnect of pending) disconnect();
+			pending.clear();
+		};
+
+		const runWithContainer = (
+			fileContainer: HTMLElement,
+			side: DiffSide,
+			line: number,
+			isLatestRequest: () => boolean,
+		) => {
+			const tryScroll = () => {
+				if (!isLatestRequest()) return true;
+
+				const diffsContainer = fileContainer.querySelector("diffs-container");
+				const shadowRoot = diffsContainer?.shadowRoot;
+				if (!shadowRoot) return false;
+
+				const lineEl = findRenderedDiffLine(shadowRoot, side, line);
+				if (!lineEl) return false;
+				if (lineEl.offsetParent === null) return false;
+
+				lineEl.scrollIntoView({ behavior: "smooth", block: "center" });
+				return true;
+			};
+
+			if (tryScroll()) return;
+
+			let shadowObserver: MutationObserver | null = null;
+			let shadowRootRetryTimer: ReturnType<typeof setInterval> | null = null;
+			let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+			const disconnectAll = () => {
+				observer.disconnect();
+				shadowObserver?.disconnect();
+				if (shadowRootRetryTimer) clearInterval(shadowRootRetryTimer);
+				if (timeoutHandle) clearTimeout(timeoutHandle);
+				pendingDisconnectsRef.current.delete(disconnectAll);
+			};
+
+			const attachShadowObserver = (shadowRoot: ShadowRoot) => {
+				shadowObserver?.disconnect();
+				shadowObserver = new MutationObserver(() => {
+					if (!isLatestRequest() || tryScroll()) disconnectAll();
+				});
+				shadowObserver.observe(shadowRoot, {
+					childList: true,
+					subtree: true,
+				});
+			};
+
+			const observer = new MutationObserver(() => {
+				if (!isLatestRequest() || tryScroll()) disconnectAll();
+			});
+			observer.observe(fileContainer, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				attributeFilter: ["hidden"],
+			});
+			pendingDisconnectsRef.current.add(disconnectAll);
+
+			const existingShadowRoot = fileContainer.querySelector("diffs-container")?.shadowRoot;
+			if (existingShadowRoot) {
+				attachShadowObserver(existingShadowRoot);
+			} else {
+				shadowRootRetryTimer = setInterval(() => {
+					if (!isLatestRequest()) {
+						disconnectAll();
+						return;
+					}
+					const shadowRoot = fileContainer.querySelector("diffs-container")?.shadowRoot;
+					if (!shadowRoot) return;
+					if (shadowRootRetryTimer) clearInterval(shadowRootRetryTimer);
+					shadowRootRetryTimer = null;
+					attachShadowObserver(shadowRoot);
+					tryScroll();
+				}, SCROLL_TO_LINE_POLL_MS);
+			}
+
+			timeoutHandle = setTimeout(disconnectAll, SCROLL_TO_LINE_TIMEOUT_MS);
+		};
+
+		return {
+			cancelScrollToLine: cancelPending,
 			scrollToFile(filePath: string) {
+				cancelPending();
 				const el = document.getElementById(`file-${filePath}`);
 				if (!el) return;
 				const stickyOffset = parseFloat(
@@ -59,9 +162,23 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 					el.getBoundingClientRect().top + window.scrollY - stickyOffset - FILE_TOP_PADDING;
 				window.scrollTo({ top });
 			},
-		}),
-		[],
-	);
+			scrollToLine(filePath: string, side: DiffSide, line: number) {
+				if (!entries.some((e) => e.file.path === filePath)) return;
+
+				scrollRequestRef.current += 1;
+				const requestToken = scrollRequestRef.current;
+				const isLatestRequest = () => scrollRequestRef.current === requestToken;
+
+				if (collapseState.collapsedFiles.has(filePath)) {
+					collapseState.toggleFileCollapsed(filePath);
+				}
+
+				const fileContainer = document.getElementById(`file-${filePath}`);
+				if (!fileContainer) return;
+				runWithContainer(fileContainer, side, line, isLatestRequest);
+			},
+		};
+	}, [entries, collapseState]);
 
 	if (entries.length === 0) {
 		return (

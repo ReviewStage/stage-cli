@@ -144,9 +144,13 @@ function ChapterDetailContent({ chapter, chapterIndex, patch }: ChapterDetailCon
 	const handleFocusKeyChange = useCallback(
 		(keyChangeId: string | null, scrollTarget?: LineRef | null) => {
 			setFocusedKeyChangeId(keyChangeId);
+			if (!keyChangeId) {
+				diffListRef.current?.cancelScrollToLine();
+				return;
+			}
 			const target = scrollTarget ?? findScrollTarget(chapter, keyChangeId);
 			if (target) {
-				diffListRef.current?.scrollToFile(target.filePath);
+				diffListRef.current?.scrollToLine(target.filePath, target.side, target.startLine);
 			}
 		},
 		[chapter],
