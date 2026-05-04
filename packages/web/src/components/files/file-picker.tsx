@@ -1,5 +1,6 @@
 import { ChevronRight, CircleCheck, FileText, Folder, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { LineCounts } from "@/components/shared/line-counts";
 import { FILE_STATUS, type PullRequestFile } from "@/lib/diff-types";
 import { FILE_STATUS_ICONS, FILE_STATUS_TEXT_COLORS } from "@/lib/file-status";
 import { buildFileTree, collapseEmptyFolders, type FileNode, sortFileTree } from "@/lib/file-tree";
@@ -182,14 +183,7 @@ function FilePickerTreeItem({
 				>
 					{node.name}
 				</span>
-				<div className="flex items-center gap-1 font-medium text-[10px] tabular-nums opacity-70">
-					{file.additions > 0 && (
-						<span className="text-green-600 dark:text-green-500">+{file.additions}</span>
-					)}
-					{file.deletions > 0 && (
-						<span className="text-red-600 dark:text-red-500">-{file.deletions}</span>
-					)}
-				</div>
+				<LineCounts additions={file.additions} deletions={file.deletions} className="opacity-70" />
 				{isViewed && (
 					<CircleCheck
 						className="size-3 shrink-0 text-green-600 dark:text-green-500"

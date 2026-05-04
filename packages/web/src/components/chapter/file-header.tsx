@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useCallback } from "react";
+import { LineCounts } from "@/components/shared/line-counts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FILE_STATUS, type PullRequestFile } from "@/lib/diff-types";
 import { FILE_STATUS_ICONS, FILE_STATUS_LABELS, FILE_STATUS_TEXT_COLORS } from "@/lib/file-status";
@@ -206,14 +207,11 @@ export function FileHeader({
 				</Tooltip>
 			)}
 			<div className="flex-1" />
-			<div className="relative z-10 flex shrink-0 items-center gap-1 font-medium text-[10px] tabular-nums">
-				{file.additions > 0 && (
-					<span className="text-green-600 dark:text-green-500">+{file.additions}</span>
-				)}
-				{file.deletions > 0 && (
-					<span className="text-red-600 dark:text-red-500">-{file.deletions}</span>
-				)}
-			</div>
+			<LineCounts
+				additions={file.additions}
+				deletions={file.deletions}
+				className="relative z-10 shrink-0"
+			/>
 			{onToggleViewed && (
 				<Tooltip>
 					<TooltipTrigger asChild>
