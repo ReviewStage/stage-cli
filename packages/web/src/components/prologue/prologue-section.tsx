@@ -72,7 +72,7 @@ function PrologueDisplay({ prologue }: { prologue: Prologue }) {
 									/>
 									<span className="min-w-0 truncate">{area.title}</span>
 								</span>
-								<p className="mt-0.5 ml-5.5 text-xs text-muted-foreground">{area.description}</p>
+								<p className="mt-0.5 ml-6 text-xs text-muted-foreground">{area.description}</p>
 							</li>
 						))}
 					</ul>
