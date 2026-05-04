@@ -14,7 +14,7 @@ function NoRunSelected() {
 					<h1 className="font-semibold text-lg">No run selected</h1>
 					<p className="mt-2 text-muted-foreground text-sm">
 						The URL is missing a <code>/runs/&lt;runId&gt;</code> path. Open the app via{" "}
-						<code>stage-cli show &lt;path&gt;</code>.
+						<code>stagereview show &lt;path&gt;</code>.
 					</p>
 				</div>
 			</div>
