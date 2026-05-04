@@ -84,6 +84,7 @@ function PrologueDisplay({ prologue, runId }: { prologue: Prologue; runId: strin
 										<Link
 											to="/runs/$runId/files"
 											params={{ runId }}
+											search={{ scrollTo: area.locations[0] }}
 											className="ml-auto shrink-0 text-xs text-muted-foreground transition-colors hover:text-foreground"
 										>
 											{getFileName(area.locations[0])} &rarr;
