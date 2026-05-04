@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 
 interface CollapsiblePickerProps {
@@ -12,7 +12,8 @@ interface CollapsiblePickerProps {
 	children: ReactNode;
 	className?: string;
 	zIndex?: number;
-	defaultExpanded?: boolean;
+	isCollapsed: boolean;
+	onCollapsedChange: (collapsed: boolean) => void;
 }
 
 export function CollapsiblePicker({
@@ -24,21 +25,23 @@ export function CollapsiblePicker({
 	children,
 	className,
 	zIndex = 30,
-	defaultExpanded = true,
+	isCollapsed,
+	onCollapsedChange,
 }: CollapsiblePickerProps) {
-	const [isCollapsed, setIsCollapsed] = useState(!defaultExpanded);
-
 	useEffect(() => {
 		const mql = window.matchMedia("(max-width: 768px)");
 		const handleChange = (e: MediaQueryListEvent | MediaQueryList) => {
-			if (e.matches) setIsCollapsed(true);
+			if (e.matches) onCollapsedChange(true);
 		};
 		handleChange(mql);
 		mql.addEventListener("change", handleChange);
 		return () => mql.removeEventListener("change", handleChange);
-	}, []);
+	}, [onCollapsedChange]);
 
-	const toggleCollapsed = useCallback(() => setIsCollapsed((prev) => !prev), []);
+	const toggleCollapsed = useCallback(
+		() => onCollapsedChange(!isCollapsed),
+		[isCollapsed, onCollapsedChange],
+	);
 
 	const header = (
 		<div

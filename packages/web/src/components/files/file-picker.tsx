@@ -12,6 +12,8 @@ interface FilePickerProps {
 	viewedPathSet?: ReadonlySet<string>;
 	onSelectFile?: (filePath: string) => void;
 	className?: string;
+	isCollapsed: boolean;
+	onCollapsedChange: (collapsed: boolean) => void;
 }
 
 export function FilePicker({
@@ -20,6 +22,8 @@ export function FilePicker({
 	viewedPathSet,
 	onSelectFile,
 	className,
+	isCollapsed,
+	onCollapsedChange,
 }: FilePickerProps) {
 	const [filter, setFilter] = useState("");
 
@@ -68,6 +72,8 @@ export function FilePicker({
 			count={files.length}
 			className={className}
 			headerExtra={filterInput}
+			isCollapsed={isCollapsed}
+			onCollapsedChange={onCollapsedChange}
 			collapsedIndicators={files.map((file) => (
 				<div
 					key={file.path}
