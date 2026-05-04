@@ -1,4 +1,4 @@
-import { type FileDiffMetadata, parsePatchFiles } from "@pierre/diffs";
+import { type FileDiffMetadata, type Hunk, parsePatchFiles } from "@pierre/diffs";
 import type { FileContentsMap } from "@stage-cli/types/diff";
 import { useMemo } from "react";
 import { FILE_STATUS, type FileStatus, type PullRequestFile } from "./diff-types";
@@ -56,6 +56,36 @@ export interface FileDiffEntry {
 	diff: FileDiffMetadata;
 }
 
+/**
+ * Remap a hunk's line-array indices from partial (sequential offset within the
+ * patch-only arrays) to full-file (actual line position). Pierre's hunk headers
+ * already carry the 1-based file line numbers (`deletionStart`/`additionStart`);
+ * converting to 0-based gives the correct index into the full-file arrays.
+ */
+function reindexHunk(hunk: Hunk): Hunk {
+	let delIdx = hunk.deletionStart - 1;
+	let addIdx = hunk.additionStart - 1;
+
+	const reindexedContent = hunk.hunkContent.map((segment) => {
+		const patched = { ...segment, deletionLineIndex: delIdx, additionLineIndex: addIdx };
+		if (segment.type === "context") {
+			delIdx += segment.lines;
+			addIdx += segment.lines;
+		} else {
+			delIdx += segment.deletions;
+			addIdx += segment.additions;
+		}
+		return patched;
+	});
+
+	return {
+		...hunk,
+		deletionLineIndex: hunk.deletionStart - 1,
+		additionLineIndex: hunk.additionStart - 1,
+		hunkContent: reindexedContent,
+	};
+}
+
 export function enrichFileDiff(
 	diff: FileDiffMetadata,
 	fileContents: FileContentsMap | undefined,
@@ -71,6 +101,7 @@ export function enrichFileDiff(
 	return {
 		...diff,
 		isPartial: false,
+		hunks: diff.hunks.map(reindexHunk),
 		...(oldLines ? { deletionLines: oldLines } : {}),
 		...(newLines ? { additionLines: newLines } : {}),
 	};
