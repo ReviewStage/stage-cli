@@ -20,7 +20,7 @@ export function ChapterSummary({
 	onFocusKeyChange,
 }: ChapterSummaryProps) {
 	return (
-		<div className="space-y-4 px-4 py-3">
+		<div className="space-y-4 py-3 pl-6 pr-4 lg:pl-8">
 			{chapter.summary && (
 				<Markdown content={chapter.summary} className="text-muted-foreground text-sm" />
 			)}

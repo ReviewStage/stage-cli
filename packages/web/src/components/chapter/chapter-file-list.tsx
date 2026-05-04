@@ -19,7 +19,7 @@ export function ChapterFileList({
 	onSelectFile,
 }: ChapterFileListProps) {
 	return (
-		<div className="px-4 py-3">
+		<div className="py-3 pl-6 pr-4 lg:pl-8">
 			<h2 className="mb-2 font-medium text-[11px] text-muted-foreground uppercase tracking-wider">
 				Files <span className="text-muted-foreground/60">({entries.length})</span>
 			</h2>

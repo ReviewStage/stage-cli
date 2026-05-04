@@ -1,6 +1,17 @@
 import type { Chapter } from "@stage-cli/types/chapters";
 import { Link } from "@tanstack/react-router";
-import { ChevronDown, ChevronLeft, ChevronRight, Circle, CircleCheck } from "lucide-react";
+import {
+	Check,
+	ChevronDown,
+	ChevronLeft,
+	ChevronRight,
+	Circle,
+	CircleCheck,
+	Copy,
+	MoreHorizontal,
+} from "lucide-react";
+import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -9,6 +20,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SHORTCUT_KEY } from "@/lib/keyboard-shortcuts";
 import { cn } from "@/lib/utils";
 
 interface ChapterNavigatorProps {
@@ -18,6 +30,7 @@ interface ChapterNavigatorProps {
 	allChapters: Chapter[];
 	viewedChapterIds: ReadonlySet<string>;
 	onToggleViewed: (externalId: string) => void;
+	onCopyChapter: () => void;
 }
 
 export function ChapterNavigator({
@@ -27,6 +40,7 @@ export function ChapterNavigator({
 	allChapters,
 	viewedChapterIds,
 	onToggleViewed,
+	onCopyChapter,
 }: ChapterNavigatorProps) {
 	const isViewed = viewedChapterIds.has(chapter.externalId);
 	const canPrev = chapterIndex > 0;
@@ -35,27 +49,26 @@ export function ChapterNavigator({
 	const nextChapter = canNext ? allChapters[chapterIndex + 1] : null;
 
 	return (
-		<div className="px-4 py-3">
+		<div className="pl-6 pr-4 py-3 lg:pl-8">
 			<div className="flex items-center gap-1">
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<Button
-							variant="ghost"
-							size="icon"
-							className={cn(
-								"-ml-1.5 size-7 shrink-0 cursor-pointer",
-								isViewed
-									? "text-green-600 hover:text-green-700 dark:text-green-500 dark:hover:text-green-400"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-							onClick={() => onToggleViewed(chapter.externalId)}
-							aria-label={isViewed ? "Unmark as viewed" : "Mark as viewed"}
-						>
-							{isViewed ? <CircleCheck className="size-4" /> : <Circle className="size-4" />}
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>{isViewed ? "Unmark as viewed" : "Mark as viewed"}</TooltipContent>
-				</Tooltip>
+				<ShortcutTooltip
+					shortcutKey={SHORTCUT_KEY.MARK_CHAPTER_AS_VIEWED}
+					label={isViewed ? "Unmark as viewed" : "Mark as viewed"}
+				>
+					<Button
+						variant="ghost"
+						size="icon"
+						className={cn(
+							"-ml-1.5 size-7 shrink-0 cursor-pointer",
+							isViewed
+								? "text-green-600 hover:text-green-700 dark:text-green-500 dark:hover:text-green-400"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+						onClick={() => onToggleViewed(chapter.externalId)}
+					>
+						{isViewed ? <CircleCheck className="size-4" /> : <Circle className="size-4" />}
+					</Button>
+				</ShortcutTooltip>
 
 				<Tooltip>
 					<TooltipTrigger asChild>
@@ -99,23 +112,26 @@ export function ChapterNavigator({
 										params={{ runId, chapterNumber: String(ch.order) }}
 										className={cn("cursor-pointer", isActive && "bg-accent")}
 									>
-										<div
-											className={cn(
-												"flex size-6 shrink-0 items-center justify-center rounded-full font-bold text-[10px]",
-												isActive
-													? "bg-primary text-primary-foreground"
-													: "bg-muted text-muted-foreground",
-											)}
+										<StatusBadge
+											size="sm"
+											badge={
+												isChViewed ? (
+													<Check className="size-2 text-green-600" strokeWidth={3} />
+												) : undefined
+											}
 										>
-											{ch.order}
-										</div>
+											<div
+												className={cn(
+													"flex size-6 shrink-0 items-center justify-center rounded-full font-bold text-[10px]",
+													isActive
+														? "bg-primary text-primary-foreground"
+														: "bg-muted text-muted-foreground",
+												)}
+											>
+												{ch.order}
+											</div>
+										</StatusBadge>
 										<span className="min-w-0 flex-1 truncate text-sm">{ch.title}</span>
-										{isChViewed && (
-											<CircleCheck
-												className="size-3.5 shrink-0 text-green-600 dark:text-green-500"
-												aria-hidden="true"
-											/>
-										)}
 									</Link>
 								</DropdownMenuItem>
 							);
@@ -140,6 +156,25 @@ export function ChapterNavigator({
 					</TooltipTrigger>
 					<TooltipContent>Next chapter</TooltipContent>
 				</Tooltip>
+
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button
+							variant="ghost"
+							size="icon"
+							className="size-7 shrink-0 cursor-pointer"
+							aria-label="Chapter actions"
+						>
+							<MoreHorizontal className="size-4" />
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end">
+						<DropdownMenuItem onClick={onCopyChapter}>
+							<Copy className="size-4" />
+							Copy chapter summary
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
 			</div>
 		</div>
 	);

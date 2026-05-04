@@ -1,6 +1,7 @@
 import type { Chapter, LineRef } from "@stage-cli/types/chapters";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { ChapterSidePanel } from "@/components/chapter";
 import {
 	type ChapterOverlayProps,
@@ -12,8 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FILE_STATUS } from "@/lib/diff-types";
 import { filterFilesForChapter } from "@/lib/filter-files-for-chapter";
+import { formatChapterAsMarkdown } from "@/lib/format-chapter-markdown";
+import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import { groupAnnotatedLineRefsByFile, groupLineRefsByFile } from "@/lib/line-refs-by-file";
 import { sortLineRefsByChapterOrder } from "@/lib/sort-line-refs";
+import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
@@ -116,9 +120,21 @@ function ChapterDetailContent({
 		[focusedLineRefs],
 	);
 
-	const handleSelectFile = useCallback((filePath: string) => {
-		diffListRef.current?.scrollToFile(filePath);
-	}, []);
+	const diffListRef = useRef<FileDiffListHandle>(null);
+
+	const chapterFiles = useMemo(() => chapterEntries.map((e) => e.file), [chapterEntries]);
+	const chapterFilePaths = useMemo(() => chapterFiles.map((f) => f.path), [chapterFiles]);
+	const chapterFilePathSet = useMemo(() => new Set(chapterFilePaths), [chapterFilePaths]);
+
+	const { activeFilePath, setActiveFileManually } = useActiveFileOnScroll(chapterFiles);
+
+	const handleSelectFile = useCallback(
+		(filePath: string) => {
+			setActiveFileManually(filePath);
+			diffListRef.current?.scrollToFile(filePath);
+		},
+		[setActiveFileManually],
+	);
 
 	const handleToggleKeyChangeChecked = useCallback(
 		(keyChangeId: string) => {
@@ -155,12 +171,6 @@ function ChapterDetailContent({
 		[chapter],
 	);
 
-	const diffListRef = useRef<FileDiffListHandle>(null);
-
-	const chapterFiles = useMemo(() => chapterEntries.map((e) => e.file), [chapterEntries]);
-	const chapterFilePaths = useMemo(() => chapterFiles.map((f) => f.path), [chapterFiles]);
-	const chapterFilePathSet = useMemo(() => new Set(chapterFilePaths), [chapterFilePaths]);
-
 	const defaultCollapsedIds = useMemo(() => {
 		const ids = new Set<string>();
 		for (const file of chapterFiles) {
@@ -179,7 +189,23 @@ function ChapterDetailContent({
 		collapseResetKey,
 	);
 
-	useFileNavigationKeys(chapterFiles, undefined, handleSelectFile);
+	useFileNavigationKeys(chapterFiles, activeFilePath, handleSelectFile);
+
+	useHotkeys(
+		KEYBOARD_SHORTCUTS.MARK_CHAPTER_AS_VIEWED.hotkey,
+		() => handleToggleChapterViewed(chapter.externalId),
+		{
+			preventDefault: true,
+			enableOnFormTags: false,
+			...KEYBOARD_SHORTCUTS.MARK_CHAPTER_AS_VIEWED.hotkeyOptions,
+		},
+		[handleToggleChapterViewed, chapter.externalId],
+	);
+
+	const handleCopyChapter = useCallback(() => {
+		const markdown = formatChapterAsMarkdown(chapter, chapterIndex, chapterEntries);
+		void navigator.clipboard.writeText(markdown);
+	}, [chapter, chapterIndex, chapterEntries]);
 
 	const chapterOverlay = useMemo<ChapterOverlayProps>(
 		() => ({
@@ -220,6 +246,7 @@ function ChapterDetailContent({
 					onToggleFileViewed={handleToggleFileViewed}
 					onFocusKeyChange={(id) => handleFocusKeyChange(id)}
 					onSelectFile={handleSelectFile}
+					onCopyChapter={handleCopyChapter}
 				/>
 			}
 		>

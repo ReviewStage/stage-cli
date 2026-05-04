@@ -26,6 +26,7 @@ interface ChapterSidePanelProps {
 	onToggleFileViewed: (filePath: string) => void;
 	onFocusKeyChange: (keyChangeId: string | null) => void;
 	onSelectFile: (filePath: string) => void;
+	onCopyChapter: () => void;
 }
 
 export function ChapterSidePanel({
@@ -43,6 +44,7 @@ export function ChapterSidePanel({
 	onToggleFileViewed,
 	onFocusKeyChange,
 	onSelectFile,
+	onCopyChapter,
 }: ChapterSidePanelProps) {
 	const [width, setWidth] = useState(SSR_FALLBACK_WIDTH);
 	const cleanupRef = useRef<(() => void) | null>(null);
@@ -101,11 +103,12 @@ export function ChapterSidePanel({
 					allChapters={allChapters}
 					viewedChapterIds={viewedChapterIds}
 					onToggleViewed={onToggleChapterViewed}
+					onCopyChapter={onCopyChapter}
 				/>
 				<Markdown
 					content={chapter.title}
 					inheritSize
-					className="px-4 pb-3 font-semibold text-base leading-snug [&_.md-p]:my-0"
+					className="pb-3 pl-6 pr-4 font-semibold text-base leading-snug [&_.md-p]:my-0 lg:pl-8"
 				/>
 			</div>
 			<div className="flex-1 overflow-y-auto">
