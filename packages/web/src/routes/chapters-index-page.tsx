@@ -3,10 +3,12 @@ import { Link } from "@tanstack/react-router";
 import { ChevronRight, Circle, CircleCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileViewRow } from "@/components/chapter";
+import { LineCounts } from "@/components/shared/line-counts";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { type ChapterLineCounts, useChapterContext } from "@/lib/chapter-context";
 import { useViewState } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
 
@@ -65,6 +67,7 @@ interface ChapterEntryProps {
 	filePaths: string[];
 	isFilesOpen: boolean;
 	runId: string;
+	lineCounts: ChapterLineCounts | undefined;
 	onToggleViewed: () => void;
 	onToggleFiles: () => void;
 	onToggleAllFiles: () => void;
@@ -76,6 +79,7 @@ function ChapterEntry({
 	filePaths,
 	isFilesOpen,
 	runId,
+	lineCounts,
 	onToggleViewed,
 	onToggleFiles,
 	onToggleAllFiles,
@@ -115,6 +119,13 @@ function ChapterEntry({
 						backgroundPosition: "0 calc(100% - 0.35em)",
 					}}
 				>
+					{lineCounts && (
+						<LineCounts
+							additions={lineCounts.linesAdded}
+							deletions={lineCounts.linesDeleted}
+							className="float-right clear-right bg-background pl-1.5 font-mono text-xs text-muted-foreground"
+						/>
+					)}
 					<span
 						className={cn(
 							"[box-decoration-break:clone] bg-background pr-1.5 font-semibold text-base hover:underline",
@@ -161,6 +172,7 @@ interface ChaptersListProps {
 }
 
 function ChaptersList({ chapters, runId, viewedCount }: ChaptersListProps) {
+	const { chapterLineCountsMap } = useChapterContext();
 	const view = useViewState(runId);
 	const [openFiles, setOpenFiles] = useState<Set<string>>(() => new Set());
 	const [mounted, setMounted] = useState(false);
@@ -221,6 +233,7 @@ function ChaptersList({ chapters, runId, viewedCount }: ChaptersListProps) {
 							filePaths={filePathsByChapter.get(c.id) ?? []}
 							isFilesOpen={openFiles.has(c.id)}
 							runId={runId}
+							lineCounts={chapterLineCountsMap.get(c.id)}
 							onToggleViewed={() =>
 								isViewed ? view.unmarkChapterViewed(externalId) : view.markChapterViewed(externalId)
 							}
