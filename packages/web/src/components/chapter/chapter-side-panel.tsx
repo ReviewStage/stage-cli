@@ -12,10 +12,8 @@ const MAX_WIDTH_FRACTION = 0.5;
 const SSR_FALLBACK_WIDTH = Math.round(1440 * DEFAULT_WIDTH_FRACTION);
 
 interface ChapterSidePanelProps {
-	runId: string;
 	chapter: Chapter;
 	chapterIndex: number;
-	allChapters: Chapter[];
 	chapterEntries: FileDiffEntry[];
 	viewedChapterIds: ReadonlySet<string>;
 	checkedKeyChangeIds: ReadonlySet<string>;
@@ -30,10 +28,8 @@ interface ChapterSidePanelProps {
 }
 
 export function ChapterSidePanel({
-	runId,
 	chapter,
 	chapterIndex,
-	allChapters,
 	chapterEntries,
 	viewedChapterIds,
 	checkedKeyChangeIds,
@@ -97,10 +93,8 @@ export function ChapterSidePanel({
 		>
 			<div className="shrink-0 border-border border-b">
 				<ChapterNavigator
-					runId={runId}
 					chapter={chapter}
 					chapterIndex={chapterIndex}
-					allChapters={allChapters}
 					viewedChapterIds={viewedChapterIds}
 					onToggleViewed={onToggleChapterViewed}
 					onCopyChapter={onCopyChapter}

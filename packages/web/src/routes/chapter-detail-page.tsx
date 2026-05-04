@@ -253,10 +253,8 @@ function ChapterDetailContent({
 		<SidebarLayout
 			sidebar={
 				<ChapterSidePanel
-					runId={runId}
 					chapter={chapter}
 					chapterIndex={chapterIndex}
-					allChapters={allChapters}
 					chapterEntries={chapterEntries}
 					viewedChapterIds={view.chapterIdSet}
 					checkedKeyChangeIds={view.keyChangeIdSet}

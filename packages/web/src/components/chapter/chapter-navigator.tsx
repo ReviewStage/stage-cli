@@ -10,6 +10,7 @@ import {
 	Copy,
 	MoreHorizontal,
 } from "lucide-react";
+import { LineCounts } from "@/components/shared/line-counts";
 import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -19,28 +20,26 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useChapterContext } from "@/lib/chapter-context";
 import { SHORTCUT_KEY } from "@/lib/keyboard-shortcuts";
 import { cn } from "@/lib/utils";
 
 interface ChapterNavigatorProps {
-	runId: string;
 	chapter: Chapter;
 	chapterIndex: number;
-	allChapters: Chapter[];
 	viewedChapterIds: ReadonlySet<string>;
 	onToggleViewed: (externalId: string) => void;
 	onCopyChapter: () => void;
 }
 
 export function ChapterNavigator({
-	runId,
 	chapter,
 	chapterIndex,
-	allChapters,
 	viewedChapterIds,
 	onToggleViewed,
 	onCopyChapter,
 }: ChapterNavigatorProps) {
+	const { runId, chapters: allChapters, chapterLineCountsMap } = useChapterContext();
 	const isViewed = viewedChapterIds.has(chapter.externalId);
 	const canPrev = chapterIndex > 0;
 	const canNext = chapterIndex < allChapters.length - 1;
@@ -100,6 +99,7 @@ export function ChapterNavigator({
 						{allChapters.map((ch, index) => {
 							const isActive = index === chapterIndex;
 							const isChViewed = viewedChapterIds.has(ch.externalId);
+							const counts = chapterLineCountsMap.get(ch.id);
 							return (
 								<DropdownMenuItem key={ch.id} asChild className="gap-3 px-3 py-2.5">
 									<Link
@@ -127,6 +127,13 @@ export function ChapterNavigator({
 											</div>
 										</StatusBadge>
 										<span className="min-w-0 flex-1 truncate text-sm">{ch.title}</span>
+										{counts && (
+											<LineCounts
+												additions={counts.linesAdded}
+												deletions={counts.linesDeleted}
+												className="shrink-0 opacity-70"
+											/>
+										)}
 									</Link>
 								</DropdownMenuItem>
 							);
