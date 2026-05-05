@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import type { DiffResponse } from "@stage-cli/types/diff";
+import type { DiffResponse } from "@stagereview/types/diff";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, getDb } from "../db/client.js";
 import { chapterRun } from "../db/schema/index.js";

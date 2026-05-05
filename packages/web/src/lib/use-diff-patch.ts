@@ -1,4 +1,4 @@
-import type { DiffResponse } from "@stage-cli/types/diff";
+import type { DiffResponse } from "@stagereview/types/diff";
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
 
 const DIFF_QUERY_ROOT = "diff";

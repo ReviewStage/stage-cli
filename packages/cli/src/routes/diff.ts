@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { DiffResponse, FileContentsMap } from "@stage-cli/types/diff";
+import type { DiffResponse, FileContentsMap } from "@stagereview/types/diff";
 import { eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import type { ChapterRunRow } from "../db/schema/chapter-run.js";

@@ -1,5 +1,5 @@
 import { type FileDiffMetadata, type Hunk, parsePatchFiles } from "@pierre/diffs";
-import type { FileContentsMap } from "@stage-cli/types/diff";
+import type { FileContentsMap } from "@stagereview/types/diff";
 import { useMemo } from "react";
 import { FILE_STATUS, type FileStatus, type PullRequestFile } from "./diff-types";
 import { splitWithNewlines } from "./split-with-newlines";
