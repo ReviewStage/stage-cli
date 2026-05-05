@@ -44,6 +44,7 @@ function parseFileNames(segment: string): { prevName?: string; name?: string } {
 interface ParsedHunk {
 	oldStart: number;
 	oldLines: number;
+	header: string;
 	lines: string[];
 }
 
@@ -55,15 +56,21 @@ function parseHunksFromSegment(segmentText: string): ParsedHunk[] {
 	for (const line of lines) {
 		const match = line.match(HUNK_HEADER_RE);
 		if (match) {
-			if (current) hunks.push(current);
+			if (current) {
+				while (current.lines.at(-1) === "") current.lines.pop();
+				hunks.push(current);
+			}
 			const oldStart = match[1] === undefined ? 0 : Number.parseInt(match[1], 10);
 			const oldLines = match[2] === undefined ? 1 : Number.parseInt(match[2], 10);
-			current = { oldStart, oldLines, lines: [] };
+			current = { oldStart, oldLines, header: line, lines: [] };
 			continue;
 		}
 		if (current) current.lines.push(line);
 	}
-	if (current) hunks.push(current);
+	if (current) {
+		while (current.lines.at(-1) === "") current.lines.pop();
+		hunks.push(current);
+	}
 
 	return hunks;
 }
@@ -170,10 +177,7 @@ export function filterFilesForChapter(
 			}
 			const filteredText = [
 				...headerLines,
-				...chapterHunks.flatMap((h) => {
-					const header = `@@ -${h.oldStart},${h.oldLines} +0,0 @@`;
-					return [header, ...h.lines];
-				}),
+				...chapterHunks.flatMap((h) => [h.header, ...h.lines]),
 			].join("\n");
 			const diff = getSingularPatch(filteredText);
 			result.push({ file: fileDiffToPullRequestFile(diff), diff });
