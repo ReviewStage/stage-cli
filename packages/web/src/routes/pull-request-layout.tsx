@@ -213,14 +213,6 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 							))}
 						</div>
 						<div className="flex shrink-0 items-center gap-3 text-sm @xl:gap-6">
-							<div className="hidden items-center gap-3 @5xl:flex">
-								<span className="font-medium text-green-600 dark:text-green-500">
-									+{totalAdditions.toLocaleString()}
-								</span>
-								<span className="font-medium text-red-600 dark:text-red-500">
-									-{totalDeletions.toLocaleString()}
-								</span>
-							</div>
 							<CollapseExpandAllButton />
 							<Popover>
 								<Tooltip>
@@ -243,6 +235,14 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 									<DiffSettingsForm compact />
 								</PopoverContent>
 							</Popover>
+							<div className="hidden items-center gap-3 @5xl:flex">
+								<span className="font-medium text-green-600 dark:text-green-500">
+									+{totalAdditions.toLocaleString()}
+								</span>
+								<span className="font-medium text-red-600 dark:text-red-500">
+									-{totalDeletions.toLocaleString()}
+								</span>
+							</div>
 						</div>
 					</nav>
 					<ChapterProvider runId={runId}>
