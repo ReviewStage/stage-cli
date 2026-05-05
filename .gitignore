@@ -7,6 +7,7 @@ web-dist
 
 # Generated at publish time by packages/cli prepack — root README is the source of truth.
 packages/cli/README.md
+packages/cli/skills
 
 # TypeScript incremental builds
 *.tsbuildinfo
