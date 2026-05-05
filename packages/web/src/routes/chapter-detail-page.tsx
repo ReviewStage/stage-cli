@@ -1,4 +1,5 @@
 import type { Chapter, LineRef } from "@stagereview/types/chapters";
+import type { FileContentsMap } from "@stagereview/types/diff";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -57,7 +58,12 @@ export function ChapterDetailPage({ runId, chapterNumber }: ChapterDetailPagePro
 	}
 
 	return (
-		<ChapterDetailContent chapter={chapter} chapterIndex={chapterIndex} patch={diffData.patch} />
+		<ChapterDetailContent
+			chapter={chapter}
+			chapterIndex={chapterIndex}
+			patch={diffData.patch}
+			fileContents={diffData.fileContents}
+		/>
 	);
 }
 
@@ -65,9 +71,15 @@ interface ChapterDetailContentProps {
 	chapter: Chapter;
 	chapterIndex: number;
 	patch: string;
+	fileContents: FileContentsMap;
 }
 
-function ChapterDetailContent({ chapter, chapterIndex, patch }: ChapterDetailContentProps) {
+function ChapterDetailContent({
+	chapter,
+	chapterIndex,
+	patch,
+	fileContents,
+}: ChapterDetailContentProps) {
 	const { runId, chapters: allChapters } = useChapterContext();
 	const view = useViewState(runId);
 	const [focusedKeyChangeId, setFocusedKeyChangeId] = useState<string | null>(null);
@@ -81,8 +93,8 @@ function ChapterDetailContent({ chapter, chapterIndex, patch }: ChapterDetailCon
 	}
 
 	const chapterEntries = useMemo(
-		() => filterFilesForChapter(patch, chapter.hunkRefs),
-		[patch, chapter.hunkRefs],
+		() => filterFilesForChapter(patch, chapter.hunkRefs, fileContents),
+		[patch, chapter.hunkRefs, fileContents],
 	);
 
 	const allLineRefsByFile = useMemo(

@@ -1,9 +1,10 @@
-import { getSingularPatch } from "@pierre/diffs";
+import { getSingularPatch, parseDiffFromFile } from "@pierre/diffs";
 import type { HunkReference } from "@stagereview/types/chapters";
+import type { FileContentsMap } from "@stagereview/types/diff";
 import type { FileDiffEntry } from "./parse-diff";
 import { fileDiffToPullRequestFile } from "./parse-diff";
 
-const HUNK_HEADER_RE = /^@@\s+-(\d+)(?:,\d+)?\s+\+\d+(?:,\d+)?\s+@@/;
+const HUNK_HEADER_RE = /^@@\s+-(\d+)(?:,(\d+))?\s+\+\d+(?:,\d+)?\s+@@/;
 const FILE_BREAK = /\ndiff --git /g;
 
 interface FileSegment {
@@ -12,16 +13,8 @@ interface FileSegment {
 	text: string;
 }
 
-/**
- * Splits a `git diff` patch into per-file blocks, keyed by both the new path
- * (post-rename) and the old path so a chapter `hunkRef` can match either.
- * Splitting at the text level (rather than reconstructing from Pierre's parsed
- * metadata) preserves the file-level headers Pierre needs to re-parse cleanly.
- */
 function splitPatchByFile(patch: string): FileSegment[] {
 	if (!patch.trim()) return [];
-	// Split on every "\ndiff --git " boundary. Re-prepend the prefix to all
-	// segments after the first so each block starts with a valid file header.
 	const parts = patch.split(FILE_BREAK);
 	const segments: FileSegment[] = [];
 	for (let i = 0; i < parts.length; i++) {
@@ -38,8 +31,6 @@ const PLUS_NAME_RE = /^\+\+\+ (?:b\/)?(.+)$/m;
 const MINUS_NAME_RE = /^--- (?:a\/)?(.+)$/m;
 
 function parseFileNames(segment: string): { prevName?: string; name?: string } {
-	// Prefer the +++/--- lines because they're authoritative; fall back to the
-	// `diff --git` header for added/deleted files where one side is /dev/null.
 	const plusMatch = segment.match(PLUS_NAME_RE);
 	const minusMatch = segment.match(MINUS_NAME_RE);
 	const gitMatch = segment.match(DIFF_GIT_NAMES_RE);
@@ -50,37 +41,76 @@ function parseFileNames(segment: string): { prevName?: string; name?: string } {
 	return { prevName, name };
 }
 
-/**
- * Filter a per-file patch text down to only the hunks whose old-side start
- * matches one of the provided line numbers. Returns null when no hunk matches.
- */
-function filterHunksInFile(perFileText: string, oldStarts: ReadonlySet<number>): string | null {
-	const lines = perFileText.split("\n");
-	const headerLines: string[] = [];
-	const hunks: Array<{ oldStart: number; lines: string[] }> = [];
-	let current: { oldStart: number; lines: string[] } | null = null;
+interface ParsedHunk {
+	oldStart: number;
+	oldLines: number;
+	lines: string[];
+}
+
+function parseHunksFromSegment(segmentText: string): ParsedHunk[] {
+	const lines = segmentText.split("\n");
+	const hunks: ParsedHunk[] = [];
+	let current: ParsedHunk | null = null;
 
 	for (const line of lines) {
 		const match = line.match(HUNK_HEADER_RE);
 		if (match) {
 			if (current) hunks.push(current);
-			const start = match[1] === undefined ? Number.NaN : Number.parseInt(match[1], 10);
-			current = { oldStart: start, lines: [line] };
+			const oldStart = match[1] === undefined ? 0 : Number.parseInt(match[1], 10);
+			const oldLines = match[2] === undefined ? 1 : Number.parseInt(match[2], 10);
+			current = { oldStart, oldLines, lines: [] };
 			continue;
 		}
 		if (current) current.lines.push(line);
-		else headerLines.push(line);
 	}
 	if (current) hunks.push(current);
 
-	const matched = hunks.filter((h) => oldStarts.has(h.oldStart));
-	if (matched.length === 0) return null;
+	return hunks;
+}
 
-	return [...headerLines, ...matched.flatMap((h) => h.lines)].join("\n");
+/**
+ * Apply hunks to old file content, producing an intermediate file.
+ *
+ * Used in chapter view: applying all NON-chapter hunks to the old file produces
+ * a base where only the chapter's changes remain as the diff against the new file.
+ *
+ * Hunks are applied bottom-to-top (by descending oldStart) so that each splice
+ * doesn't shift the positions of earlier hunks.
+ */
+function applyHunksToContent(content: string, hunks: ParsedHunk[]): string {
+	if (hunks.length === 0) return content;
+
+	const trailingNewline = content.endsWith("\n");
+	const fileLines =
+		content === "" ? [] : trailingNewline ? content.slice(0, -1).split("\n") : content.split("\n");
+
+	const sorted = [...hunks].sort((a, b) => b.oldStart - a.oldStart);
+
+	for (const hunk of sorted) {
+		const newContent: string[] = [];
+		for (const line of hunk.lines) {
+			if (line.startsWith("+")) {
+				newContent.push(line.slice(1));
+			} else if (line.startsWith("-")) {
+				// deletion — skip (don't include in output)
+			} else if (line.startsWith(" ") || line === "") {
+				newContent.push(line.startsWith(" ") ? line.slice(1) : line);
+			}
+		}
+
+		const spliceStart = hunk.oldLines === 0 ? hunk.oldStart : hunk.oldStart - 1;
+		fileLines.splice(spliceStart, hunk.oldLines, ...newContent);
+	}
+
+	return fileLines.length > 0 ? fileLines.join("\n") + (trailingNewline ? "\n" : "") : "";
 }
 
 /**
  * Filter a parsed PR diff to the files+hunks referenced by a chapter's hunkRefs.
+ *
+ * When file contents are available, computes an intermediate file by applying
+ * non-chapter hunks to the old content, then diffs intermediate vs new. This
+ * produces a clean isPartial=false diff that supports context expansion.
  *
  * File order follows hunkRef first-appearance — that's the LLM's intended
  * reading order for the chapter, not the file tree's alphabetical order.
@@ -88,6 +118,7 @@ function filterHunksInFile(perFileText: string, oldStarts: ReadonlySet<number>):
 export function filterFilesForChapter(
 	patch: string,
 	hunkRefs: readonly HunkReference[],
+	fileContents?: FileContentsMap,
 ): FileDiffEntry[] {
 	if (hunkRefs.length === 0) return [];
 
@@ -111,15 +142,42 @@ export function filterFilesForChapter(
 	}
 
 	const result: FileDiffEntry[] = [];
-	for (const [filePath, oldStarts] of oldStartsByPath) {
+	for (const [filePath, chapterOldStarts] of oldStartsByPath) {
 		const segment = segmentsByPath.get(filePath);
 		if (!segment) continue;
 
-		const filteredText = filterHunksInFile(segment.text, oldStarts);
-		if (filteredText === null) continue;
+		const allHunks = parseHunksFromSegment(segment.text);
+		const chapterHunks = allHunks.filter((h) => chapterOldStarts.has(h.oldStart));
+		if (chapterHunks.length === 0) continue;
 
-		const diff = getSingularPatch(filteredText);
-		result.push({ file: fileDiffToPullRequestFile(diff), diff });
+		const contents = fileContents?.[segment.name ?? filePath];
+		if (contents?.oldContent != null && contents?.newContent != null) {
+			const nonChapterHunks = allHunks.filter((h) => !chapterOldStarts.has(h.oldStart));
+			const intermediateContent = applyHunksToContent(contents.oldContent, nonChapterHunks);
+			const oldPath = segment.prevName ?? segment.name ?? filePath;
+			const newPath = segment.name ?? filePath;
+			const diff = parseDiffFromFile(
+				{ name: oldPath, contents: intermediateContent },
+				{ name: newPath, contents: contents.newContent },
+			);
+			result.push({ file: fileDiffToPullRequestFile(diff), diff });
+		} else {
+			const headerLines: string[] = [];
+			const lines = segment.text.split("\n");
+			for (const line of lines) {
+				if (HUNK_HEADER_RE.test(line)) break;
+				headerLines.push(line);
+			}
+			const filteredText = [
+				...headerLines,
+				...chapterHunks.flatMap((h) => {
+					const header = `@@ -${h.oldStart},${h.oldLines} +0,0 @@`;
+					return [header, ...h.lines];
+				}),
+			].join("\n");
+			const diff = getSingularPatch(filteredText);
+			result.push({ file: fileDiffToPullRequestFile(diff), diff });
+		}
 	}
 
 	return result;
