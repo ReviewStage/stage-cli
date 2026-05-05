@@ -1,6 +1,8 @@
 ---
 name: fixing-ci
 description: Use when CI is failing on a branch and you need to diagnose failures from GitHub, fix them locally with iterative verification, and re-push clean commits.
+metadata:
+  internal: true
 ---
 
 # Fixing CI

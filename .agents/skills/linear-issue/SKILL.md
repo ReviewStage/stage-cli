@@ -1,6 +1,8 @@
 ---
 name: linear-issue
 description: Use when creating a Linear issue from the current coding context, or when the user invokes /linear-issue. Infers team, priority, status, and relationships from conversation context, working directory, and git branch.
+metadata:
+  internal: true
 ---
 
 # Creating Linear Issues

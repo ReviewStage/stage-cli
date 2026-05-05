@@ -1,6 +1,8 @@
 # stagereview
 
-Chapter-style code review against your local git branch. Run it from your AI coding agent — no server, no telemetry, no API key.
+AI-powered code review tool that organizes pull requests into logical chapters and surfaces risks before you dive into the code. Run it from your local AI coding agent of choice.
+
+Try the full Stage experience with GitHub integration at [https://stagereview.app](https://stagereview.app).
 
 ## Install
 
@@ -24,26 +26,13 @@ In your AI agent, run:
 /stage-chapters
 ```
 
-This breaks your branch's diff into reviewable "chapters".
-
-To open a generated chapters file directly:
-
-```bash
-stagereview show path/to/chapters.json
-```
+This breaks your branch's diff into reviewable "chapters" and opens a local browser window to view the chapters.
 
 ## What it does
 
 - Splits a local git branch diff into logical review chapters
 - Opens a local browser to view the chapters
 - Runs entirely on your machine
-
-## What it does NOT do
-
-- Connect to any Stage server
-- Send telemetry or analytics
-- Require an API key or login
-- Upload your code anywhere
 
 ## License
 

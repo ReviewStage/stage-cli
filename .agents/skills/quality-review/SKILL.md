@@ -1,6 +1,8 @@
 ---
 name: quality-review
 description: Use when reviewing code changes against AGENTS.md implementation quality standards, or when asked to do an implementation quality review
+metadata:
+  internal: true
 ---
 
 # Quality Review
