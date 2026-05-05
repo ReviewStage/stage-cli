@@ -59,11 +59,11 @@ function TabLink({ tab, runId, isActive, countLabel }: TabLinkProps) {
 	);
 }
 
-function CollapseExpandAllButton() {
+function CollapseExpandAllButton({ fileCount }: { fileCount: number }) {
 	const collapseState = useCollapseActionsFromNav();
 	if (!collapseState) return null;
 
-	const allCollapsed = collapseState.collapsedFiles.size > 0;
+	const allCollapsed = fileCount > 0 && collapseState.collapsedFiles.size >= fileCount;
 	const handleClick = allCollapsed ? collapseState.expandAllFiles : collapseState.collapseAllFiles;
 	const label = allCollapsed ? "Expand all files" : "Collapse all files";
 
@@ -82,6 +82,9 @@ function CollapseExpandAllButton() {
 					) : (
 						<FoldVertical className="size-3.5" />
 					)}
+					<span className="ml-1 hidden text-xs @7xl:inline">
+						{allCollapsed ? "Expand all" : "Collapse all"}
+					</span>
 				</Button>
 			</TooltipTrigger>
 			<TooltipContent>{label}</TooltipContent>
@@ -159,6 +162,16 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		return () => observer.disconnect();
 	}, []);
 
+	const { totalAdditions, totalDeletions } = useMemo(() => {
+		let additions = 0;
+		let deletions = 0;
+		for (const entry of fileEntries) {
+			additions += entry.file.additions;
+			deletions += entry.file.deletions;
+		}
+		return { totalAdditions: additions, totalDeletions: deletions };
+	}, [fileEntries]);
+
 	if (error) return <ErrorState error={error} />;
 
 	// 48 = the app-shell Topbar's `h-12`, which the picker also has to clear.
@@ -169,7 +182,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 
 	return (
 		<CollapseActionsProvider>
-			<div className="flex flex-1 flex-col" style={layoutStyle}>
+			<div className="@container flex flex-1 flex-col" style={layoutStyle}>
 				<div className="flex-1 px-6 pt-6 lg:px-8">
 					<header className="mb-4 space-y-1">
 						<SectionLabel>Run</SectionLabel>
@@ -179,7 +192,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 					</header>
 					<nav
 						ref={navRef}
-						className="-mx-6 lg:-mx-8 sticky top-12 z-20 mb-6 flex items-center justify-between gap-4 bg-background/95 px-6 lg:px-8 pt-1 pb-2 backdrop-blur"
+						className="-mx-6 lg:-mx-8 sticky top-12 z-20 mb-6 flex items-center justify-between gap-4 bg-background px-6 lg:px-8 py-2"
 					>
 						<div className="flex shrink-0 items-center gap-1">
 							{tabs.map((tab) => (
@@ -198,8 +211,16 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 								/>
 							))}
 						</div>
-						<div className="flex shrink-0 items-center gap-3">
-							<CollapseExpandAllButton />
+						<div className="flex shrink-0 items-center gap-3 text-sm @xl:gap-6">
+							<div className="hidden items-center gap-3 @5xl:flex">
+								<span className="font-medium text-green-600 dark:text-green-500">
+									+{totalAdditions.toLocaleString()}
+								</span>
+								<span className="font-medium text-red-600 dark:text-red-500">
+									-{totalDeletions.toLocaleString()}
+								</span>
+							</div>
+							<CollapseExpandAllButton fileCount={totalFileCount} />
 							<Popover>
 								<Tooltip>
 									<TooltipTrigger asChild>
@@ -211,7 +232,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 												aria-label="Display settings"
 											>
 												<Settings2 className="size-3.5" />
-												<span className="ml-1 hidden text-xs sm:inline">Display</span>
+												<span className="ml-1 hidden text-xs @7xl:inline">Display</span>
 											</Button>
 										</PopoverTrigger>
 									</TooltipTrigger>
