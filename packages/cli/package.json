@@ -1,6 +1,6 @@
 {
   "name": "stagereview",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Chapter-style code review against your local git branch.",
   "keywords": [
     "code-review",
