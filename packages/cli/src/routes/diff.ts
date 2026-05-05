@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -13,6 +13,8 @@ import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
 
 const execFileAsync = promisify(execFile);
+
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 export function diffRoutes(db: StageDb): Route[] {
 	return [
@@ -45,7 +47,11 @@ export function diffRoutes(db: StageDb): Route[] {
 					run.scopeKind === SCOPE_KIND.COMMITTED ? "private, max-age=300" : "no-store";
 
 				try {
-					const patch = await collectGitDiff(repoRoot, args);
+					const { stdout: patch } = await execFileAsync("git", args, {
+						cwd: repoRoot,
+						encoding: "utf8",
+						maxBuffer: 50 * 1024 * 1024,
+					});
 					const fileContents = await buildFileContents(run, repoRoot, patch);
 					const body: DiffResponse = { patch, fileContents };
 					res.writeHead(200, {
@@ -60,28 +66,6 @@ export function diffRoutes(db: StageDb): Route[] {
 			},
 		},
 	];
-}
-
-function collectGitDiff(cwd: string, args: string[]): Promise<string> {
-	return new Promise((resolve, reject) => {
-		const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
-		const stdoutChunks: Buffer[] = [];
-		let stderr = "";
-
-		child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
-		child.stderr.on("data", (chunk: Buffer) => {
-			stderr += chunk.toString("utf8");
-		});
-
-		child.on("error", reject);
-		child.on("close", (code) => {
-			if (code === 0) {
-				resolve(Buffer.concat(stdoutChunks).toString("utf8"));
-			} else {
-				reject(new Error(stderr.trim() || `git exited with code ${code}`));
-			}
-		});
-	});
 }
 
 const MINUS_RE = /^--- (?:a\/)?(.+)$/m;
@@ -129,7 +113,7 @@ async function getGitFileContent(
 		const { stdout } = await execFileAsync("git", ["show", `${ref}:${filePath}`], {
 			cwd,
 			encoding: "utf8",
-			maxBuffer: 5 * 1024 * 1024,
+			maxBuffer: MAX_FILE_BYTES,
 		});
 		return stdout;
 	} catch {
@@ -148,30 +132,29 @@ async function readFileContent(repoRoot: string, filePath: string): Promise<stri
 	}
 }
 
-function getOldRef(run: ChapterRunRow): string {
-	if (run.scopeKind === SCOPE_KIND.COMMITTED) return run.baseSha;
+function getContentRefs(run: ChapterRunRow): { oldRef: string; newRef: string | "DISK" } {
+	if (run.scopeKind === SCOPE_KIND.COMMITTED) {
+		return { oldRef: run.baseSha, newRef: run.headSha };
+	}
 	switch (run.workingTreeRef) {
 		case WORKING_TREE_REF.UNSTAGED:
-			return "";
+			return { oldRef: "", newRef: "DISK" };
 		case WORKING_TREE_REF.STAGED:
+			return { oldRef: "HEAD", newRef: "" };
 		case WORKING_TREE_REF.WORK:
-			return "HEAD";
+			return { oldRef: "HEAD", newRef: "DISK" };
 		default:
-			return "HEAD";
+			return { oldRef: "HEAD", newRef: "HEAD" };
 	}
 }
 
-function getNewRef(run: ChapterRunRow): string | "DISK" {
-	if (run.scopeKind === SCOPE_KIND.COMMITTED) return run.headSha;
-	switch (run.workingTreeRef) {
-		case WORKING_TREE_REF.UNSTAGED:
-		case WORKING_TREE_REF.WORK:
-			return "DISK";
-		case WORKING_TREE_REF.STAGED:
-			return "";
-		default:
-			return "HEAD";
-	}
+function fetchContent(
+	repoRoot: string,
+	ref: string | "DISK",
+	filePath: string,
+): Promise<string | null> {
+	if (ref === "DISK") return readFileContent(repoRoot, filePath);
+	return getGitFileContent(repoRoot, ref, filePath);
 }
 
 async function buildFileContents(
@@ -180,8 +163,7 @@ async function buildFileContents(
 	patch: string,
 ): Promise<FileContentsMap> {
 	const files = parseFilePathsFromPatch(patch);
-	const oldRef = getOldRef(run);
-	const newRef = getNewRef(run);
+	const { oldRef, newRef } = getContentRefs(run);
 
 	const entries = await Promise.all(
 		files.map(async ({ oldPath, newPath, isBinary }) => {
@@ -189,12 +171,8 @@ async function buildFileContents(
 			if (!key || isBinary) return null;
 
 			const [oldContent, newContent] = await Promise.all([
-				oldPath ? getGitFileContent(repoRoot, oldRef, oldPath) : Promise.resolve(null),
-				newPath
-					? newRef === "DISK"
-						? readFileContent(repoRoot, newPath)
-						: getGitFileContent(repoRoot, newRef, newPath)
-					: Promise.resolve(null),
+				oldPath ? fetchContent(repoRoot, oldRef, oldPath) : Promise.resolve(null),
+				newPath ? fetchContent(repoRoot, newRef, newPath) : Promise.resolve(null),
 			]);
 
 			return [key, { oldContent, newContent }] as const;
