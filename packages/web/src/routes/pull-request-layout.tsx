@@ -168,64 +168,66 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 	} as CSSProperties;
 
 	return (
-		<div className="flex flex-1 flex-col" style={layoutStyle}>
-			<div className="flex-1 px-6 pt-6 lg:px-8">
-				<header className="mb-4 space-y-1">
-					<SectionLabel>Run</SectionLabel>
-					<p className="break-all font-mono text-foreground/80 text-xs">{data?.run.id ?? runId}</p>
-				</header>
-				<nav
-					ref={navRef}
-					className="-mx-6 lg:-mx-8 sticky top-12 z-20 mb-6 flex items-center justify-between gap-4 bg-background/95 px-6 lg:px-8 pt-1 pb-2 backdrop-blur"
-				>
-					<div className="flex shrink-0 items-center gap-1">
-						{tabs.map((tab) => (
-							<TabLink
-								key={tab.id}
-								tab={tab}
-								runId={runId}
-								isActive={tab.id === activeTab}
-								countLabel={
-									tab.id === PR_TAB.CHAPTERS
-										? chapterCountLabel
-										: tab.id === PR_TAB.FILES
-											? fileCountLabel
-											: undefined
-								}
-							/>
-						))}
-					</div>
-					<div className="flex shrink-0 items-center gap-3">
-						<CollapseExpandAllButton />
-						<Popover>
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<PopoverTrigger asChild>
-										<Button
-											variant="outline"
-											size="sm"
-											className="h-7 cursor-pointer px-2"
-											aria-label="Display settings"
-										>
-											<Settings2 className="size-3.5" />
-											<span className="ml-1 hidden text-xs sm:inline">Display</span>
-										</Button>
-									</PopoverTrigger>
-								</TooltipTrigger>
-								<TooltipContent>Display settings</TooltipContent>
-							</Tooltip>
-							<PopoverContent align="end" className="w-80">
-								<DiffSettingsForm compact />
-							</PopoverContent>
-						</Popover>
-					</div>
-				</nav>
-				<CollapseActionsProvider>
+		<CollapseActionsProvider>
+			<div className="flex flex-1 flex-col" style={layoutStyle}>
+				<div className="flex-1 px-6 pt-6 lg:px-8">
+					<header className="mb-4 space-y-1">
+						<SectionLabel>Run</SectionLabel>
+						<p className="break-all font-mono text-foreground/80 text-xs">
+							{data?.run.id ?? runId}
+						</p>
+					</header>
+					<nav
+						ref={navRef}
+						className="-mx-6 lg:-mx-8 sticky top-12 z-20 mb-6 flex items-center justify-between gap-4 bg-background/95 px-6 lg:px-8 pt-1 pb-2 backdrop-blur"
+					>
+						<div className="flex shrink-0 items-center gap-1">
+							{tabs.map((tab) => (
+								<TabLink
+									key={tab.id}
+									tab={tab}
+									runId={runId}
+									isActive={tab.id === activeTab}
+									countLabel={
+										tab.id === PR_TAB.CHAPTERS
+											? chapterCountLabel
+											: tab.id === PR_TAB.FILES
+												? fileCountLabel
+												: undefined
+									}
+								/>
+							))}
+						</div>
+						<div className="flex shrink-0 items-center gap-3">
+							<CollapseExpandAllButton />
+							<Popover>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<PopoverTrigger asChild>
+											<Button
+												variant="outline"
+												size="sm"
+												className="h-7 cursor-pointer px-2"
+												aria-label="Display settings"
+											>
+												<Settings2 className="size-3.5" />
+												<span className="ml-1 hidden text-xs sm:inline">Display</span>
+											</Button>
+										</PopoverTrigger>
+									</TooltipTrigger>
+									<TooltipContent>Display settings</TooltipContent>
+								</Tooltip>
+								<PopoverContent align="end" className="w-80">
+									<DiffSettingsForm compact />
+								</PopoverContent>
+							</Popover>
+						</div>
+					</nav>
 					<ChapterProvider runId={runId}>
 						<Outlet />
 					</ChapterProvider>
-				</CollapseActionsProvider>
+				</div>
 			</div>
-		</div>
+		</CollapseActionsProvider>
 	);
 }
