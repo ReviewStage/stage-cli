@@ -1,6 +1,6 @@
 # stagereview
 
-AI-powered code review tool that organizes pull requests into logical chapters and surfaces risks before you dive into the code. Run it from your local AI coding agent of choice.
+AI-powered code review tool that organizes pull requests into logical chapters and surfaces risks before you dive into the code. Run it from your local coding agent of choice.
 
 Try the full Stage experience with GitHub integration at [https://stagereview.app](https://stagereview.app).
 
