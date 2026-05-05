@@ -1,8 +1,7 @@
 import { getSingularPatch } from "@pierre/diffs";
 import type { HunkReference } from "@stagereview/types/chapters";
-import type { FileContentsMap } from "@stagereview/types/diff";
 import type { FileDiffEntry } from "./parse-diff";
-import { enrichFileDiff, fileDiffToPullRequestFile } from "./parse-diff";
+import { fileDiffToPullRequestFile } from "./parse-diff";
 
 const HUNK_HEADER_RE = /^@@\s+-(\d+)(?:,\d+)?\s+\+\d+(?:,\d+)?\s+@@/;
 const FILE_BREAK = /\ndiff --git /g;
@@ -89,7 +88,6 @@ function filterHunksInFile(perFileText: string, oldStarts: ReadonlySet<number>):
 export function filterFilesForChapter(
 	patch: string,
 	hunkRefs: readonly HunkReference[],
-	fileContents?: FileContentsMap,
 ): FileDiffEntry[] {
 	if (hunkRefs.length === 0) return [];
 
@@ -120,8 +118,7 @@ export function filterFilesForChapter(
 		const filteredText = filterHunksInFile(segment.text, oldStarts);
 		if (filteredText === null) continue;
 
-		const baseDiff = getSingularPatch(filteredText);
-		const diff = enrichFileDiff(baseDiff, fileContents);
+		const diff = getSingularPatch(filteredText);
 		result.push({ file: fileDiffToPullRequestFile(diff), diff });
 	}
 
