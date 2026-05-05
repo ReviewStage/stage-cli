@@ -131,6 +131,7 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 			const existingShadowRoot = fileContainer.querySelector("diffs-container")?.shadowRoot;
 			if (existingShadowRoot) {
 				attachShadowObserver(existingShadowRoot);
+				if (tryScroll()) disconnectAll();
 			} else {
 				shadowRootRetryTimer = setInterval(() => {
 					if (!isLatestRequest()) {
@@ -142,7 +143,7 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 					if (shadowRootRetryTimer) clearInterval(shadowRootRetryTimer);
 					shadowRootRetryTimer = null;
 					attachShadowObserver(shadowRoot);
-					tryScroll();
+					if (tryScroll()) disconnectAll();
 				}, SCROLL_TO_LINE_POLL_MS);
 			}
 
@@ -163,9 +164,9 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 				window.scrollTo({ top });
 			},
 			scrollToLine(filePath: string, side: DiffSide, line: number) {
+				cancelPending();
 				if (!entries.some((e) => e.file.path === filePath)) return;
 
-				scrollRequestRef.current += 1;
 				const requestToken = scrollRequestRef.current;
 				const isLatestRequest = () => scrollRequestRef.current === requestToken;
 

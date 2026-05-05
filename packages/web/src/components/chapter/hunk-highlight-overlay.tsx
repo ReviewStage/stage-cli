@@ -84,10 +84,7 @@ function findLineNumberElement(row: HTMLElement): HTMLElement | null {
 	if (!(root instanceof Document || root instanceof ShadowRoot || root instanceof HTMLElement)) {
 		return null;
 	}
-	for (const candidate of root.querySelectorAll<HTMLElement>("[data-column-number]")) {
-		if (candidate.getAttribute("data-line-index") === lineIndex) return candidate;
-	}
-	return null;
+	return root.querySelector<HTMLElement>(`[data-column-number][data-line-index="${lineIndex}"]`);
 }
 
 export function getHighlightLineRect(lineEl: HTMLElement): DOMRect {
