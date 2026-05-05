@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import type { DiffResponse } from "@stagereview/types/diff";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, getDb } from "../db/client.js";
 import { chapterRun } from "../db/schema/index.js";
@@ -140,8 +141,12 @@ function rawRequest(port: number, requestPath: string): Promise<RawResponse> {
 	});
 }
 
+function parseDiffResponse(body: string): DiffResponse {
+	return JSON.parse(body) as DiffResponse;
+}
+
 describe("diff API", () => {
-	it("GET /api/runs/:runId/diff.patch streams the committed-scope unified diff", async () => {
+	it("GET /api/runs/:runId/diff.patch returns JSON with patch and fileContents", async () => {
 		const { baseSha, headSha } = await initRepoWithTwoCommits();
 		const runId = insertCommittedRun(baseSha, headSha);
 
@@ -149,12 +154,17 @@ describe("diff API", () => {
 		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
 
 		expect(res.status).toBe(200);
-		expect(res.headers["content-type"]).toMatch(/text\/plain/);
+		expect(res.headers["content-type"]).toMatch(/application\/json/);
 		expect(res.headers["cache-control"]).toBe("private, max-age=300");
-		expect(res.body).toContain("diff --git a/file.txt b/file.txt");
-		expect(res.body).toContain("+world");
-		// --no-color should suppress ANSI escapes (literal ESC character).
-		expect(res.body).not.toContain(`${String.fromCharCode(27)}[`);
+
+		const data = parseDiffResponse(res.body);
+		expect(data.patch).toContain("diff --git a/file.txt b/file.txt");
+		expect(data.patch).toContain("+world");
+		expect(data.patch).not.toContain(`${String.fromCharCode(27)}[`);
+
+		expect(data.fileContents["file.txt"]).toBeDefined();
+		expect(data.fileContents["file.txt"]?.oldContent).toBe("hello\n");
+		expect(data.fileContents["file.txt"]?.newContent).toBe("hello\nworld\n");
 	});
 
 	it("returns the unstaged diff for workingTree/unstaged runs", async () => {
@@ -167,14 +177,16 @@ describe("diff API", () => {
 
 		expect(res.status).toBe(200);
 		expect(res.headers["cache-control"]).toBe("no-store");
-		expect(res.body).toContain("+unstaged");
+
+		const data = parseDiffResponse(res.body);
+		expect(data.patch).toContain("+unstaged");
+		expect(data.fileContents["file.txt"]?.newContent).toBe("hello\nworld\nunstaged\n");
 	});
 
 	it("returns the staged diff for workingTree/staged runs", async () => {
 		await initRepoWithTwoCommits();
 		await fs.writeFile(path.join(repoRoot, "file.txt"), "hello\nworld\nstaged\n");
 		git("add", "file.txt");
-		// Add an extra unstaged change that must NOT appear in the staged diff.
 		await fs.writeFile(path.join(repoRoot, "file.txt"), "hello\nworld\nstaged\nleak\n");
 		const runId = insertWorkingTreeRun(WORKING_TREE_REF.STAGED);
 
@@ -183,16 +195,17 @@ describe("diff API", () => {
 
 		expect(res.status).toBe(200);
 		expect(res.headers["cache-control"]).toBe("no-store");
-		expect(res.body).toContain("+staged");
-		expect(res.body).not.toContain("+leak");
+
+		const data = parseDiffResponse(res.body);
+		expect(data.patch).toContain("+staged");
+		expect(data.patch).not.toContain("+leak");
+		expect(data.fileContents["file.txt"]?.newContent).toBe("hello\nworld\nstaged\n");
 	});
 
 	it("returns the combined diff vs HEAD for workingTree/work runs", async () => {
 		await initRepoWithTwoCommits();
-		// staged change
 		await fs.writeFile(path.join(repoRoot, "file.txt"), "hello\nworld\nstaged\n");
 		git("add", "file.txt");
-		// plus an unstaged change on top
 		await fs.writeFile(path.join(repoRoot, "file.txt"), "hello\nworld\nstaged\nunstaged\n");
 		const runId = insertWorkingTreeRun(WORKING_TREE_REF.WORK);
 
@@ -200,9 +213,60 @@ describe("diff API", () => {
 		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
 
 		expect(res.status).toBe(200);
-		// `git diff HEAD` includes both staged and unstaged changes.
-		expect(res.body).toContain("+staged");
-		expect(res.body).toContain("+unstaged");
+
+		const data = parseDiffResponse(res.body);
+		expect(data.patch).toContain("+staged");
+		expect(data.patch).toContain("+unstaged");
+		expect(data.fileContents["file.txt"]?.newContent).toBe("hello\nworld\nstaged\nunstaged\n");
+	});
+
+	it("returns null oldContent for added files", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+
+		await fs.writeFile(path.join(repoRoot, "initial.txt"), "init\n");
+		git("add", "initial.txt");
+		git("commit", "-m", "initial");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		await fs.writeFile(path.join(repoRoot, "new-file.txt"), "brand new\n");
+		git("add", "new-file.txt");
+		git("commit", "-m", "add new file");
+		const headSha = git("rev-parse", "HEAD").trim();
+
+		const runId = insertCommittedRun(baseSha, headSha);
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+
+		const data = parseDiffResponse(res.body);
+		expect(data.fileContents["new-file.txt"]?.oldContent).toBeNull();
+		expect(data.fileContents["new-file.txt"]?.newContent).toBe("brand new\n");
+	});
+
+	it("returns null newContent for deleted files", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+
+		await fs.writeFile(path.join(repoRoot, "doomed.txt"), "goodbye\n");
+		git("add", "doomed.txt");
+		git("commit", "-m", "add file");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		git("rm", "doomed.txt");
+		git("commit", "-m", "delete file");
+		const headSha = git("rev-parse", "HEAD").trim();
+
+		const runId = insertCommittedRun(baseSha, headSha);
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+
+		const data = parseDiffResponse(res.body);
+		expect(data.fileContents["doomed.txt"]?.oldContent).toBe("goodbye\n");
+		expect(data.fileContents["doomed.txt"]?.newContent).toBeNull();
 	});
 
 	it("returns 404 for unknown runId", async () => {

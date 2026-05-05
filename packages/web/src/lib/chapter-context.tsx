@@ -38,7 +38,7 @@ function buildChapterLineCountsMap(
 
 export function ChapterProvider({ runId, children }: { runId: string; children: ReactNode }) {
 	const { data: chaptersData } = useChapters(runId);
-	const { data: patch } = useDiffPatch(runId);
+	const { data: diffData } = useDiffPatch(runId);
 
 	const chapters = useMemo<readonly Chapter[]>(() => {
 		if (!chaptersData?.chapters) return [];
@@ -46,8 +46,8 @@ export function ChapterProvider({ runId, children }: { runId: string; children: 
 	}, [chaptersData?.chapters]);
 
 	const chapterLineCountsMap = useMemo(
-		() => buildChapterLineCountsMap(chapters, patch),
-		[chapters, patch],
+		() => buildChapterLineCountsMap(chapters, diffData?.patch),
+		[chapters, diffData?.patch],
 	);
 
 	const value = useMemo<ChapterContextValue>(
