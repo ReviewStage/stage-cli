@@ -43,7 +43,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "prepack": "node -e \"const fs=require('node:fs');fs.copyFileSync('../../README.md','./README.md');fs.cpSync('../../skills','./skills',{recursive:true})\""
+    "prepack": "node -e \"const fs=require('node:fs');fs.copyFileSync('../../README.md','./README.md');fs.rmSync('./skills',{recursive:true,force:true});fs.cpSync('../../skills','./skills',{recursive:true})\""
   },
   "dependencies": {
     "better-sqlite3": "^12.9.0",
