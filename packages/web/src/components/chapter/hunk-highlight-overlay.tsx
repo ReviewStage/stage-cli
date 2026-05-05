@@ -94,7 +94,7 @@ export function getHighlightLineRect(lineEl: HTMLElement): DOMRect {
 	const contentRect =
 		row.querySelector<HTMLElement>("[data-column-content]")?.getBoundingClientRect() ?? rowRect;
 
-	if (!numberRect || !contentRect) return rowRect;
+	if (!numberRect) return rowRect;
 
 	const left = Math.min(numberRect.left, contentRect.left);
 	const right = Math.max(numberRect.right, contentRect.right);
