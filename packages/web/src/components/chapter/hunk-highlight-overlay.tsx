@@ -67,6 +67,46 @@ function findLastVisibleLine(
 	return null;
 }
 
+function findLineRow(lineEl: HTMLElement): HTMLElement {
+	if (lineEl.hasAttribute("data-line")) return lineEl;
+	return lineEl.closest<HTMLElement>("[data-line]") ?? lineEl;
+}
+
+function findLineNumberElement(row: HTMLElement): HTMLElement | null {
+	const nested = row.querySelector<HTMLElement>("[data-column-number]");
+	if (nested) return nested;
+
+	const lineIndex = row.getAttribute("data-line-index");
+	if (!lineIndex) return null;
+
+	const scope = row.closest<HTMLElement>("[data-additions], [data-deletions], [data-unified]");
+	const root = scope ?? row.getRootNode();
+	if (!(root instanceof Document || root instanceof ShadowRoot || root instanceof HTMLElement)) {
+		return null;
+	}
+	return root.querySelector<HTMLElement>(`[data-column-number][data-line-index="${lineIndex}"]`);
+}
+
+export function getHighlightLineRect(lineEl: HTMLElement): DOMRect {
+	const row = findLineRow(lineEl);
+	const rowRect = row.getBoundingClientRect();
+	const numberRect = findLineNumberElement(row)?.getBoundingClientRect();
+	const contentRect =
+		row.querySelector<HTMLElement>("[data-column-content]")?.getBoundingClientRect() ?? rowRect;
+
+	if (!numberRect) return rowRect;
+
+	const left = Math.min(numberRect.left, contentRect.left);
+	const right = Math.max(numberRect.right, contentRect.right);
+
+	return DOMRect.fromRect({
+		x: left,
+		y: rowRect.top,
+		width: right - left,
+		height: rowRect.height,
+	});
+}
+
 /**
  * `getBoundingClientRect()` returns the container's border-box, but
  * `position: absolute` measures from the padding edge — subtract
@@ -88,10 +128,12 @@ function measureLineRange(
 	const lastEl = findLastVisibleLine(shadowRoot, lineRef.side, lineRef.startLine, lineRef.endLine);
 	if (!firstEl || !lastEl) return null;
 
-	const firstRect = firstEl.getBoundingClientRect();
-	const lastRect = lastEl.getBoundingClientRect();
+	const firstRow = findLineRow(firstEl);
+	const lastRow = findLineRow(lastEl);
+	const firstRect = getHighlightLineRect(firstRow);
+	const lastRect = getHighlightLineRect(lastRow);
 	let bottom = lastRect.bottom;
-	let trailingAnnotation = lastEl.nextElementSibling;
+	let trailingAnnotation = lastRow.nextElementSibling;
 
 	while (
 		trailingAnnotation instanceof HTMLElement &&
