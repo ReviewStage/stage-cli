@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChapterContext } from "@/lib/chapter-context";
+import { useProvideCollapseActions } from "@/lib/collapse-actions-context";
 import { FILE_STATUS } from "@/lib/diff-types";
 import { filterFilesForChapter } from "@/lib/filter-files-for-chapter";
 import { formatChapterAsMarkdown } from "@/lib/format-chapter-markdown";
@@ -184,6 +185,7 @@ function ChapterDetailContent({
 		chapterFilePaths,
 		collapseResetKey,
 	);
+	useProvideCollapseActions(collapseState);
 
 	useFileNavigationKeys(chapterFiles, activeFilePath, handleSelectFile);
 

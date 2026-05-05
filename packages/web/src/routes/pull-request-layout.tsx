@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { BookOpen, FileText, Settings2 } from "lucide-react";
+import { BookOpen, FileText, FoldVertical, Settings2, UnfoldVertical } from "lucide-react";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { DiffSettingsForm } from "@/components/diff/diff-settings-form";
 import { SectionLabel } from "@/components/pull-request/section-label";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChapterProvider } from "@/lib/chapter-context";
+import { CollapseActionsProvider, useCollapseActionsFromNav } from "@/lib/collapse-actions-context";
 import { useFileDiffEntries } from "@/lib/parse-diff";
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
@@ -55,6 +56,36 @@ function TabLink({ tab, runId, isActive, countLabel }: TabLinkProps) {
 				<span className="text-muted-foreground text-xs tabular-nums">{countLabel}</span>
 			)}
 		</Link>
+	);
+}
+
+function CollapseExpandAllButton() {
+	const collapseState = useCollapseActionsFromNav();
+	if (!collapseState) return null;
+
+	const allCollapsed = collapseState.collapsedFiles.size > 0;
+	const handleClick = allCollapsed ? collapseState.expandAllFiles : collapseState.collapseAllFiles;
+	const label = allCollapsed ? "Expand all files" : "Collapse all files";
+
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<Button
+					variant="outline"
+					size="sm"
+					className="h-7 cursor-pointer px-2"
+					aria-label={label}
+					onClick={handleClick}
+				>
+					{allCollapsed ? (
+						<UnfoldVertical className="size-3.5" />
+					) : (
+						<FoldVertical className="size-3.5" />
+					)}
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent>{label}</TooltipContent>
+		</Tooltip>
 	);
 }
 
@@ -165,6 +196,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 						))}
 					</div>
 					<div className="flex shrink-0 items-center gap-3">
+						<CollapseExpandAllButton />
 						<Popover>
 							<Tooltip>
 								<TooltipTrigger asChild>
@@ -188,9 +220,11 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 						</Popover>
 					</div>
 				</nav>
-				<ChapterProvider runId={runId}>
-					<Outlet />
-				</ChapterProvider>
+				<CollapseActionsProvider>
+					<ChapterProvider runId={runId}>
+						<Outlet />
+					</ChapterProvider>
+				</CollapseActionsProvider>
 			</div>
 		</div>
 	);

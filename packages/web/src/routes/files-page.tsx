@@ -7,6 +7,7 @@ import {
 	SidebarLayout,
 } from "@/components/files";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useProvideCollapseActions } from "@/lib/collapse-actions-context";
 import { FILE_STATUS } from "@/lib/diff-types";
 import { buildFileTree, flattenFileTree, sortFileTree } from "@/lib/file-tree";
 import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
@@ -51,6 +52,7 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 
 	const filePaths = useMemo(() => files.map((f) => f.path), [files]);
 	const collapseState = useFileCollapseState(defaultCollapsedFileIds, filePaths, runId);
+	useProvideCollapseActions(collapseState);
 
 	const diffListRef = useRef<FileDiffListHandle>(null);
 	const { activeFilePath, setActiveFileManually } = useActiveFileOnScroll(files);
