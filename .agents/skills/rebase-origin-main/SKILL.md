@@ -1,6 +1,8 @@
 ---
 name: rebase-origin-main
 description: Use when rebasing the current branch onto origin/main, including resolving merge conflicts along the way
+metadata:
+  internal: true
 ---
 
 # Rebase with origin/main

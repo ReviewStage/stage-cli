@@ -1,6 +1,8 @@
 ---
 name: fixing-pr-comments
 description: Use when a pull request has unresolved review comments that need to be addressed, or when asked to fix PR feedback
+metadata:
+  internal: true
 ---
 
 # Fixing PR Comments

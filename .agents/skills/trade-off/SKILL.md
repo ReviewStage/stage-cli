@@ -1,6 +1,8 @@
 ---
 name: trade-off
 description: Use at any stage — planning, before implementing, or reviewing code that's already written — to surface high-level trade-offs that could significantly simplify the work. Scans two layers in strict priority order. First, user-facing behavior (features, flows, states, settings, notifications, undo, real-time, bulk ops) — cutting a behavior removes the architecture and code behind it. Second, architectural design (queues, caches, background jobs, new packages, new tables, new services, streaming, real-time infra) — cutting an architectural piece removes whole categories of implementation. Stops there; code-level simplification is outside scope. Proactively invoke whenever the scope of a task looks like it could grow, whenever you catch yourself about to add a queue, cache, new package, new table, new service, or behavior that wasn't explicitly requested, or when looking back at a recent diff that feels larger than the task warranted.
+metadata:
+  internal: true
 ---
 
 # Trade-off

@@ -1,6 +1,8 @@
 ---
 name: iterate-pr
 description: Use when a PR is open and the user wants to autonomously monitor and fix PR review comments, CI failures, and rebase conflicts on a recurring loop, or when asked to babysit/iterate on a PR
+metadata:
+  internal: true
 ---
 
 # Iterate PR
