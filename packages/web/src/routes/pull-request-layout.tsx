@@ -59,10 +59,11 @@ function TabLink({ tab, runId, isActive, countLabel }: TabLinkProps) {
 	);
 }
 
-function CollapseExpandAllButton({ fileCount }: { fileCount: number }) {
-	const collapseState = useCollapseActionsFromNav();
-	if (!collapseState) return null;
+function CollapseExpandAllButton() {
+	const actions = useCollapseActionsFromNav();
+	if (!actions) return null;
 
+	const { collapseState, fileCount } = actions;
 	const allCollapsed = fileCount > 0 && collapseState.collapsedFiles.size >= fileCount;
 	const handleClick = allCollapsed ? collapseState.expandAllFiles : collapseState.collapseAllFiles;
 	const label = allCollapsed ? "Expand all files" : "Collapse all files";
@@ -220,7 +221,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 									-{totalDeletions.toLocaleString()}
 								</span>
 							</div>
-							<CollapseExpandAllButton fileCount={totalFileCount} />
+							<CollapseExpandAllButton />
 							<Popover>
 								<Tooltip>
 									<TooltipTrigger asChild>

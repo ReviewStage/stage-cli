@@ -185,7 +185,7 @@ function ChapterDetailContent({
 		chapterFilePaths,
 		collapseResetKey,
 	);
-	useProvideCollapseActions(collapseState);
+	useProvideCollapseActions(collapseState, chapterFilePaths.length);
 
 	useFileNavigationKeys(chapterFiles, activeFilePath, handleSelectFile);
 

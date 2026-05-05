@@ -52,7 +52,7 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 
 	const filePaths = useMemo(() => files.map((f) => f.path), [files]);
 	const collapseState = useFileCollapseState(defaultCollapsedFileIds, filePaths, runId);
-	useProvideCollapseActions(collapseState);
+	useProvideCollapseActions(collapseState, filePaths.length);
 
 	const diffListRef = useRef<FileDiffListHandle>(null);
 	const { activeFilePath, setActiveFileManually } = useActiveFileOnScroll(files);

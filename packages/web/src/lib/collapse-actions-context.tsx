@@ -1,32 +1,37 @@
 import { createContext, type ReactNode, use, useEffect, useMemo, useState } from "react";
 import type { CollapseState } from "@/components/files";
 
+interface CollapseActionsWithCount {
+	collapseState: CollapseState;
+	fileCount: number;
+}
+
 interface CollapseActionsContextValue {
-	collapseState: CollapseState | null;
-	setCollapseState: (state: CollapseState | null) => void;
+	actions: CollapseActionsWithCount | null;
+	setActions: (actions: CollapseActionsWithCount | null) => void;
 }
 
 const CollapseActionsContext = createContext<CollapseActionsContextValue | null>(null);
 
 export function CollapseActionsProvider({ children }: { children: ReactNode }) {
-	const [collapseState, setCollapseState] = useState<CollapseState | null>(null);
+	const [actions, setActions] = useState<CollapseActionsWithCount | null>(null);
 
-	const value = useMemo(() => ({ collapseState, setCollapseState }), [collapseState]);
+	const value = useMemo(() => ({ actions, setActions }), [actions]);
 
 	return <CollapseActionsContext value={value}>{children}</CollapseActionsContext>;
 }
 
-export function useCollapseActionsFromNav(): CollapseState | null {
+export function useCollapseActionsFromNav(): CollapseActionsWithCount | null {
 	const ctx = use(CollapseActionsContext);
-	return ctx?.collapseState ?? null;
+	return ctx?.actions ?? null;
 }
 
-export function useProvideCollapseActions(collapseState: CollapseState): void {
+export function useProvideCollapseActions(collapseState: CollapseState, fileCount: number): void {
 	const ctx = use(CollapseActionsContext);
-	const setter = ctx?.setCollapseState;
+	const setter = ctx?.setActions;
 
 	useEffect(() => {
-		setter?.(collapseState);
+		setter?.({ collapseState, fileCount });
 		return () => setter?.(null);
-	}, [setter, collapseState]);
+	}, [setter, collapseState, fileCount]);
 }
