@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import type { ChapterRunRow } from "./db/schema/chapter-run.js";
-import { SCOPE_KIND, WORKING_TREE_REF } from "./schema.js";
+import { SCOPE_KIND, type Scope, WORKING_TREE_REF } from "./schema.js";
 
 export class NotInGitRepoError extends Error {
 	constructor() {
@@ -84,4 +84,144 @@ export function parseRepoName(originUrl: string | null, repoRoot: string): strin
 		if (segment) return segment;
 	}
 	return path.basename(repoRoot);
+}
+
+export function detectBaseRef(): string {
+	const candidates: string[][] = [
+		["rev-parse", "--abbrev-ref", "origin/HEAD"],
+		["rev-parse", "--verify", "main"],
+		["rev-parse", "--verify", "master"],
+		["rev-parse", "--verify", "origin/main"],
+		["rev-parse", "--verify", "origin/master"],
+	];
+
+	for (const args of candidates) {
+		try {
+			const out = execFileSync("git", args, {
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+			}).trim();
+			if (out) return out;
+		} catch {
+			// try next candidate
+		}
+	}
+
+	throw new Error(
+		"No default branch detected. Tried origin/HEAD, main, master, origin/main, and origin/master.",
+	);
+}
+
+export function resolveMergeBase(base: string): string {
+	return execFileSync("git", ["merge-base", base, "HEAD"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	}).trim();
+}
+
+export function resolveHead(): string {
+	return execFileSync("git", ["rev-parse", "HEAD"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	}).trim();
+}
+
+export function getRawDiff(args: string[]): string {
+	return execFileSync("git", ["diff", "--no-color", ...args], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+		maxBuffer: 50 * 1024 * 1024,
+	});
+}
+
+export function getUntrackedFiles(): string[] {
+	const out = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	}).trim();
+	return out ? out.split("\n") : [];
+}
+
+function hasStringStdout(err: unknown): err is { stdout: string } {
+	return (
+		typeof err === "object" && err !== null && "stdout" in err && typeof err.stdout === "string"
+	);
+}
+
+export function getUntrackedDiff(files: string[]): string {
+	const patches: string[] = [];
+	for (const file of files) {
+		try {
+			execFileSync("git", ["diff", "--no-index", "--no-color", "--", "/dev/null", file], {
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+			});
+		} catch (err: unknown) {
+			if (hasStringStdout(err)) {
+				patches.push(err.stdout);
+			}
+		}
+	}
+	return patches.join("\n");
+}
+
+export function getCommitMessages(mergeBase: string): string {
+	return execFileSync("git", ["log", "--oneline", `${mergeBase}..HEAD`], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	}).trim();
+}
+
+export function hasUncommittedChanges(): boolean {
+	const out = execFileSync("git", ["status", "--porcelain"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	}).trim();
+	return out.length > 0;
+}
+
+export interface ResolvedScope {
+	scope: Scope;
+	mergeBaseSha: string;
+	rawDiff: string;
+}
+
+export function resolveScope(): ResolvedScope {
+	const base = detectBaseRef();
+	const mergeBaseSha = resolveMergeBase(base);
+	const headSha = resolveHead();
+	const uncommitted = hasUncommittedChanges();
+
+	if (uncommitted) {
+		let rawDiff = getRawDiff([mergeBaseSha]);
+		const untrackedFiles = getUntrackedFiles();
+		if (untrackedFiles.length > 0) {
+			const untrackedDiff = getUntrackedDiff(untrackedFiles);
+			if (untrackedDiff) {
+				rawDiff = rawDiff ? `${rawDiff}\n${untrackedDiff}` : untrackedDiff;
+			}
+		}
+		return {
+			scope: {
+				kind: SCOPE_KIND.WORKING_TREE,
+				ref: WORKING_TREE_REF.WORK,
+				baseSha: mergeBaseSha,
+				headSha,
+				mergeBaseSha,
+			},
+			mergeBaseSha,
+			rawDiff,
+		};
+	}
+
+	return {
+		scope: {
+			kind: SCOPE_KIND.COMMITTED,
+			baseSha: mergeBaseSha,
+			headSha,
+			mergeBaseSha,
+		},
+		mergeBaseSha,
+		rawDiff: getRawDiff([`${mergeBaseSha}..${headSha}`]),
+	};
 }

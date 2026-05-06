@@ -67,3 +67,9 @@ export const ChaptersFileSchema = z.strictObject({
 	generatedAt: z.iso.datetime(),
 });
 export type ChaptersFile = z.infer<typeof ChaptersFileSchema>;
+
+export const AgentOutputSchema = z.strictObject({
+	chapters: z.array(chapterSchema),
+	prologue: PrologueSchema.optional(),
+});
+export type AgentOutput = z.infer<typeof AgentOutputSchema>;

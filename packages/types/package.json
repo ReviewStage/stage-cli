@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./chapters": "./src/chapters.ts",
     "./diff": "./src/diff.ts",
+    "./parsed-diff": "./src/parsed-diff.ts",
     "./prologue": "./src/prologue.ts",
     "./view-state": "./src/view-state.ts"
   },
