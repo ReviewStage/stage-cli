@@ -20,9 +20,9 @@ import {
 } from "./schema.js";
 import { LOOPBACK_HOST, startServer } from "./server.js";
 
-export async function show(jsonPath: string): Promise<void> {
+export async function show(jsonPath: string, base?: string): Promise<void> {
 	const db = getDb();
-	const chaptersFile = loadChaptersFile(jsonPath);
+	const chaptersFile = loadChaptersFile(jsonPath, base);
 	const { runId } = insertChaptersFile(db, chaptersFile, readRepoContext());
 
 	const handle = await startServer({
@@ -46,7 +46,7 @@ export async function show(jsonPath: string): Promise<void> {
 	closeDb();
 }
 
-function loadChaptersFile(jsonPath: string): ChaptersFile {
+function loadChaptersFile(jsonPath: string, base?: string): ChaptersFile {
 	const absolute = path.resolve(jsonPath);
 	const raw = readFileSync(absolute, "utf8");
 	const parsed = JSON.parse(raw) as unknown;
@@ -55,13 +55,13 @@ function loadChaptersFile(jsonPath: string): ChaptersFile {
 	if (fullResult.success) return fullResult.data;
 
 	const agentResult = AgentOutputSchema.safeParse(parsed);
-	if (agentResult.success) return assembleChaptersFile(agentResult.data);
+	if (agentResult.success) return assembleChaptersFile(agentResult.data, base);
 
 	throw fullResult.error;
 }
 
-function assembleChaptersFile(agentOutput: AgentOutput): ChaptersFile {
-	const { scope, rawDiff } = resolveScope();
+function assembleChaptersFile(agentOutput: AgentOutput, base?: string): ChaptersFile {
+	const { scope, rawDiff } = resolveScope(base);
 	const allFiles = parseGitDiff(rawDiff);
 	const { files: filteredFiles, excludedByPath } = filterFilesForLlm(allFiles);
 

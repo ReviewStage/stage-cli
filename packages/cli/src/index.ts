@@ -10,8 +10,9 @@ program.name("stagereview").description("Chapter-style code review against your 
 program
 	.command("prep")
 	.description("Parse the current branch diff and prepare input for chapter generation")
-	.action(() => {
-		const filePath = runPrep();
+	.option("--base <ref>", "Base ref to diff against (default: auto-detect main/master)")
+	.action((opts: { base?: string }) => {
+		const filePath = runPrep(opts.base);
 		process.stdout.write(filePath);
 	});
 
@@ -19,8 +20,9 @@ program
 	.command("show")
 	.description("Load a chapters.json file and open it in a local browser")
 	.argument("<path>", "Path to a chapters.json file")
-	.action(async (jsonPath: string) => {
-		await show(jsonPath);
+	.option("--base <ref>", "Base ref to diff against (default: auto-detect main/master)")
+	.action(async (jsonPath: string, opts: { base?: string }) => {
+		await show(jsonPath, opts.base);
 	});
 
 program.parseAsync(process.argv).catch((err) => {

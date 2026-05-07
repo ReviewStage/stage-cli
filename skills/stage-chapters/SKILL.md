@@ -36,7 +36,15 @@ Run these checks before any other work. If either fails, stop with the error mes
 PREP_FILE=$(stagereview prep)
 ```
 
-`stagereview prep` auto-detects the base ref, computes the merge-base, generates the diff (including uncommitted and untracked changes when present), filters out lockfiles/binaries, and formats hunks with line numbers for analysis. It writes a plain-text file and prints only the file path to stdout.
+`stagereview prep` auto-detects the base ref (main/master), computes the merge-base, generates the diff (including uncommitted and untracked changes when present), filters out lockfiles/binaries, and formats hunks with line numbers for analysis. It writes a plain-text file and prints only the file path to stdout.
+
+If the user specifies a base branch (e.g., "generate chapters against `feature-a`"), pass `--base <ref>` to both `prep` and `show`:
+
+```bash
+PREP_FILE=$(stagereview prep --base feature-a)
+# ... later ...
+stagereview show --base feature-a "$AGENT_OUTPUT"
+```
 
 If `prep` exits non-zero, relay its stderr to the user and stop.
 

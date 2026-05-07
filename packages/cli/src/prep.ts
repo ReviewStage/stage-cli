@@ -13,8 +13,8 @@ function formatHunkForPrompt(file: PullRequestFile, hunk: Hunk): string {
 ${formatHunkDiffWithLineNumbers(hunk)}`;
 }
 
-export function runPrep(): string {
-	const { rawDiff, mergeBaseSha } = resolveScope();
+export function runPrep(base?: string): string {
+	const { rawDiff, mergeBaseSha } = resolveScope(base);
 
 	const allFiles = parseGitDiff(rawDiff);
 	const { files } = filterFilesForLlm(allFiles);

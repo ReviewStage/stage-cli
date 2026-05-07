@@ -204,8 +204,8 @@ export interface ResolvedScope {
 	rawDiff: string;
 }
 
-export function resolveScope(): ResolvedScope {
-	const base = detectBaseRef();
+export function resolveScope(baseOverride?: string): ResolvedScope {
+	const base = baseOverride ?? detectBaseRef();
 	const mergeBaseSha = resolveMergeBase(base);
 	const headSha = resolveHead();
 	const uncommitted = hasUncommittedChanges();
