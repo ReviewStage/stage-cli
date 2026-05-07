@@ -1,11 +1,18 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
 import { Command } from "commander";
 import { runPrep } from "./prep.js";
 import { show } from "./show.js";
 
+const require = createRequire(import.meta.url);
+const { version } = require("../package.json") as { version: string };
+
 const program = new Command();
 
-program.name("stagereview").description("Chapter-style code review against your local git branch.");
+program
+	.name("stagereview")
+	.description("Chapter-style code review against your local git branch.")
+	.version(version);
 
 program
 	.command("prep")
