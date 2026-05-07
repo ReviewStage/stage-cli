@@ -1,16 +1,24 @@
-# stagereview
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ReviewStage/stage-cli/main/assets/stage-mark.svg" alt="Stage" height="80">
+  <h1>Stage</h1>
+  AI-powered code review tool that organizes local code changes into logical chapters and points out what to review before you dive into the code.
+</p>
 
-AI-powered code review tool that organizes pull requests into logical chapters and surfaces risks before you dive into the code. Run it from your local coding agent of choice.
+<p align="center">
+  <a href="https://www.npmjs.com/package/stagereview"><img src="https://img.shields.io/npm/v/stagereview.svg" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/stagereview"><img src="https://img.shields.io/npm/dm/stagereview.svg" alt="npm downloads"></a>
+  <a href="https://github.com/ReviewStage/stage-cli/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/stagereview.svg" alt="license"></a>
+</p>
 
-Try the full Stage experience with GitHub integration at [https://stagereview.app](https://stagereview.app).
+---
+
+Try the full Stage experience with GitHub integration at [stagereview.app](https://stagereview.app).
 
 ## Install
 
 ```bash
 npm install -g stagereview
 ```
-
-This installs the `stagereview` command.
 
 Then add the skill to your agent:
 
@@ -26,14 +34,8 @@ In your AI agent, run:
 /stage-chapters
 ```
 
-This breaks your branch's diff into reviewable "chapters" and opens a local browser window to view the chapters.
-
-## What it does
-
-- Splits a local git branch diff into logical review chapters
-- Opens a local browser to view the chapters
-- Runs entirely on your machine
+This organizes your local changes into reviewable chapters and opens a browser UI. Everything happens on your machine.
 
 ## License
 
-MIT
+[MIT](LICENSE)
