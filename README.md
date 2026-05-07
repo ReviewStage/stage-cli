@@ -1,8 +1,8 @@
-<p align="center">
+<div align="center">
   <img src="https://raw.githubusercontent.com/ReviewStage/stage-cli/main/assets/stage-mark.svg" alt="Stage" height="80">
   <h1>Stage</h1>
-  AI-powered code review tool that organizes local code changes into logical chapters and points out what to review before you dive into the code.
-</p>
+  <p>AI-powered code review tool that organizes local code changes into logical chapters and points out what to review before you dive into the code.</p>
+</div>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/stagereview"><img src="https://img.shields.io/npm/v/stagereview.svg" alt="npm version"></a>
