@@ -36,7 +36,7 @@ In your AI agent, run:
 
 This organizes your local changes into reviewable chapters and opens a browser UI. Everything happens on your machine.
 
-<img width="1840" height="1196" alt="Stage CLI" src="https://github.com/user-attachments/assets/4da56834-77fd-4350-b3d6-fba5e12208da" />
+<img width="1840" height="1196" alt="Stage CLI" src="https://raw.githubusercontent.com/ReviewStage/stage-cli/main/assets/screenshot.png" />
 
 ## License
 
