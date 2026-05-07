@@ -97,15 +97,20 @@ function validateHunkCoverage(
 		}
 	}
 
-	const actual = new Map<string, Set<number>>();
+	const actual = new Map<string, Map<number, number>>();
+	const duplicates: string[] = [];
 	for (const chapter of chapters) {
 		for (const ref of chapter.hunkRefs) {
 			let starts = actual.get(ref.filePath);
 			if (!starts) {
-				starts = new Set();
+				starts = new Map();
 				actual.set(ref.filePath, starts);
 			}
-			starts.add(ref.oldStart);
+			const count = starts.get(ref.oldStart) ?? 0;
+			if (count > 0) {
+				duplicates.push(`  filePath: "${ref.filePath}", oldStart: ${ref.oldStart}`);
+			}
+			starts.set(ref.oldStart, count + 1);
 		}
 	}
 
@@ -122,14 +127,14 @@ function validateHunkCoverage(
 	const extra: string[] = [];
 	for (const [filePath, starts] of actual) {
 		const expectedStarts = expected.get(filePath);
-		for (const oldStart of starts) {
+		for (const oldStart of starts.keys()) {
 			if (!expectedStarts?.has(oldStart)) {
 				extra.push(`  filePath: "${filePath}", oldStart: ${oldStart}`);
 			}
 		}
 	}
 
-	if (missing.length === 0 && extra.length === 0) return;
+	if (missing.length === 0 && extra.length === 0 && duplicates.length === 0) return;
 
 	const lines = ["Hunk coverage validation failed."];
 	if (missing.length > 0) {
@@ -139,6 +144,10 @@ function validateHunkCoverage(
 	if (extra.length > 0) {
 		lines.push(`Extra hunks (${extra.length}) — not found in the diff:`);
 		lines.push(...extra);
+	}
+	if (duplicates.length > 0) {
+		lines.push(`Duplicate hunks (${duplicates.length}) — assigned to multiple chapters:`);
+		lines.push(...duplicates);
 	}
 	throw new Error(lines.join("\n"));
 }
@@ -163,9 +172,9 @@ function sanitizeLineRefs(
 		for (const hunk of file.hunks) {
 			spans.set(hunk.oldStart, {
 				oldStart: hunk.oldStart,
-				oldEnd: hunk.oldStart + Math.max(hunk.oldLines - 1, 0),
+				oldEnd: hunk.oldStart + hunk.oldLines - 1,
 				newStart: hunk.newStart,
-				newEnd: hunk.newStart + Math.max(hunk.newLines - 1, 0),
+				newEnd: hunk.newStart + hunk.newLines - 1,
 			});
 		}
 		if (spans.size > 0) {

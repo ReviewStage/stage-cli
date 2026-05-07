@@ -127,11 +127,15 @@ export function resolveHead(): string {
 }
 
 export function getRawDiff(args: string[]): string {
-	return execFileSync("git", ["diff", "--no-color", ...args], {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "ignore"],
-		maxBuffer: 50 * 1024 * 1024,
-	});
+	return execFileSync(
+		"git",
+		["diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", ...args],
+		{
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+			maxBuffer: 50 * 1024 * 1024,
+		},
+	);
 }
 
 export function getUntrackedFiles(): string[] {
@@ -152,10 +156,24 @@ export function getUntrackedDiff(files: string[]): string {
 	const patches: string[] = [];
 	for (const file of files) {
 		try {
-			execFileSync("git", ["diff", "--no-index", "--no-color", "--", "/dev/null", file], {
-				encoding: "utf8",
-				stdio: ["ignore", "pipe", "ignore"],
-			});
+			execFileSync(
+				"git",
+				[
+					"diff",
+					"--no-index",
+					"--no-color",
+					"--src-prefix=a/",
+					"--dst-prefix=b/",
+					"--",
+					"/dev/null",
+					file,
+				],
+				{
+					encoding: "utf8",
+					stdio: ["ignore", "pipe", "ignore"],
+					maxBuffer: 50 * 1024 * 1024,
+				},
+			);
 		} catch (err: unknown) {
 			if (hasStringStdout(err)) {
 				patches.push(err.stdout);
