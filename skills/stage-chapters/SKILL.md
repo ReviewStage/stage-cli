@@ -36,14 +36,23 @@ Run these checks before any other work. If either fails, stop with the error mes
 PREP_FILE=$(stagereview prep)
 ```
 
-`stagereview prep` auto-detects the base ref (main/master), computes the merge-base, generates the diff (including uncommitted and untracked changes when present), filters out lockfiles/binaries, and formats hunks with line numbers for analysis. It writes a plain-text file and prints only the file path to stdout.
+`stagereview prep` auto-detects the base ref (main/master), computes the merge-base, generates the diff, filters out lockfiles/binaries, and formats hunks with line numbers for analysis. By default it auto-detects the diff scope: if uncommitted changes are present the diff includes staged, unstaged, and untracked files; otherwise it uses the committed branch diff. It writes a plain-text file and prints only the file path to stdout.
 
-If the user specifies a base branch (e.g., "generate chapters against `feature-a`"), pass `--base <ref>` to both `prep` and `show`:
+Both `prep` and `show` accept these optional flags:
+
+- **`--base <ref>`** — base ref to diff against (default: auto-detect main/master).
+- **`--ref <mode>`** — diff scope. One of:
+  - `work` — staged + unstaged + untracked changes (full working tree vs merge-base).
+  - `staged` — only staged changes (index vs HEAD).
+  - `unstaged` — only unstaged changes (working tree vs index).
+  - Omitted — auto-detect (equivalent to `work` when uncommitted changes exist, committed branch diff otherwise).
+
+When either flag is specified, pass it to **both** `prep` and `show`:
 
 ```bash
-PREP_FILE=$(stagereview prep --base feature-a)
+PREP_FILE=$(stagereview prep --base feature-a --ref staged)
 # ... later ...
-stagereview show --base feature-a "$AGENT_OUTPUT"
+stagereview show --base feature-a --ref staged "$AGENT_OUTPUT"
 ```
 
 If `prep` exits non-zero, relay its stderr to the user and stop.

@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import type { ChapterRunRow } from "./db/schema/chapter-run.js";
-import { SCOPE_KIND, type Scope, WORKING_TREE_REF } from "./schema.js";
+import { SCOPE_KIND, type Scope, WORKING_TREE_REF, type WorkingTreeRef } from "./schema.js";
 
 export class NotInGitRepoError extends Error {
 	constructor() {
@@ -204,14 +204,24 @@ export interface ResolvedScope {
 	rawDiff: string;
 }
 
-export function resolveScope(baseOverride?: string): ResolvedScope {
-	const base = baseOverride ?? detectBaseRef();
-	const mergeBaseSha = resolveMergeBase(base);
-	const headSha = resolveHead();
-	const uncommitted = hasUncommittedChanges();
+function workingTreeDiffArgs(ref: WorkingTreeRef, mergeBaseSha: string): string[] {
+	switch (ref) {
+		case WORKING_TREE_REF.UNSTAGED:
+			return [];
+		case WORKING_TREE_REF.STAGED:
+			return ["--cached"];
+		case WORKING_TREE_REF.WORK:
+			return [mergeBaseSha];
+	}
+}
 
-	if (uncommitted) {
-		let rawDiff = getRawDiff([mergeBaseSha]);
+function includesUntrackedFiles(ref: WorkingTreeRef): boolean {
+	return ref === WORKING_TREE_REF.WORK;
+}
+
+function buildWorkingTreeDiff(ref: WorkingTreeRef, mergeBaseSha: string): string {
+	let rawDiff = getRawDiff(workingTreeDiffArgs(ref, mergeBaseSha));
+	if (includesUntrackedFiles(ref)) {
 		const untrackedFiles = getUntrackedFiles();
 		if (untrackedFiles.length > 0) {
 			const untrackedDiff = getUntrackedDiff(untrackedFiles);
@@ -219,16 +229,28 @@ export function resolveScope(baseOverride?: string): ResolvedScope {
 				rawDiff = rawDiff ? `${rawDiff}\n${untrackedDiff}` : untrackedDiff;
 			}
 		}
+	}
+	return rawDiff;
+}
+
+export function resolveScope(baseOverride?: string, ref?: WorkingTreeRef): ResolvedScope {
+	const base = baseOverride ?? detectBaseRef();
+	const mergeBaseSha = resolveMergeBase(base);
+	const headSha = resolveHead();
+
+	const effectiveRef = ref ?? (hasUncommittedChanges() ? WORKING_TREE_REF.WORK : null);
+
+	if (effectiveRef) {
 		return {
 			scope: {
 				kind: SCOPE_KIND.WORKING_TREE,
-				ref: WORKING_TREE_REF.WORK,
+				ref: effectiveRef,
 				baseSha: mergeBaseSha,
 				headSha,
 				mergeBaseSha,
 			},
 			mergeBaseSha,
-			rawDiff,
+			rawDiff: buildWorkingTreeDiff(effectiveRef, mergeBaseSha),
 		};
 	}
 
