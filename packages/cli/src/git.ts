@@ -63,7 +63,7 @@ export function buildDiffArgs(run: ChapterRunRow): string[] {
 		case WORKING_TREE_REF.STAGED:
 			return ["diff", "--no-color", "--cached"];
 		case WORKING_TREE_REF.WORK:
-			return ["diff", "--no-color", "HEAD"];
+			return ["diff", "--no-color", run.baseSha];
 	}
 }
 

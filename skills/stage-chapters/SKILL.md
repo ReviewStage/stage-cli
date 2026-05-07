@@ -36,24 +36,38 @@ Run these checks before any other work. If either fails, stop with the error mes
 PREP_FILE=$(stagereview prep)
 ```
 
-`stagereview prep` auto-detects the base ref, computes the merge-base, generates the diff (including uncommitted and untracked changes when present), filters out lockfiles/binaries, and formats hunks for analysis. It writes JSON to a temp file and prints only the file path to stdout.
+`stagereview prep` auto-detects the base ref, computes the merge-base, generates the diff (including uncommitted and untracked changes when present), filters out lockfiles/binaries, and formats hunks with line numbers for analysis. It writes a plain-text file and prints only the file path to stdout.
 
 If `prep` exits non-zero, relay its stderr to the user and stop.
 
+**Do not modify files in the working tree between running `prep` and running `show`.** Both commands independently snapshot the git state. If the diff changes between them, `show` will reject the chapters with a hunk coverage error because the hunks no longer match.
+
 ## Step 2 — Read prep output
 
-Read `$PREP_FILE` via the Read tool. It contains:
+Read `$PREP_FILE` via the Read tool (or equivalent). For large diffs, use the Read tool's `offset` and `limit` parameters to read in chunks.
 
-```jsonc
-{
-  "formattedHunks": "...",    // the diff text to analyze
-  "commitMessages": "..."    // git log --oneline for prologue context
-}
+The file has two sections separated by headers:
+
+1. **`=== COMMIT MESSAGES ===`** — `git log --oneline` output for prologue context.
+2. **`=== HUNKS ===`** — formatted diff hunks with line numbers. Each hunk looks like:
+
 ```
+=== File: src/app.ts (modified) | filePath: "src/app.ts", oldStart: 1 ===
+=== Hunk @1: @@ -1,5 +1,6 @@ ===
+1 1 | const a = 1;
+2   |-const b = 2;
+  2 |+const b = 3;
+  3 |+const c = 4;
+3 4 | const d = 5;
+```
+
+The two number columns are the **old line number** (left) and **new line number** (right). A blank column means the line doesn't exist on that side — additions have no old line number, deletions have no new line number. These numbers are used directly for `lineRefs` in key changes (see Step 3d).
+
+`commits.txt` contains `git log --oneline` output for prologue context.
 
 ## Step 3 — Cluster + narrate
 
-Using `formattedHunks` from the prep output, produce a `chapters` array. Each chapter groups related hunks into a coherent story beat, narrates them for a reviewer unfamiliar with this part of the codebase, and flags judgment calls that need human input.
+Using the hunks from `hunks.txt`, produce a `chapters` array. Each chapter groups related hunks into a coherent story beat, narrates them for a reviewer unfamiliar with this part of the codebase, and flags judgment calls that need human input.
 
 ### 3a — Clustering rules
 
@@ -82,16 +96,14 @@ Consider symbol dependencies between chapters — a chapter that introduces a ty
 
 Every hunk in the formatted diff **must** appear in exactly one chapter. No hunk may be omitted and no hunk may appear in more than one chapter.
 
-Each hunk header in `formattedHunks` has the format:
+Each hunk header in the prep output has the format:
 ```
 === File: <path> (<status>) | filePath: "<path>", oldStart: <N> ===
 ```
 
 Use the `filePath` and `oldStart` values from these headers to build `hunkRefs`.
 
-After building the chapters array, verify:
-1. The total number of `hunkRefs` across all chapters equals the total number of hunk headers in `formattedHunks`.
-2. Every `(filePath, oldStart)` pair from the formatted hunks appears in exactly one chapter's `hunkRefs`.
+`stagereview show` validates hunk coverage automatically — it will error with a list of missing or extra hunks if the chapters don't account for every hunk in the diff. If this happens, fix the chapters and retry.
 
 ### 3c — Narration rules
 
@@ -112,10 +124,12 @@ Frame each item as a **question**.
 
 Each key change includes `lineRefs`: one line range per distinct spot the question depends on. Most questions touch a single location, so use one range; only add more when the judgment genuinely spans related code in different places.
 
-- Use OLD-column line numbers for `side: "deletions"` (left side of the diff).
-- Use NEW-column line numbers for `side: "additions"` (right side of the diff).
-- Keep ranges tight — point to the specific lines the question is about, not the entire hunk.
-- `startLine` and `endLine` must both be positive integers with `endLine >= startLine`.
+**Reading line numbers from `hunks.txt`:** Each diff line shows two number columns — old (left) and new (right). Use these numbers directly:
+- For `side: "deletions"` — use the **old** (left) column number as `startLine`/`endLine`.
+- For `side: "additions"` — use the **new** (right) column number as `startLine`/`endLine`.
+- Do **not** count lines yourself — read the numbers from the formatted output.
+
+Keep ranges tight — point to the specific lines the question is about, not the entire hunk. `startLine` and `endLine` must both be positive integers with `endLine >= startLine`.
 
 **Good examples:**
 
@@ -167,7 +181,7 @@ Produce an array of chapter objects. Each chapter:
 
 After building the chapters, generate a **prologue** — a high-level overview of the entire change. The prologue helps reviewers orient themselves before diving into individual chapters.
 
-Use the `commitMessages` from the prep output for context.
+Use `commits.txt` from the prep output for context.
 
 Using the diff, chapters, and commit messages, produce a `prologue` object with the following fields:
 
@@ -220,65 +234,19 @@ Talk like a coworker, not a changelog. No jargon, no filler phrases, no "this ch
 
 ## Step 5 — Write agent output
 
-Compute a unique temp path. The trailing `XXXXXX` (with no suffix after) is required by macOS BSD `mktemp`:
+Compute a unique temp path and write the JSON via a bash heredoc:
 
 ```bash
 AGENT_OUTPUT=$(mktemp "${TMPDIR:-/tmp}/stage-agent-output.XXXXXX")
-```
-
-Write a JSON file at `"$AGENT_OUTPUT"` with this shape:
-
-```jsonc
+cat > "$AGENT_OUTPUT" << 'AGENT_EOF'
 {
-  "chapters": [
-    {
-      "id": "chapter-1",
-      "order": 1,
-      "title": "Short imperative title",
-      "summary": "Why this chapter matters to the reviewer.",
-      "hunkRefs": [
-        { "filePath": "path/to/file.ts", "oldStart": 42 }
-      ],
-      "keyChanges": [
-        {
-          "content": "A judgment-call question for the reviewer.",
-          "lineRefs": [
-            {
-              "filePath": "path/to/file.ts",
-              "side": "additions",
-              "startLine": 50,
-              "endLine": 55
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "prologue": {
-    "motivation": "What was broken or annoying, in plain English (or null).",
-    "outcome": "What's better now, in plain English (or null).",
-    "keyChanges": [
-      {
-        "summary": "Outcome-focused summary, 6-10 words",
-        "description": "Capitalized sentence, 10-15 words of context"
-      }
-    ],
-    "focusAreas": [
-      {
-        "type": "architecture",
-        "severity": "info",
-        "title": "3-5 word noun phrase",
-        "description": "WHY flagged + action for the reviewer",
-        "locations": ["path/to/file.ts"]
-      }
-    ],
-    "complexity": {
-      "level": "medium",
-      "reasoning": "Brief explanation"
-    }
-  }
+  "chapters": [ ... ],
+  "prologue": { ... }
 }
+AGENT_EOF
 ```
+
+The trailing `XXXXXX` (with no suffix after) is required by macOS BSD `mktemp`. Using `cat` with a heredoc avoids tool-specific file-writing issues.
 
 Field rules:
 
@@ -307,4 +275,6 @@ Hand the file to `stagereview`:
 stagereview show "$AGENT_OUTPUT"
 ```
 
-`stagereview show` auto-detects the agent output format, independently computes the scope and "Other changes" chapter for filtered files, validates the JSON, inserts the run into the local SQLite database, boots a loopback HTTP server, and opens the browser. The command stays running until the user kills it with Ctrl+C — invoke it as the final command in the workflow.
+`stagereview show` auto-detects the agent output format, independently computes the scope and "Other changes" chapter for filtered files, validates the JSON, inserts the run into the local SQLite database, boots a loopback HTTP server, and opens the browser.
+
+**The command blocks until the user presses Ctrl+C.** If your harness requires non-blocking execution, run it in the background (e.g., `run_in_background` in Claude Code). Invoke it as the final command in the workflow.

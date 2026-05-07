@@ -142,7 +142,7 @@ function getContentRefs(run: ChapterRunRow): { oldRef: string; newRef: string | 
 		case WORKING_TREE_REF.STAGED:
 			return { oldRef: "HEAD", newRef: "" };
 		case WORKING_TREE_REF.WORK:
-			return { oldRef: "HEAD", newRef: "DISK" };
+			return { oldRef: run.baseSha, newRef: "DISK" };
 		default:
 			return { oldRef: "HEAD", newRef: "HEAD" };
 	}

@@ -4,13 +4,13 @@ import path from "node:path";
 import type { Hunk, PullRequestFile } from "@stagereview/types/parsed-diff";
 import { parseGitDiff } from "./diff-parser.js";
 import { filterFilesForLlm } from "./filter-files.js";
-import { formatHunkDiff } from "./format-diff.js";
+import { formatHunkDiffWithLineNumbers } from "./format-diff.js";
 import { getCommitMessages, resolveScope } from "./git.js";
 
 function formatHunkForPrompt(file: PullRequestFile, hunk: Hunk): string {
 	return `=== File: ${file.path} (${file.status}) | filePath: "${file.path}", oldStart: ${hunk.oldStart} ===
 === Hunk @${hunk.oldStart}: ${hunk.header} ===
-${formatHunkDiff(hunk)}`;
+${formatHunkDiffWithLineNumbers(hunk)}`;
 }
 
 export function runPrep(): string {
@@ -25,9 +25,10 @@ export function runPrep(): string {
 
 	const commitMessages = getCommitMessages(mergeBaseSha);
 
-	const output = JSON.stringify({ formattedHunks, commitMessages });
-	const filePath = path.join(tmpdir(), `stage-prep-${Date.now()}.json`);
-	writeFileSync(filePath, output, "utf8");
+	const sections = ["=== COMMIT MESSAGES ===", commitMessages, "", "=== HUNKS ===", formattedHunks];
+
+	const filePath = path.join(tmpdir(), `stage-prep-${Date.now()}.txt`);
+	writeFileSync(filePath, sections.join("\n"), "utf8");
 
 	return filePath;
 }
