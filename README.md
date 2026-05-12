@@ -5,6 +5,10 @@
 </div>
 
 <p align="center">
+  <a href="https://stagereview.app">Website</a> · <a href="https://discord.gg/Hs7Eexp3">Discord</a>
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/stagereview"><img src="https://img.shields.io/npm/v/stagereview.svg" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/stagereview"><img src="https://img.shields.io/npm/dm/stagereview.svg" alt="npm downloads"></a>
   <a href="https://github.com/ReviewStage/stage-cli/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/stagereview.svg" alt="license"></a>
