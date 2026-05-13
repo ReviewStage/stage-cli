@@ -2,11 +2,21 @@
   <img src="https://raw.githubusercontent.com/ReviewStage/stage-cli/main/assets/stage-mark.svg" alt="Stage" height="80">
   <h1>Stage</h1>
   <p>A code review tool that organizes local code changes into logical chapters and points out what to review before you dive into the code.</p>
-  <p>If you like this, try out the full experience on Stage at the website below!</p>
+  <p>If you like this, try out the full Stage experience on our website below!</p>
 </div>
 
 <p align="center">
-  <a href="https://stagereview.app">Website</a> · <a href="https://discord.gg/Hs7Eexp3">Discord</a>
+  <a href="https://stagereview.app">Website</a>
+  &nbsp;&nbsp;•&nbsp;&nbsp;
+  <a href="https://stagereview.app/explore">Examples</a>
+  &nbsp;&nbsp;•&nbsp;&nbsp;
+  <a href="https://stagereview.app/blog">Blog</a>
+  &nbsp;&nbsp;•&nbsp;&nbsp;
+  <a href="https://x.com/StageReviewApp">Twitter</a>
+  &nbsp;&nbsp;•&nbsp;&nbsp;
+  <a href="https://discord.gg/Hs7Eexp3">Discord</a>
+  &nbsp;&nbsp;•&nbsp;&nbsp;
+  <a href="https://stagereview.app/about">About Us</a>
 </p>
 
 <p align="center">
