@@ -146,7 +146,7 @@ export function getUntrackedFiles(): string[] {
 	return out ? out.split("\n") : [];
 }
 
-function hasStringStdout(err: unknown): err is { stdout: string } {
+export function hasStringStdout(err: unknown): err is { stdout: string } {
 	return (
 		typeof err === "object" && err !== null && "stdout" in err && typeof err.stdout === "string"
 	);

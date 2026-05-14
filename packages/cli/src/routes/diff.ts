@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import type { ChapterRunRow } from "../db/schema/chapter-run.js";
 import { chapterRun } from "../db/schema/index.js";
-import { buildDiffArgs } from "../git.js";
+import { buildDiffArgs, hasStringStdout } from "../git.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
@@ -15,6 +15,32 @@ import { writeJson } from "./json.js";
 const execFileAsync = promisify(execFile);
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
+const MAX_DIFF_BYTES = 50 * 1024 * 1024;
+
+async function buildUntrackedPatch(cwd: string): Promise<string> {
+	const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard"], {
+		cwd,
+		encoding: "utf8",
+	});
+	const files = stdout.trim() ? stdout.trim().split("\n") : [];
+	if (files.length === 0) return "";
+
+	const patches: string[] = [];
+	for (const file of files) {
+		try {
+			await execFileAsync("git", ["diff", "--no-index", "--no-color", "--", "/dev/null", file], {
+				cwd,
+				encoding: "utf8",
+				maxBuffer: MAX_DIFF_BYTES,
+			});
+		} catch (err: unknown) {
+			if (hasStringStdout(err)) {
+				patches.push(err.stdout);
+			}
+		}
+	}
+	return patches.join("\n");
+}
 
 export function diffRoutes(db: StageDb): Route[] {
 	return [
@@ -47,11 +73,23 @@ export function diffRoutes(db: StageDb): Route[] {
 					run.scopeKind === SCOPE_KIND.COMMITTED ? "private, max-age=300" : "no-store";
 
 				try {
-					const { stdout: patch } = await execFileAsync("git", args, {
+					const { stdout: trackedPatch } = await execFileAsync("git", args, {
 						cwd: repoRoot,
 						encoding: "utf8",
-						maxBuffer: 50 * 1024 * 1024,
+						maxBuffer: MAX_DIFF_BYTES,
 					});
+
+					let patch = trackedPatch;
+					if (
+						run.scopeKind === SCOPE_KIND.WORKING_TREE &&
+						run.workingTreeRef === WORKING_TREE_REF.WORK
+					) {
+						const untrackedPatch = await buildUntrackedPatch(repoRoot);
+						if (untrackedPatch) {
+							patch = patch ? `${patch}\n${untrackedPatch}` : untrackedPatch;
+						}
+					}
+
 					const fileContents = await buildFileContents(run, repoRoot, patch);
 					const body: DiffResponse = { patch, fileContents };
 					res.writeHead(200, {
