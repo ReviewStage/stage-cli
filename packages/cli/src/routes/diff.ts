@@ -25,21 +25,30 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 	const files = stdout.trim() ? stdout.trim().split("\n") : [];
 	if (files.length === 0) return "";
 
-	const patches: string[] = [];
-	for (const file of files) {
-		try {
-			await execFileAsync("git", ["diff", "--no-index", "--no-color", "--", "/dev/null", file], {
-				cwd,
-				encoding: "utf8",
-				maxBuffer: MAX_DIFF_BYTES,
-			});
-		} catch (err: unknown) {
-			if (hasStringStdout(err)) {
-				patches.push(err.stdout);
+	const patches = await Promise.all(
+		files.map(async (file) => {
+			try {
+				await execFileAsync(
+					"git",
+					[
+						"diff",
+						"--no-index",
+						"--no-color",
+						"--src-prefix=a/",
+						"--dst-prefix=b/",
+						"--",
+						"/dev/null",
+						file,
+					],
+					{ cwd, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES },
+				);
+				return "";
+			} catch (err: unknown) {
+				return hasStringStdout(err) ? err.stdout : "";
 			}
-		}
-	}
-	return patches.join("\n");
+		}),
+	);
+	return patches.filter(Boolean).join("\n");
 }
 
 export function diffRoutes(db: StageDb): Route[] {
