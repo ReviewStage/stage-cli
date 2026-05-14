@@ -47,6 +47,23 @@ In your AI agent, run:
 
 This organizes your local changes into reviewable chapters and opens a browser UI. Everything happens on your machine.
 
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `--base <ref>` | Base ref to diff against (default: auto-detect main/master) |
+| `--ref <mode>` | Diff scope: `work` (staged + unstaged + untracked), `staged`, or `unstaged` (default: auto-detect) |
+
+Examples:
+
+```bash
+# Review only staged changes
+/stage-chapters --ref staged
+
+# Diff against a specific branch
+/stage-chapters --base feature-a
+```
+
 <img width="1840" height="1196" alt="Stage CLI" src="https://raw.githubusercontent.com/ReviewStage/stage-cli/main/assets/screenshot.png" />
 
 ## License
