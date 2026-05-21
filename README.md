@@ -14,7 +14,7 @@
   &nbsp;&nbsp;•&nbsp;&nbsp;
   <a href="https://x.com/StageReviewApp">Twitter</a>
   &nbsp;&nbsp;•&nbsp;&nbsp;
-  <a href="https://discord.gg/Hs7Eexp3">Discord</a>
+  <a href="https://discord.gg/kfEa6a4wTp">Discord</a>
   &nbsp;&nbsp;•&nbsp;&nbsp;
   <a href="https://stagereview.app/about">About Us</a>
 </p>
