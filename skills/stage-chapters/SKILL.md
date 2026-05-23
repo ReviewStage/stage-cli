@@ -38,7 +38,7 @@ PREP_FILE=$(stagereview prep)
 
 `stagereview prep` auto-detects the base ref (main/master), computes the merge-base, generates the diff, filters out lockfiles/binaries, and formats hunks with line numbers for analysis. By default it auto-detects the diff scope: if uncommitted changes are present the diff includes staged, unstaged, and untracked files; otherwise it uses the committed branch diff. It writes a plain-text file and prints only the file path to stdout.
 
-`prep` and `show` also accept positional git refs, similar to diffity:
+`prep` and `show` also accept positional git refs:
 
 ```bash
 PREP_FILE=$(stagereview prep main)

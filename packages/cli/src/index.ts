@@ -27,8 +27,12 @@ interface DiffCommandOptions {
 	ref?: string;
 }
 
-function parseWorkingTreeRef(ref?: string) {
-	return ref !== undefined ? z.enum(WORKING_TREE_REF).parse(ref) : undefined;
+function parseWorkingTreeRef(workingTreeRef?: string) {
+	return workingTreeRef !== undefined ? z.enum(WORKING_TREE_REF).parse(workingTreeRef) : undefined;
+}
+
+function readWorkingTreeRef(options: DiffCommandOptions) {
+	return parseWorkingTreeRef(options.ref);
 }
 
 program
@@ -39,8 +43,8 @@ program
 	.option("--compare <ref>", "Compare ref to diff against --base")
 	.addOption(refOption)
 	.action((refs: string[], opts: DiffCommandOptions) => {
-		const ref = parseWorkingTreeRef(opts.ref);
-		const filePath = runPrep(opts.base, ref, refs, opts.compare);
+		const workingTreeRef = readWorkingTreeRef(opts);
+		const filePath = runPrep(opts.base, workingTreeRef, refs, opts.compare);
 		process.stdout.write(filePath);
 	});
 
@@ -53,8 +57,8 @@ program
 	.option("--compare <ref>", "Compare ref to diff against --base")
 	.addOption(refOption)
 	.action(async (jsonPath: string, refs: string[], opts: DiffCommandOptions) => {
-		const ref = parseWorkingTreeRef(opts.ref);
-		await show(jsonPath, opts.base, ref, refs, opts.compare);
+		const workingTreeRef = readWorkingTreeRef(opts);
+		await show(jsonPath, opts.base, workingTreeRef, refs, opts.compare);
 	});
 
 program.parseAsync(process.argv).catch((err) => {

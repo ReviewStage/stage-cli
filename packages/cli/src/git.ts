@@ -317,11 +317,11 @@ function parseWorkingTreeRefArg(ref: string): WorkingTreeRef | null {
 	}
 }
 
-function resolveSingleRefScope(base: string, ref?: WorkingTreeRef): ResolvedScope {
+function resolveSingleRefScope(base: string, workingTreeRef?: WorkingTreeRef): ResolvedScope {
 	const mergeBaseSha = resolveMergeBase(base);
 	const headSha = resolveHead();
 
-	const effectiveRef = ref ?? (hasUncommittedChanges() ? WORKING_TREE_REF.WORK : null);
+	const effectiveRef = workingTreeRef ?? (hasUncommittedChanges() ? WORKING_TREE_REF.WORK : null);
 
 	if (effectiveRef) {
 		return {

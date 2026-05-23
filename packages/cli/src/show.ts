@@ -24,12 +24,12 @@ import { LOOPBACK_HOST, startServer } from "./server.js";
 export async function show(
 	jsonPath: string,
 	base?: string,
-	ref?: WorkingTreeRef,
+	workingTreeRef?: WorkingTreeRef,
 	refs?: string[],
 	compare?: string,
 ): Promise<void> {
 	const db = getDb();
-	const chaptersFile = loadChaptersFile(jsonPath, base, ref, refs, compare);
+	const chaptersFile = loadChaptersFile(jsonPath, base, workingTreeRef, refs, compare);
 	const { runId } = insertChaptersFile(db, chaptersFile, readRepoContext());
 
 	const handle = await startServer({
@@ -56,7 +56,7 @@ export async function show(
 function loadChaptersFile(
 	jsonPath: string,
 	base?: string,
-	ref?: WorkingTreeRef,
+	workingTreeRef?: WorkingTreeRef,
 	refs?: string[],
 	compare?: string,
 ): ChaptersFile {
@@ -68,7 +68,9 @@ function loadChaptersFile(
 	if (fullResult.success) return fullResult.data;
 
 	const agentResult = AgentOutputSchema.safeParse(parsed);
-	if (agentResult.success) return assembleChaptersFile(agentResult.data, base, ref, refs, compare);
+	if (agentResult.success) {
+		return assembleChaptersFile(agentResult.data, base, workingTreeRef, refs, compare);
+	}
 
 	throw fullResult.error;
 }
@@ -76,7 +78,7 @@ function loadChaptersFile(
 function assembleChaptersFile(
 	agentOutput: AgentOutput,
 	base?: string,
-	ref?: WorkingTreeRef,
+	workingTreeRef?: WorkingTreeRef,
 	refs?: string[],
 	compare?: string,
 ): ChaptersFile {
@@ -84,7 +86,7 @@ function assembleChaptersFile(
 		base,
 		compare,
 		refs,
-		workingTreeRef: ref,
+		workingTreeRef,
 	};
 	const { scope, rawDiff } = resolveScope(options);
 	const allFiles = parseGitDiff(rawDiff);

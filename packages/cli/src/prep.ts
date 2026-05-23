@@ -16,7 +16,7 @@ ${formatHunkDiffWithLineNumbers(hunk)}`;
 
 export function runPrep(
 	base?: string,
-	ref?: WorkingTreeRef,
+	workingTreeRef?: WorkingTreeRef,
 	refs?: string[],
 	compare?: string,
 ): string {
@@ -24,7 +24,7 @@ export function runPrep(
 		base,
 		compare,
 		refs,
-		workingTreeRef: ref,
+		workingTreeRef,
 	};
 	const { scope, rawDiff, mergeBaseSha } = resolveScope(options);
 
