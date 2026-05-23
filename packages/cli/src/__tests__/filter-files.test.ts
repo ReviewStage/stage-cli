@@ -185,6 +185,34 @@ describe("filterFilesForLlm", () => {
 		expect(result.files).toHaveLength(1);
 		expect(result.files[0]?.path).toBe("src/app.ts");
 	});
+
+	it("negation re-includes a previously excluded file", () => {
+		const files = [
+			makeFile({ path: "build/output.js" }),
+			makeFile({ path: "build/important.js" }),
+			makeFile({ path: "src/app.ts" }),
+		];
+		const result = filterFilesForLlm(files, ["build/**", "!build/important.js"]);
+		expect(result.files).toHaveLength(2);
+		expect(result.files.map((f) => f.path)).toEqual(["build/important.js", "src/app.ts"]);
+	});
+
+	it("last matching pattern wins with negation", () => {
+		const files = [makeFile({ path: "dist/bundle.js" })];
+		// exclude, re-include, exclude again
+		const result = filterFilesForLlm(files, ["dist/**", "!dist/bundle.js", "*.js"]);
+		expect(result.files).toHaveLength(0);
+	});
+
+	it("negation with slashless pattern re-includes nested files", () => {
+		const files = [
+			makeFile({ path: "generated/schema.ts" }),
+			makeFile({ path: "generated/keep-this.ts" }),
+		];
+		const result = filterFilesForLlm(files, ["generated/**", "!keep-this.ts"]);
+		expect(result.files).toHaveLength(1);
+		expect(result.files[0]?.path).toBe("generated/keep-this.ts");
+	});
 });
 
 describe("loadStageIgnorePatterns", () => {
