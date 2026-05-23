@@ -124,6 +124,28 @@ describe("resolveScope", () => {
 		expect(result.rawDiff).toContain("+feature");
 	});
 
+	it("defaults a missing left range ref to HEAD", async () => {
+		const { commonSha, featureSha } = await initDivergedRepo();
+
+		const result = resolveScope({ refs: ["..feature"] });
+
+		expect(result.scope.kind).toBe(SCOPE_KIND.COMMITTED);
+		expect(result.scope.baseSha).toBe(commonSha);
+		expect(result.scope.headSha).toBe(featureSha);
+		expect(result.rawDiff).toContain("+feature");
+	});
+
+	it("defaults a missing right range ref to HEAD", async () => {
+		const { commonSha, mainSha } = await initDivergedRepo();
+
+		const result = resolveScope({ refs: ["feature.."] });
+
+		expect(result.scope.kind).toBe(SCOPE_KIND.COMMITTED);
+		expect(result.scope.baseSha).toBe(commonSha);
+		expect(result.scope.headSha).toBe(mainSha);
+		expect(result.rawDiff).toContain("+main");
+	});
+
 	it("compares --base and --compare through their merge base", async () => {
 		const { commonSha, featureSha } = await initDivergedRepo();
 

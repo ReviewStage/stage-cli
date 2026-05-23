@@ -285,12 +285,11 @@ function parseRefRange(ref: string): RefRange | null {
 }
 
 function resolveCommittedComparison(left: string, right: string): ResolvedScope {
-	if (!left || !right) {
-		throw new Error("Git ranges must include both a base ref and a compare ref.");
-	}
+	const effectiveLeft = left || "HEAD";
+	const effectiveRight = right || "HEAD";
 
-	const mergeBaseSha = resolveMergeBaseBetween(left, right);
-	const headSha = resolveRefToSha(right);
+	const mergeBaseSha = resolveMergeBaseBetween(effectiveLeft, effectiveRight);
+	const headSha = resolveRefToSha(effectiveRight);
 
 	return {
 		scope: {
