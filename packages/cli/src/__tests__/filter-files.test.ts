@@ -204,6 +204,13 @@ describe("filterFilesForLlm", () => {
 		expect(result.files).toHaveLength(0);
 	});
 
+	it("strips leading slash from root-anchored patterns", () => {
+		const files = [makeFile({ path: "dist/bundle.js" }), makeFile({ path: "src/app.ts" })];
+		const result = filterFilesForLlm(files, ["/dist/**"]);
+		expect(result.files).toHaveLength(1);
+		expect(result.files[0]?.path).toBe("src/app.ts");
+	});
+
 	it("negation with slashless pattern re-includes nested files", () => {
 		const files = [
 			makeFile({ path: "generated/schema.ts" }),

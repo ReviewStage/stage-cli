@@ -78,7 +78,8 @@ interface CompiledPattern {
 export function compileIgnorePatterns(patterns: string[]): CompiledPattern[] {
 	return patterns.map((raw) => {
 		const negated = raw.startsWith("!");
-		const glob = negated ? raw.slice(1) : raw;
+		const stripped = negated ? raw.slice(1) : raw;
+		const glob = stripped.startsWith("/") ? stripped.slice(1) : stripped;
 		const hasSlash = glob.includes("/");
 		return {
 			negated,

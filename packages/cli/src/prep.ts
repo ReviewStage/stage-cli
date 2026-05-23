@@ -5,7 +5,7 @@ import type { Hunk, PullRequestFile } from "@stagereview/types/parsed-diff";
 import { parseGitDiff } from "./diff-parser.js";
 import { filterFilesForLlm, loadStageIgnorePatterns } from "./filter-files.js";
 import { formatHunkDiffWithLineNumbers } from "./format-diff.js";
-import { getCommitMessages, readRepoRoot, type ResolveScopeOptions, resolveScope } from "./git.js";
+import { getCommitMessages, type ResolveScopeOptions, readRepoRoot, resolveScope } from "./git.js";
 import type { WorkingTreeRef } from "./schema.js";
 
 function formatHunkForPrompt(file: PullRequestFile, hunk: Hunk): string {
