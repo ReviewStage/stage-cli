@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseRepoName, resolveScope } from "../git.js";
-import { SCOPE_KIND } from "../schema.js";
+import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 
 let tmpDir: string;
 let originalCwd: string;
@@ -154,5 +154,26 @@ describe("resolveScope", () => {
 		expect(result.scope.kind).toBe(SCOPE_KIND.COMMITTED);
 		expect(result.scope.baseSha).toBe(commonSha);
 		expect(result.scope.headSha).toBe(featureSha);
+	});
+
+	it("prefers a valid branch over a positional working-tree keyword", async () => {
+		const { mainSha } = await initDivergedRepo();
+		git("checkout", "-b", "staged", "main");
+		await writeFile("file.txt", "common\nbranch named staged\n");
+		git("commit", "-am", "branch named staged");
+		git("checkout", "main");
+		await writeFile("file.txt", "common\nmain\nstaged index change\n");
+		git("add", "file.txt");
+		await writeFile("file.txt", "common\nmain\nstaged index change\nunstaged change\n");
+
+		const result = resolveScope({ refs: ["staged"] });
+
+		expect(result.scope.kind).toBe(SCOPE_KIND.WORKING_TREE);
+		if (result.scope.kind !== SCOPE_KIND.WORKING_TREE) {
+			throw new Error("Expected working-tree scope");
+		}
+		expect(result.scope.ref).toBe(WORKING_TREE_REF.WORK);
+		expect(result.scope.headSha).toBe(mainSha);
+		expect(result.rawDiff).toContain("+unstaged change");
 	});
 });

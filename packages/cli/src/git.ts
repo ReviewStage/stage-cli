@@ -257,6 +257,15 @@ function resolveRefToSha(ref: string): string {
 	}).trim();
 }
 
+function canResolveRef(ref: string): boolean {
+	try {
+		resolveRefToSha(ref);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function resolveMergeBaseBetween(left: string, right: string): string {
 	return execFileSync("git", ["merge-base", left, right], {
 		encoding: "utf8",
@@ -389,9 +398,11 @@ export function resolveScope(options: ResolveScopeOptions = {}): ResolvedScope {
 		const range = parseRefRange(ref);
 		if (range) return resolveCommittedComparison(range.left, range.right);
 
-		const workingTreeRef = parseWorkingTreeRefArg(ref);
-		if (workingTreeRef) {
-			return resolveSingleRefScope(detectBaseRef(), workingTreeRef);
+		if (!canResolveRef(ref)) {
+			const workingTreeRef = parseWorkingTreeRefArg(ref);
+			if (workingTreeRef) {
+				return resolveSingleRefScope(detectBaseRef(), workingTreeRef);
+			}
 		}
 
 		return resolveSingleRefScope(ref);
