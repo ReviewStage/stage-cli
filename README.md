@@ -52,6 +52,7 @@ This organizes your local changes into reviewable chapters and opens a browser U
 | Flag | Description |
 |------|-------------|
 | `--base <ref>` | Base ref to diff against (default: auto-detect main/master) |
+| `--compare <ref>` | Compare ref to diff against `--base` |
 | `--ref <mode>` | Diff scope: `work` (staged + unstaged + untracked), `staged`, or `unstaged` (default: auto-detect) |
 
 Examples:
@@ -62,6 +63,11 @@ Examples:
 
 # Diff against a specific branch
 /stage-chapters --base feature-a
+
+# Compare two branches
+/stage-chapters main feature
+/stage-chapters main..feature
+/stage-chapters --base main --compare feature
 ```
 
 <img width="1840" height="1196" alt="Stage CLI" src="https://raw.githubusercontent.com/ReviewStage/stage-cli/main/assets/screenshot.png" />

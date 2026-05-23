@@ -21,14 +21,26 @@ const refOption = new Option(
 	"Diff scope: work (staged + unstaged + untracked), staged, or unstaged (default: auto-detect)",
 ).choices(Object.values(WORKING_TREE_REF));
 
+interface DiffCommandOptions {
+	base?: string;
+	compare?: string;
+	ref?: string;
+}
+
+function parseWorkingTreeRef(ref?: string) {
+	return ref !== undefined ? z.enum(WORKING_TREE_REF).parse(ref) : undefined;
+}
+
 program
 	.command("prep")
 	.description("Parse the current branch diff and prepare input for chapter generation")
+	.argument("[refs...]", "Git refs to diff, for example: main, main feature, or main..feature")
 	.option("--base <ref>", "Base ref to diff against (default: auto-detect main/master)")
+	.option("--compare <ref>", "Compare ref to diff against --base")
 	.addOption(refOption)
-	.action((opts: { base?: string; ref?: string }) => {
-		const ref = opts.ref !== undefined ? z.enum(WORKING_TREE_REF).parse(opts.ref) : undefined;
-		const filePath = runPrep(opts.base, ref);
+	.action((refs: string[], opts: DiffCommandOptions) => {
+		const ref = parseWorkingTreeRef(opts.ref);
+		const filePath = runPrep(opts.base, ref, refs, opts.compare);
 		process.stdout.write(filePath);
 	});
 
@@ -36,11 +48,13 @@ program
 	.command("show")
 	.description("Load a chapters.json file and open it in a local browser")
 	.argument("<path>", "Path to a chapters.json file")
+	.argument("[refs...]", "Git refs to diff, for example: main, main feature, or main..feature")
 	.option("--base <ref>", "Base ref to diff against (default: auto-detect main/master)")
+	.option("--compare <ref>", "Compare ref to diff against --base")
 	.addOption(refOption)
-	.action(async (jsonPath: string, opts: { base?: string; ref?: string }) => {
-		const ref = opts.ref !== undefined ? z.enum(WORKING_TREE_REF).parse(opts.ref) : undefined;
-		await show(jsonPath, opts.base, ref);
+	.action(async (jsonPath: string, refs: string[], opts: DiffCommandOptions) => {
+		const ref = parseWorkingTreeRef(opts.ref);
+		await show(jsonPath, opts.base, ref, refs, opts.compare);
 	});
 
 program.parseAsync(process.argv).catch((err) => {

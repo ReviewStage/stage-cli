@@ -183,8 +183,8 @@ export function getUntrackedDiff(files: string[]): string {
 	return patches.join("\n");
 }
 
-export function getCommitMessages(mergeBase: string): string {
-	return execFileSync("git", ["log", "--oneline", `${mergeBase}..HEAD`], {
+export function getCommitMessages(mergeBase: string, head: string): string {
+	return execFileSync("git", ["log", "--oneline", `${mergeBase}..${head}`], {
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "ignore"],
 	}).trim();
@@ -202,6 +202,23 @@ export interface ResolvedScope {
 	scope: Scope;
 	mergeBaseSha: string;
 	rawDiff: string;
+}
+
+export interface ResolveScopeOptions {
+	base?: string;
+	compare?: string;
+	refs?: string[];
+	workingTreeRef?: WorkingTreeRef;
+}
+
+const RANGE_SEPARATOR = {
+	TWO_DOT: "..",
+	THREE_DOT: "...",
+} as const;
+
+interface RefRange {
+	left: string;
+	right: string;
 }
 
 function workingTreeDiffArgs(ref: WorkingTreeRef, mergeBaseSha: string): string[] {
@@ -233,8 +250,75 @@ function buildWorkingTreeDiff(ref: WorkingTreeRef, mergeBaseSha: string): string
 	return rawDiff;
 }
 
-export function resolveScope(baseOverride?: string, ref?: WorkingTreeRef): ResolvedScope {
-	const base = baseOverride ?? detectBaseRef();
+function resolveRefToSha(ref: string): string {
+	return execFileSync("git", ["rev-parse", "--verify", ref], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	}).trim();
+}
+
+function resolveMergeBaseBetween(left: string, right: string): string {
+	return execFileSync("git", ["merge-base", left, right], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	}).trim();
+}
+
+function parseRefRange(ref: string): RefRange | null {
+	const threeDotIndex = ref.indexOf(RANGE_SEPARATOR.THREE_DOT);
+	if (threeDotIndex !== -1) {
+		return {
+			left: ref.slice(0, threeDotIndex),
+			right: ref.slice(threeDotIndex + RANGE_SEPARATOR.THREE_DOT.length),
+		};
+	}
+
+	const twoDotIndex = ref.indexOf(RANGE_SEPARATOR.TWO_DOT);
+	if (twoDotIndex !== -1) {
+		return {
+			left: ref.slice(0, twoDotIndex),
+			right: ref.slice(twoDotIndex + RANGE_SEPARATOR.TWO_DOT.length),
+		};
+	}
+
+	return null;
+}
+
+function resolveCommittedComparison(left: string, right: string): ResolvedScope {
+	if (!left || !right) {
+		throw new Error("Git ranges must include both a base ref and a compare ref.");
+	}
+
+	const mergeBaseSha = resolveMergeBaseBetween(left, right);
+	const headSha = resolveRefToSha(right);
+
+	return {
+		scope: {
+			kind: SCOPE_KIND.COMMITTED,
+			baseSha: mergeBaseSha,
+			headSha,
+			mergeBaseSha,
+		},
+		mergeBaseSha,
+		rawDiff: getRawDiff([`${mergeBaseSha}..${headSha}`]),
+	};
+}
+
+function parseWorkingTreeRefArg(ref: string): WorkingTreeRef | null {
+	switch (ref) {
+		case ".":
+		case WORKING_TREE_REF.WORK:
+			return WORKING_TREE_REF.WORK;
+		case WORKING_TREE_REF.STAGED:
+			return WORKING_TREE_REF.STAGED;
+		case WORKING_TREE_REF.UNSTAGED:
+			return WORKING_TREE_REF.UNSTAGED;
+		default:
+			return null;
+	}
+}
+
+function resolveSingleRefScope(base: string, ref?: WorkingTreeRef): ResolvedScope {
 	const mergeBaseSha = resolveMergeBase(base);
 	const headSha = resolveHead();
 
@@ -264,4 +348,56 @@ export function resolveScope(baseOverride?: string, ref?: WorkingTreeRef): Resol
 		mergeBaseSha,
 		rawDiff: getRawDiff([`${mergeBaseSha}..${headSha}`]),
 	};
+}
+
+export function resolveScope(options: ResolveScopeOptions = {}): ResolvedScope {
+	const refs = options.refs === undefined ? [] : options.refs;
+	if (refs.length > 2) {
+		throw new Error("Expected at most two git ref arguments.");
+	}
+	if (refs.length > 0 && (options.base !== undefined || options.compare !== undefined)) {
+		throw new Error("Cannot use --base/--compare with positional git ref arguments.");
+	}
+	if (refs.length > 0 && options.workingTreeRef !== undefined) {
+		throw new Error("Cannot use --ref with positional git ref arguments.");
+	}
+	if (options.compare !== undefined && options.workingTreeRef !== undefined) {
+		throw new Error("Cannot use --compare with --ref.");
+	}
+
+	if (options.compare !== undefined) {
+		if (options.base === undefined) {
+			throw new Error("--compare requires --base.");
+		}
+		return resolveCommittedComparison(options.base, options.compare);
+	}
+
+	if (refs.length === 2) {
+		const left = refs[0];
+		const right = refs[1];
+		if (left === undefined || right === undefined) {
+			throw new Error("Expected both base and compare refs.");
+		}
+		return resolveCommittedComparison(left, right);
+	}
+
+	if (refs.length === 1) {
+		const ref = refs[0];
+		if (ref === undefined) {
+			throw new Error("Expected a git ref argument.");
+		}
+
+		const range = parseRefRange(ref);
+		if (range) return resolveCommittedComparison(range.left, range.right);
+
+		const workingTreeRef = parseWorkingTreeRefArg(ref);
+		if (workingTreeRef) {
+			return resolveSingleRefScope(detectBaseRef(), workingTreeRef);
+		}
+
+		return resolveSingleRefScope(ref);
+	}
+
+	const base = options.base === undefined ? detectBaseRef() : options.base;
+	return resolveSingleRefScope(base, options.workingTreeRef);
 }

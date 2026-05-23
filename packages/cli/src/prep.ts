@@ -5,7 +5,7 @@ import type { Hunk, PullRequestFile } from "@stagereview/types/parsed-diff";
 import { parseGitDiff } from "./diff-parser.js";
 import { filterFilesForLlm } from "./filter-files.js";
 import { formatHunkDiffWithLineNumbers } from "./format-diff.js";
-import { getCommitMessages, resolveScope } from "./git.js";
+import { getCommitMessages, type ResolveScopeOptions, resolveScope } from "./git.js";
 import type { WorkingTreeRef } from "./schema.js";
 
 function formatHunkForPrompt(file: PullRequestFile, hunk: Hunk): string {
@@ -14,8 +14,19 @@ function formatHunkForPrompt(file: PullRequestFile, hunk: Hunk): string {
 ${formatHunkDiffWithLineNumbers(hunk)}`;
 }
 
-export function runPrep(base?: string, ref?: WorkingTreeRef): string {
-	const { rawDiff, mergeBaseSha } = resolveScope(base, ref);
+export function runPrep(
+	base?: string,
+	ref?: WorkingTreeRef,
+	refs?: string[],
+	compare?: string,
+): string {
+	const options: ResolveScopeOptions = {
+		base,
+		compare,
+		refs,
+		workingTreeRef: ref,
+	};
+	const { scope, rawDiff, mergeBaseSha } = resolveScope(options);
 
 	const allFiles = parseGitDiff(rawDiff);
 	const { files } = filterFilesForLlm(allFiles);
@@ -24,7 +35,7 @@ export function runPrep(base?: string, ref?: WorkingTreeRef): string {
 		.flatMap((file) => file.hunks.map((hunk) => formatHunkForPrompt(file, hunk)))
 		.join("\n\n");
 
-	const commitMessages = getCommitMessages(mergeBaseSha);
+	const commitMessages = getCommitMessages(mergeBaseSha, scope.headSha);
 
 	const sections = ["=== COMMIT MESSAGES ===", commitMessages, "", "=== HUNKS ===", formattedHunks];
 

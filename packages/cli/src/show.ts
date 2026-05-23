@@ -5,7 +5,7 @@ import { buildOtherChangesChapter } from "./build-other-changes.js";
 import { closeDb, getDb } from "./db/client.js";
 import { parseGitDiff } from "./diff-parser.js";
 import { filterFilesForLlm } from "./filter-files.js";
-import { readRepoContext, resolveScope } from "./git.js";
+import { type ResolveScopeOptions, readRepoContext, resolveScope } from "./git.js";
 import { diffRoutes } from "./routes/diff.js";
 import { runRoutes } from "./routes/runs.js";
 import { viewStateRoutes } from "./routes/view-state.js";
@@ -21,9 +21,15 @@ import {
 } from "./schema.js";
 import { LOOPBACK_HOST, startServer } from "./server.js";
 
-export async function show(jsonPath: string, base?: string, ref?: WorkingTreeRef): Promise<void> {
+export async function show(
+	jsonPath: string,
+	base?: string,
+	ref?: WorkingTreeRef,
+	refs?: string[],
+	compare?: string,
+): Promise<void> {
 	const db = getDb();
-	const chaptersFile = loadChaptersFile(jsonPath, base, ref);
+	const chaptersFile = loadChaptersFile(jsonPath, base, ref, refs, compare);
 	const { runId } = insertChaptersFile(db, chaptersFile, readRepoContext());
 
 	const handle = await startServer({
@@ -47,7 +53,13 @@ export async function show(jsonPath: string, base?: string, ref?: WorkingTreeRef
 	closeDb();
 }
 
-function loadChaptersFile(jsonPath: string, base?: string, ref?: WorkingTreeRef): ChaptersFile {
+function loadChaptersFile(
+	jsonPath: string,
+	base?: string,
+	ref?: WorkingTreeRef,
+	refs?: string[],
+	compare?: string,
+): ChaptersFile {
 	const absolute = path.resolve(jsonPath);
 	const raw = readFileSync(absolute, "utf8");
 	const parsed = JSON.parse(raw) as unknown;
@@ -56,7 +68,7 @@ function loadChaptersFile(jsonPath: string, base?: string, ref?: WorkingTreeRef)
 	if (fullResult.success) return fullResult.data;
 
 	const agentResult = AgentOutputSchema.safeParse(parsed);
-	if (agentResult.success) return assembleChaptersFile(agentResult.data, base, ref);
+	if (agentResult.success) return assembleChaptersFile(agentResult.data, base, ref, refs, compare);
 
 	throw fullResult.error;
 }
@@ -65,8 +77,16 @@ function assembleChaptersFile(
 	agentOutput: AgentOutput,
 	base?: string,
 	ref?: WorkingTreeRef,
+	refs?: string[],
+	compare?: string,
 ): ChaptersFile {
-	const { scope, rawDiff } = resolveScope(base, ref);
+	const options: ResolveScopeOptions = {
+		base,
+		compare,
+		refs,
+		workingTreeRef: ref,
+	};
+	const { scope, rawDiff } = resolveScope(options);
 	const allFiles = parseGitDiff(rawDiff);
 	const { files: filteredFiles, excludedByPath } = filterFilesForLlm(allFiles);
 
