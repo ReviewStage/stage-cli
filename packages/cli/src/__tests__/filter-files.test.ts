@@ -1,7 +1,10 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { Hunk, PullRequestFile } from "@stagereview/types/parsed-diff";
 import { LINE_TYPE } from "@stagereview/types/parsed-diff";
 import { describe, expect, it } from "vitest";
-import { filterFilesForLlm, shouldIncludeFile } from "../filter-files.js";
+import { filterFilesForLlm, loadStageIgnorePatterns, shouldIncludeFile } from "../filter-files.js";
 
 function makeHunk(lineCount: number, overrides?: Partial<Hunk>): Hunk {
 	return {
@@ -133,5 +136,74 @@ describe("filterFilesForLlm", () => {
 		]);
 		expect(result.files).toEqual([]);
 		expect(result.excludedByPath).toEqual(["pnpm-lock.yaml", "yarn.lock"]);
+	});
+
+	it("excludes files matching .stageignore patterns", () => {
+		const files = [
+			makeFile({ path: "src/app.ts" }),
+			makeFile({ path: "build/config.gypi" }),
+			makeFile({ path: "dist/bundle.js" }),
+		];
+		const result = filterFilesForLlm(files, ["build/**", "dist/**"]);
+		expect(result.files).toHaveLength(1);
+		expect(result.files[0]?.path).toBe("src/app.ts");
+		expect(result.excludedByPath).toEqual(["build/config.gypi", "dist/bundle.js"]);
+	});
+
+	it("combines built-in denylist with .stageignore patterns", () => {
+		const files = [
+			makeFile({ path: "src/app.ts" }),
+			makeFile({ path: "pnpm-lock.yaml" }),
+			makeFile({ path: "generated/schema.ts" }),
+		];
+		const result = filterFilesForLlm(files, ["generated/**"]);
+		expect(result.files).toHaveLength(1);
+		expect(result.files[0]?.path).toBe("src/app.ts");
+		expect(result.excludedByPath).toEqual(["pnpm-lock.yaml", "generated/schema.ts"]);
+	});
+
+	it("works normally when stageIgnorePatterns is undefined", () => {
+		const files = [makeFile({ path: "src/app.ts" }), makeFile({ path: "pnpm-lock.yaml" })];
+		const result = filterFilesForLlm(files, undefined);
+		expect(result.files).toHaveLength(1);
+		expect(result.files[0]?.path).toBe("src/app.ts");
+	});
+
+	it("works normally when stageIgnorePatterns is empty", () => {
+		const files = [makeFile({ path: "src/app.ts" }), makeFile({ path: "src/utils.ts" })];
+		const result = filterFilesForLlm(files, []);
+		expect(result.files).toHaveLength(2);
+	});
+});
+
+describe("loadStageIgnorePatterns", () => {
+	function makeTempDir(): string {
+		return mkdtempSync(path.join(tmpdir(), "stage-test-"));
+	}
+
+	it("returns empty array when .stageignore does not exist", () => {
+		const dir = makeTempDir();
+		expect(loadStageIgnorePatterns(dir)).toEqual([]);
+	});
+
+	it("parses patterns from .stageignore", () => {
+		const dir = makeTempDir();
+		writeFileSync(path.join(dir, ".stageignore"), "build/**\ndist/**\n");
+		expect(loadStageIgnorePatterns(dir)).toEqual(["build/**", "dist/**"]);
+	});
+
+	it("ignores comments and blank lines", () => {
+		const dir = makeTempDir();
+		writeFileSync(
+			path.join(dir, ".stageignore"),
+			"# Build artifacts\nbuild/**\n\n# Output\ndist/**\n\n",
+		);
+		expect(loadStageIgnorePatterns(dir)).toEqual(["build/**", "dist/**"]);
+	});
+
+	it("trims whitespace from patterns", () => {
+		const dir = makeTempDir();
+		writeFileSync(path.join(dir, ".stageignore"), "  build/**  \n  dist/**  \n");
+		expect(loadStageIgnorePatterns(dir)).toEqual(["build/**", "dist/**"]);
 	});
 });

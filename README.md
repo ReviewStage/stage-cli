@@ -77,6 +77,21 @@ Examples:
 /stage-chapters --base main --compare feature
 ```
 
+### `.stageignore`
+
+Add a `.stageignore` file to your repo root to exclude files from the diff analysis. Uses glob patterns, one per line:
+
+```
+# Build artifacts
+build/**
+dist/**
+
+# Generated code
+*.generated.ts
+```
+
+Ignored files still appear in the "Other changes" chapter so nothing is silently hidden. Comments (`#`) and blank lines are supported.
+
 <img width="1840" height="1196" alt="Stage CLI" src="https://raw.githubusercontent.com/ReviewStage/stage-cli/main/assets/screenshot.png" />
 
 ## License
