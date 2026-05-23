@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Hunk, PullRequestFile } from "@stagereview/types/parsed-diff";
 import { parseGitDiff } from "./diff-parser.js";
-import { filterFilesForLlm } from "./filter-files.js";
+import { filterFilesForLlm, loadStageIgnorePatterns } from "./filter-files.js";
 import { formatHunkDiffWithLineNumbers } from "./format-diff.js";
-import { getCommitMessages, resolveScope } from "./git.js";
+import { getCommitMessages, readRepoRoot, resolveScope } from "./git.js";
 import type { WorkingTreeRef } from "./schema.js";
 
 function formatHunkForPrompt(file: PullRequestFile, hunk: Hunk): string {
@@ -18,7 +18,8 @@ export function runPrep(base?: string, ref?: WorkingTreeRef): string {
 	const { rawDiff, mergeBaseSha } = resolveScope(base, ref);
 
 	const allFiles = parseGitDiff(rawDiff);
-	const { files } = filterFilesForLlm(allFiles);
+	const stageIgnorePatterns = loadStageIgnorePatterns(readRepoRoot());
+	const { files } = filterFilesForLlm(allFiles, stageIgnorePatterns);
 
 	const formattedHunks = files
 		.flatMap((file) => file.hunks.map((hunk) => formatHunkForPrompt(file, hunk)))
