@@ -174,6 +174,17 @@ describe("filterFilesForLlm", () => {
 		const result = filterFilesForLlm(files, []);
 		expect(result.files).toHaveLength(2);
 	});
+
+	it("matches slashless globs against nested paths via matchBase", () => {
+		const files = [
+			makeFile({ path: "src/app.ts" }),
+			makeFile({ path: "src/schema.generated.ts" }),
+			makeFile({ path: "lib/deep/nested/types.generated.ts" }),
+		];
+		const result = filterFilesForLlm(files, ["*.generated.ts"]);
+		expect(result.files).toHaveLength(1);
+		expect(result.files[0]?.path).toBe("src/app.ts");
+	});
 });
 
 describe("loadStageIgnorePatterns", () => {

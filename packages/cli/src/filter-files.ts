@@ -71,10 +71,16 @@ export function filterFilesForLlm(
 	files: PullRequestFile[],
 	stageIgnorePatterns?: string[],
 ): FilterFilesResult {
-	const isIgnored =
-		stageIgnorePatterns && stageIgnorePatterns.length > 0
-			? picomatch(stageIgnorePatterns, { dot: true })
-			: null;
+	let isIgnored: ((path: string) => boolean) | null = null;
+	if (stageIgnorePatterns && stageIgnorePatterns.length > 0) {
+		const withSlash = stageIgnorePatterns.filter((p) => p.includes("/"));
+		const withoutSlash = stageIgnorePatterns.filter((p) => !p.includes("/"));
+		const matchers: picomatch.Matcher[] = [];
+		if (withSlash.length > 0) matchers.push(picomatch(withSlash, { dot: true }));
+		if (withoutSlash.length > 0)
+			matchers.push(picomatch(withoutSlash, { dot: true, matchBase: true }));
+		isIgnored = (p: string) => matchers.some((m) => m(p));
+	}
 
 	const excludedByPath: string[] = [];
 	const reviewable: PullRequestFile[] = [];
