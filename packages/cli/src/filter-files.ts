@@ -76,16 +76,21 @@ interface CompiledPattern {
  * last matching pattern wins).
  */
 export function compileIgnorePatterns(patterns: string[]): CompiledPattern[] {
-	return patterns.map((raw) => {
+	const compiled: CompiledPattern[] = [];
+	for (const raw of patterns) {
 		const negated = raw.startsWith("!");
 		const stripped = negated ? raw.slice(1) : raw;
-		const glob = stripped.startsWith("/") ? stripped.slice(1) : stripped;
-		const hasSlash = glob.includes("/");
-		return {
+		const rooted = stripped.startsWith("/");
+		const unrooted = rooted ? stripped.slice(1) : stripped;
+		const glob = unrooted.endsWith("/") ? `${unrooted}**` : unrooted;
+		if (!glob) continue;
+		const useMatchBase = !rooted && !glob.includes("/");
+		compiled.push({
 			negated,
-			matcher: picomatch(glob, { dot: true, matchBase: !hasSlash }),
-		};
-	});
+			matcher: picomatch(glob, { dot: true, matchBase: useMatchBase }),
+		});
+	}
+	return compiled;
 }
 
 function isIgnoredByPatterns(filePath: string, compiled: CompiledPattern[]): boolean {

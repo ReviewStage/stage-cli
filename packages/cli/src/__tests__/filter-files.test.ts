@@ -211,6 +211,20 @@ describe("filterFilesForLlm", () => {
 		expect(result.files[0]?.path).toBe("src/app.ts");
 	});
 
+	it("root-anchored pattern does not match nested paths", () => {
+		const files = [makeFile({ path: "foo/bar.js" }), makeFile({ path: "src/foo/bar.js" })];
+		const result = filterFilesForLlm(files, ["/foo/**"]);
+		expect(result.files).toHaveLength(1);
+		expect(result.files[0]?.path).toBe("src/foo/bar.js");
+	});
+
+	it("trailing slash matches directory contents", () => {
+		const files = [makeFile({ path: "build/output.js" }), makeFile({ path: "src/app.ts" })];
+		const result = filterFilesForLlm(files, ["build/"]);
+		expect(result.files).toHaveLength(1);
+		expect(result.files[0]?.path).toBe("src/app.ts");
+	});
+
 	it("negation with slashless pattern re-includes nested files", () => {
 		const files = [
 			makeFile({ path: "generated/schema.ts" }),
