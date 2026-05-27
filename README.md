@@ -37,6 +37,13 @@ Then add the skill to your agent:
 npx skills add ReviewStage/stage-cli
 ```
 
+## Uninstall
+
+```bash
+npx skills remove ReviewStage/stage-cli
+npm uninstall -g stagereview
+```
+
 ## Usage
 
 In your AI agent, run:
