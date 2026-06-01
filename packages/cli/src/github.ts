@@ -6,6 +6,7 @@ import {
 	type CheckItem,
 	type ChecksResponse,
 	type GitHubPullRequest,
+	type GitHubUser,
 	type MergeStatusInfo,
 	PULL_REQUEST_CI_STATUS,
 	PULL_REQUEST_REVIEW_STATUS,
@@ -93,6 +94,49 @@ function avatarUrlForLogin(login: string): string {
 	return `https://github.com/${encodeURIComponent(login)}.png`;
 }
 
+// REST user shape (`.user`, reviewers, etc.). Unlike gh's GraphQL projection, it
+// carries `type` ("Bot" for GitHub Apps), the real `avatar_url`, and the `[bot]`
+// login suffix — everything getUserDisplay needs to render bot chips and the
+// /apps/<slug> profile URL. Sourcing users from REST keeps parity with hosted Stage.
+const RestUserSchema = z.object({
+	login: z.string(),
+	avatar_url: z.string(),
+	type: z.string(),
+});
+const RestPullRequestSchema = z.object({
+	user: RestUserSchema.nullable(),
+	requested_reviewers: z.array(RestUserSchema).nullable().optional(),
+});
+
+/** gh's GraphQL author projection lacks `avatar_url` and the `[bot]` suffix; only used if the REST lookup fails. */
+function ghAuthorFallback(
+	author: { login: string; is_bot?: boolean } | null | undefined,
+): GitHubUser | null {
+	if (!author?.login) return null;
+	return {
+		login: author.login,
+		avatar_url: avatarUrlForLogin(author.login),
+		type: author.is_bot ? "Bot" : "User",
+	};
+}
+
+async function fetchRestPullRequest(
+	repoRoot: string,
+	repo: GitHubRepo,
+	prNumber: number,
+): Promise<z.infer<typeof RestPullRequestSchema> | null> {
+	try {
+		const stdout = await gh(
+			["api", `repos/${repo.owner}/${repo.repo}/pulls/${prNumber}`],
+			repoRoot,
+		);
+		const parsed = RestPullRequestSchema.safeParse(JSON.parse(stdout));
+		return parsed.success ? parsed.data : null;
+	} catch {
+		return null;
+	}
+}
+
 /**
  * Detect the GitHub PR for the branch currently checked out in `repoRoot`,
  * mapped onto the REST-shaped `GitHubPullRequest` the UI consumes. Returns null
@@ -104,13 +148,17 @@ export async function getPullRequest(
 	repoRoot: string,
 	originUrl: string | null,
 ): Promise<GitHubPullRequest | null> {
-	if (!isGitHubRemote(originUrl)) return null;
+	const repo = parseGitHubRepo(originUrl);
+	if (!repo) return null;
 	try {
 		const stdout = await gh(["pr", "view", "--json", PR_FIELDS.join(",")], repoRoot);
 		const parsed = GhPullRequestSchema.safeParse(JSON.parse(stdout));
 		if (!parsed.success) return null;
 		const pr = parsed.data;
-		const login = pr.author?.login ?? null;
+		// Prefer the REST author (real avatar, bot type, [bot] login); fall back to
+		// gh's leaner author projection only if the REST lookup fails.
+		const rest = await fetchRestPullRequest(repoRoot, repo, pr.number);
+		const user = rest?.user ?? ghAuthorFallback(pr.author);
 		return {
 			number: pr.number,
 			title: pr.title,
@@ -120,9 +168,7 @@ export async function getPullRequest(
 			draft: pr.isDraft,
 			merged_at: pr.mergedAt && pr.mergedAt.length > 0 ? pr.mergedAt : null,
 			created_at: pr.createdAt,
-			user: login
-				? { login, avatar_url: avatarUrlForLogin(login), type: pr.author?.is_bot ? "Bot" : "User" }
-				: null,
+			user,
 			head: { ref: pr.headRefName, sha: pr.headRefOid },
 			base: { ref: pr.baseRefName },
 		};
@@ -226,15 +272,9 @@ export async function getChecks(
 
 // ─── Reviews ────────────────────────────────────────────────────────────────
 
-const GhReviewSchema = z.object({
-	author: z.object({ login: z.string(), is_bot: z.boolean().optional() }).nullable(),
-	state: z.string(),
-});
-const GhReviewRequestSchema = z.object({ login: z.string().optional() });
-const GhReviewsSchema = z.object({
-	latestReviews: z.array(GhReviewSchema).optional(),
-	reviewRequests: z.array(GhReviewRequestSchema).optional(),
-});
+// REST reviews are returned oldest-first, so iterating and overwriting per login
+// yields each reviewer's latest review.
+const RestReviewSchema = z.object({ user: RestUserSchema.nullable(), state: z.string() });
 
 const KNOWN_REVIEW_STATES = new Set<string>(Object.values(REVIEW_STATE));
 
@@ -256,37 +296,30 @@ function summarizeReviews(reviewers: Reviewer[]): PullRequestReviewSummary["stat
 
 export async function getReviews(
 	repoRoot: string,
+	repo: GitHubRepo,
 	prNumber: number,
 ): Promise<PullRequestReviewSummary | null> {
 	try {
 		const stdout = await gh(
-			["pr", "view", String(prNumber), "--json", "latestReviews,reviewRequests"],
+			["api", `repos/${repo.owner}/${repo.repo}/pulls/${prNumber}/reviews`],
 			repoRoot,
 		);
-		const parsed = GhReviewsSchema.safeParse(JSON.parse(stdout));
+		const parsed = z.array(RestReviewSchema).safeParse(JSON.parse(stdout));
 		if (!parsed.success) return null;
 
 		const byLogin = new Map<string, Reviewer>();
-		for (const review of parsed.data.latestReviews ?? []) {
-			if (!review.author) continue;
+		for (const review of parsed.data) {
+			if (!review.user) continue;
 			const status = reviewerStatusFor(review.state);
 			if (!status) continue;
-			const login = review.author.login;
-			byLogin.set(login, {
-				user: {
-					login,
-					avatar_url: avatarUrlForLogin(login),
-					type: review.author.is_bot ? "Bot" : "User",
-				},
-				status,
-			});
+			byLogin.set(review.user.login, { user: review.user, status });
 		}
-		for (const request of parsed.data.reviewRequests ?? []) {
-			if (!request.login || byLogin.has(request.login)) continue;
-			byLogin.set(request.login, {
-				user: { login: request.login, avatar_url: avatarUrlForLogin(request.login), type: "User" },
-				status: REVIEWER_STATUS.REQUESTED,
-			});
+
+		// Reviewers requested but not yet reviewed come from the PR's requested_reviewers.
+		const rest = await fetchRestPullRequest(repoRoot, repo, prNumber);
+		for (const user of rest?.requested_reviewers ?? []) {
+			if (byLogin.has(user.login)) continue;
+			byLogin.set(user.login, { user, status: REVIEWER_STATUS.REQUESTED });
 		}
 
 		const reviewers = [...byLogin.values()];

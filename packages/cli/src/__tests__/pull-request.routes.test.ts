@@ -39,10 +39,37 @@ const PR_JSON = JSON.stringify({
 	headRefOid: SHA,
 	baseRefName: "main",
 });
-const REVIEWS_JSON = JSON.stringify({
-	latestReviews: [{ author: { login: "alice", is_bot: false }, state: "APPROVED" }],
-	reviewRequests: [{ login: "bob" }],
+// REST PR object: drives the author (real avatar/type) and requested_reviewers.
+const REST_PR_JSON = JSON.stringify({
+	user: {
+		login: "octocat",
+		type: "User",
+		avatar_url: "https://avatars.githubusercontent.com/u/583231?v=4",
+		html_url: "https://github.com/octocat",
+	},
+	requested_reviewers: [
+		{ login: "bob", type: "User", avatar_url: "https://avatars.githubusercontent.com/u/2?v=4" },
+	],
 });
+// REST reviews: a human approval plus a GitHub App (bot) review with a [bot] login.
+const REST_REVIEWS_JSON = JSON.stringify([
+	{
+		user: {
+			login: "alice",
+			type: "User",
+			avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+		},
+		state: "APPROVED",
+	},
+	{
+		user: {
+			login: "cursor[bot]",
+			type: "Bot",
+			avatar_url: "https://avatars.githubusercontent.com/in/1210556?v=4",
+		},
+		state: "COMMENTED",
+	},
+]);
 const CHECKS_JSON = JSON.stringify({
 	check_runs: [
 		{
@@ -107,6 +134,7 @@ afterEach(async () => {
 /** Fake `gh` that dispatches by argv to fixture files; exits 1 when a fixture is absent. */
 async function writeFakeGh(fixtures: {
 	pr?: string;
+	restPr?: string;
 	reviews?: string;
 	checks?: string;
 	merge?: string;
@@ -118,6 +146,7 @@ async function writeFakeGh(fixtures: {
 	};
 	await Promise.all([
 		write("pr.json", fixtures.pr),
+		write("rest-pr.json", fixtures.restPr),
 		write("reviews.json", fixtures.reviews),
 		write("checks.json", fixtures.checks),
 		write("merge.json", fixtures.merge),
@@ -126,10 +155,14 @@ async function writeFakeGh(fixtures: {
 dir="${dir}"
 emit() { [ -f "$dir/$1" ] && cat "$dir/$1" || exit 1; }
 all="$*"
-if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
-  case "$all" in *latestReviews*) emit reviews.json ;; *) emit pr.json ;; esac
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then emit pr.json
 elif [ "$1" = "api" ] && [ "$2" = "graphql" ]; then emit merge.json
-elif [ "$1" = "api" ]; then emit checks.json
+elif [ "$1" = "api" ]; then
+  case "$all" in
+    *check-runs*) emit checks.json ;;
+    */reviews*) emit reviews.json ;;
+    *) emit rest-pr.json ;;
+  esac
 else exit 1; fi
 `;
 	const file = path.join(binDir, "gh");
@@ -183,7 +216,7 @@ function request(port: number, p: string): Promise<{ status: number; body: strin
 
 describe("pull-request API", () => {
 	it("maps the gh PR payload onto the REST-shaped wire type", async () => {
-		await writeFakeGh({ pr: PR_JSON });
+		await writeFakeGh({ pr: PR_JSON, restPr: REST_PR_JSON });
 		const runId = insertRun(GITHUB_ORIGIN);
 		const res = await request(await start(), `/api/runs/${runId}/pull-request`);
 		expect(res.status).toBe(200);
@@ -196,7 +229,12 @@ describe("pull-request API", () => {
 			draft: false,
 			merged_at: null,
 			created_at: "2026-05-01T00:00:00Z",
-			user: { login: "octocat", avatar_url: "https://github.com/octocat.png", type: "User" },
+			// Author sourced from REST: real avatar_url, not a fabricated github.com/<login>.png.
+			user: {
+				login: "octocat",
+				type: "User",
+				avatar_url: "https://avatars.githubusercontent.com/u/583231?v=4",
+			},
 			head: { ref: "feature", sha: SHA },
 			base: { ref: "main" },
 		});
@@ -252,8 +290,8 @@ describe("pull-request API", () => {
 		expect(res.status).toBe(400);
 	});
 
-	it("summarizes reviews from latestReviews and reviewRequests", async () => {
-		await writeFakeGh({ reviews: REVIEWS_JSON });
+	it("maps reviews and requested reviewers, preserving bot identity from REST", async () => {
+		await writeFakeGh({ reviews: REST_REVIEWS_JSON, restPr: REST_PR_JSON });
 		const runId = insertRun(GITHUB_ORIGIN);
 		const res = await request(await start(), `/api/runs/${runId}/pull-request/reviews?number=7`);
 		expect(res.status).toBe(200);
@@ -261,11 +299,28 @@ describe("pull-request API", () => {
 		expect(reviews?.status).toBe("approved");
 		expect(reviews?.reviewers).toEqual([
 			{
-				user: { login: "alice", avatar_url: "https://github.com/alice.png", type: "User" },
+				user: {
+					login: "alice",
+					type: "User",
+					avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+				},
 				status: "APPROVED",
 			},
 			{
-				user: { login: "bob", avatar_url: "https://github.com/bob.png", type: "User" },
+				// Bot reviewer keeps its [bot] login, "Bot" type, and real app avatar.
+				user: {
+					login: "cursor[bot]",
+					type: "Bot",
+					avatar_url: "https://avatars.githubusercontent.com/in/1210556?v=4",
+				},
+				status: "COMMENTED",
+			},
+			{
+				user: {
+					login: "bob",
+					type: "User",
+					avatar_url: "https://avatars.githubusercontent.com/u/2?v=4",
+				},
 				status: "REQUESTED",
 			},
 		]);

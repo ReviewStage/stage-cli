@@ -110,13 +110,14 @@ export function pullRequestRoutes(db: StageDb): Route[] {
 			handler: async (req, res, params) => {
 				const run = resolveRun(db, params, res);
 				if (!run) return;
-				if (!requireRepo(run, res)) return;
+				const repo = requireRepo(run, res);
+				if (!repo) return;
 				const number = parseNumber(query(req, "number"));
 				if (number === null) {
 					writeJson(res, 400, { error: "Missing or invalid number" });
 					return;
 				}
-				const reviews = await getReviews(run.repoRoot, number);
+				const reviews = await getReviews(run.repoRoot, repo, number);
 				const body: ReviewsResponse = { reviews };
 				writeJson(res, 200, body);
 			},
