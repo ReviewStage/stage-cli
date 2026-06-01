@@ -18,6 +18,13 @@ interface PullRequestContextValue {
 
 const PullRequestContext = createContext<PullRequestContextValue | null>(null);
 
+// Stable reference for the settled-but-empty case, so the useMemo below doesn't
+// see a new object every render (which would re-render all context consumers).
+const EMPTY_REVIEW_SUMMARY: PullRequestReviewSummary = {
+	status: PULL_REQUEST_REVIEW_STATUS.NO_REVIEWS,
+	reviewers: [],
+};
+
 /** Parse `owner`/`repo` from a PR html_url (`https://github.com/owner/repo/pull/123`). */
 function parseOwnerRepo(htmlUrl: string): { owner: string; repo: string } {
 	const match = htmlUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\//);
@@ -44,7 +51,7 @@ export function PullRequestProvider({
 	// summary so the UI stops spinning and shows "no reviewers" instead.
 	const reviews: PullRequestReviewSummary | null = reviewsPending
 		? null
-		: (reviewsData?.reviews ?? { status: PULL_REQUEST_REVIEW_STATUS.NO_REVIEWS, reviewers: [] });
+		: (reviewsData?.reviews ?? EMPTY_REVIEW_SUMMARY);
 
 	const value = useMemo<PullRequestContextValue>(
 		() => ({

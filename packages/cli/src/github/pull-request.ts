@@ -305,11 +305,14 @@ export async function getReviews(
 			byLogin.set(review.user.login, { user: review.user, status });
 		}
 
-		// A currently-requested reviewer is awaiting (re-)review, which overrides any
-		// earlier submitted review — re-requesting someone who already approved should
-		// show "Awaiting review", not the stale approval.
+		// A currently-requested reviewer is awaiting (re-)review, which supersedes a
+		// stale approval/comment — re-requesting someone who already approved should
+		// show "Awaiting review". A standing CHANGES_REQUESTED review is the exception:
+		// it keeps blocking until the reviewer approves or it's dismissed, so don't
+		// downgrade it to "requested".
 		const rest = await fetchRestPullRequest(repoRoot, repo, prNumber);
 		for (const user of rest?.requested_reviewers ?? []) {
+			if (byLogin.get(user.login)?.status === REVIEWER_STATUS.CHANGES_REQUESTED) continue;
 			byLogin.set(user.login, { user, status: REVIEWER_STATUS.REQUESTED });
 		}
 

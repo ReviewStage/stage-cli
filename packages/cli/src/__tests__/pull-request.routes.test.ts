@@ -351,6 +351,31 @@ describe("pull-request API", () => {
 		expect(alice?.status).toBe("REQUESTED");
 	});
 
+	it("keeps a re-requested CHANGES_REQUESTED review blocking, not 'awaiting'", async () => {
+		const reviews = JSON.stringify([
+			[
+				{
+					user: { login: "carol", type: "User", avatar_url: "https://example.com/c.png" },
+					state: "CHANGES_REQUESTED",
+				},
+			],
+		]);
+		const restPr = JSON.stringify({
+			user: { login: "octocat", type: "User", avatar_url: "https://example.com/o.png" },
+			requested_reviewers: [
+				{ login: "carol", type: "User", avatar_url: "https://example.com/c.png" },
+			],
+		});
+		await writeFakeGh({ reviews, restPr });
+		const runId = insertRun(GITHUB_ORIGIN);
+		const res = await request(await start(), `/api/runs/${runId}/pull-request/reviews?number=7`);
+		const body = JSON.parse(res.body) as ReviewsResponse;
+		expect(body.reviews?.reviewers.find((r) => r.user.login === "carol")?.status).toBe(
+			"CHANGES_REQUESTED",
+		);
+		expect(body.reviews?.status).toBe("changes_requested");
+	});
+
 	it("maps the merge-status GraphQL response", async () => {
 		await writeFakeGh({ merge: MERGE_JSON });
 		const runId = insertRun(GITHUB_ORIGIN);
