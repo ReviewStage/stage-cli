@@ -24,7 +24,8 @@ export function usePullRequestStatusActions({ runId, pullRequest }: Options) {
 			await invalidate();
 			toast.success(pullRequest.draft ? "Marked as ready for review" : "Converted to draft");
 		},
-		onError: () => toast.error("Failed to update draft status"),
+		onError: (error) =>
+			toast.error(error instanceof Error ? error.message : "Failed to update draft status"),
 	});
 
 	const closeMutation = useMutation({
@@ -34,9 +35,9 @@ export function usePullRequestStatusActions({ runId, pullRequest }: Options) {
 			setShowCloseDialog(false);
 			toast.success("Pull request closed");
 		},
-		onError: () => {
+		onError: (error) => {
 			setShowCloseDialog(false);
-			toast.error("Failed to close pull request");
+			toast.error(error instanceof Error ? error.message : "Failed to close pull request");
 		},
 	});
 
@@ -46,7 +47,8 @@ export function usePullRequestStatusActions({ runId, pullRequest }: Options) {
 			await invalidate();
 			toast.success("Pull request reopened");
 		},
-		onError: () => toast.error("Failed to reopen pull request"),
+		onError: (error) =>
+			toast.error(error instanceof Error ? error.message : "Failed to reopen pull request"),
 	});
 
 	const toggleDraft = () => {
