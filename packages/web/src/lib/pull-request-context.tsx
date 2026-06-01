@@ -1,4 +1,8 @@
-import type { GitHubPullRequest, PullRequestReviewSummary } from "@stagereview/types/pull-request";
+import {
+	type GitHubPullRequest,
+	PULL_REQUEST_REVIEW_STATUS,
+	type PullRequestReviewSummary,
+} from "@stagereview/types/pull-request";
 import { createContext, type ReactNode, use, useMemo } from "react";
 import { usePullRequestReviews } from "@/lib/use-pull-request";
 
@@ -29,8 +33,18 @@ export function PullRequestProvider({
 	pullRequest: GitHubPullRequest;
 	children: ReactNode;
 }) {
-	const { data: reviewsData } = usePullRequestReviews(runId, pullRequest.number);
+	const { data: reviewsData, isPending: reviewsPending } = usePullRequestReviews(
+		runId,
+		pullRequest.number,
+	);
 	const { owner, repo } = parseOwnerRepo(pullRequest.html_url);
+
+	// `null` means "still loading" to consumers (Reviewers shows a spinner). Once the
+	// query settles — even if gh failed and returned no summary — fall back to an empty
+	// summary so the UI stops spinning and shows "no reviewers" instead.
+	const reviews: PullRequestReviewSummary | null = reviewsPending
+		? null
+		: (reviewsData?.reviews ?? { status: PULL_REQUEST_REVIEW_STATUS.NO_REVIEWS, reviewers: [] });
 
 	const value = useMemo<PullRequestContextValue>(
 		() => ({
@@ -40,9 +54,9 @@ export function PullRequestProvider({
 			number: pullRequest.number,
 			headSha: pullRequest.head.sha,
 			pullRequest,
-			reviews: reviewsData?.reviews ?? null,
+			reviews,
 		}),
-		[runId, owner, repo, pullRequest, reviewsData],
+		[runId, owner, repo, pullRequest, reviews],
 	);
 
 	return <PullRequestContext value={value}>{children}</PullRequestContext>;

@@ -221,13 +221,21 @@ export async function getChecks(
 		deploymentLinks: [],
 	};
 	try {
+		// `--slurp` wraps every page into one JSON array (`[{page}, {page}, …]`);
+		// without it, `--paginate` concatenates raw page objects, which isn't valid
+		// JSON for a multi-page response.
 		const stdout = await gh(
-			["api", `repos/${repo.owner}/${repo.repo}/commits/${headSha}/check-runs`, "--paginate"],
+			[
+				"api",
+				`repos/${repo.owner}/${repo.repo}/commits/${headSha}/check-runs`,
+				"--paginate",
+				"--slurp",
+			],
 			repoRoot,
 		);
-		const parsed = GhCheckRunsSchema.safeParse(JSON.parse(stdout));
+		const parsed = z.array(GhCheckRunsSchema).safeParse(JSON.parse(stdout));
 		if (!parsed.success) return empty;
-		const items = parsed.data.check_runs.map(toCheckItem);
+		const items = parsed.data.flatMap((page) => page.check_runs).map(toCheckItem);
 		return { state: deriveCiState(items), items, deploymentLinks: [] };
 	} catch {
 		return empty;
@@ -264,18 +272,36 @@ export async function getReviews(
 	prNumber: number,
 ): Promise<PullRequestReviewSummary | null> {
 	try {
+		// `--paginate --slurp` returns one array per page (`[[…], […]]`); flatten to
+		// the full chronological review list so PRs with >30 reviews aren't truncated.
 		const stdout = await gh(
-			["api", `repos/${repo.owner}/${repo.repo}/pulls/${prNumber}/reviews`],
+			[
+				"api",
+				`repos/${repo.owner}/${repo.repo}/pulls/${prNumber}/reviews`,
+				"--paginate",
+				"--slurp",
+			],
 			repoRoot,
 		);
-		const parsed = z.array(RestReviewSchema).safeParse(JSON.parse(stdout));
+		const parsed = z.array(z.array(RestReviewSchema)).safeParse(JSON.parse(stdout));
 		if (!parsed.success) return null;
 
 		const byLogin = new Map<string, Reviewer>();
-		for (const review of parsed.data) {
+		for (const review of parsed.data.flat()) {
 			if (!review.user) continue;
 			const status = reviewerStatusFor(review.state);
 			if (!status) continue;
+			// A later COMMENTED review doesn't supersede a reviewer's standing
+			// APPROVED/CHANGES_REQUESTED decision, matching GitHub's effective state.
+			const existing = byLogin.get(review.user.login);
+			if (
+				existing &&
+				status === REVIEWER_STATUS.COMMENTED &&
+				(existing.status === REVIEWER_STATUS.APPROVED ||
+					existing.status === REVIEWER_STATUS.CHANGES_REQUESTED)
+			) {
+				continue;
+			}
 			byLogin.set(review.user.login, { user: review.user, status });
 		}
 

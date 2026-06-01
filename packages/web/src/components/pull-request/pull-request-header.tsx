@@ -94,9 +94,10 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 	const hasChecks = checksData && checksData.items.length > 0;
 
 	const copyToClipboard = useCallback((text: string, label: string) => {
-		navigator.clipboard.writeText(text).then(() => {
-			toast.success(`Copied ${label} to clipboard`);
-		});
+		navigator.clipboard.writeText(text).then(
+			() => toast.success(`Copied ${label} to clipboard`),
+			() => toast.error("Failed to copy to clipboard"),
+		);
 	}, []);
 
 	const copyBranchName = useCallback(() => {

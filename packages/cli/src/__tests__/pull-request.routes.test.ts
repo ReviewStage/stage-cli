@@ -51,39 +51,44 @@ const REST_PR_JSON = JSON.stringify({
 		{ login: "bob", type: "User", avatar_url: "https://avatars.githubusercontent.com/u/2?v=4" },
 	],
 });
+// `gh api --paginate --slurp` shape: one array element per page.
 // REST reviews: a human approval plus a GitHub App (bot) review with a [bot] login.
 const REST_REVIEWS_JSON = JSON.stringify([
-	{
-		user: {
-			login: "alice",
-			type: "User",
-			avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
-		},
-		state: "APPROVED",
-	},
-	{
-		user: {
-			login: "cursor[bot]",
-			type: "Bot",
-			avatar_url: "https://avatars.githubusercontent.com/in/1210556?v=4",
-		},
-		state: "COMMENTED",
-	},
-]);
-const CHECKS_JSON = JSON.stringify({
-	check_runs: [
+	[
 		{
-			id: 1,
-			name: "build",
-			status: "completed",
-			conclusion: "success",
-			started_at: "2026-05-01T00:00:00Z",
-			completed_at: "2026-05-01T00:01:00Z",
-			html_url: "https://example.com/run/1",
-			app: { name: "GitHub Actions", owner: { avatar_url: "https://example.com/a.png" } },
+			user: {
+				login: "alice",
+				type: "User",
+				avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+			},
+			state: "APPROVED",
+		},
+		{
+			user: {
+				login: "cursor[bot]",
+				type: "Bot",
+				avatar_url: "https://avatars.githubusercontent.com/in/1210556?v=4",
+			},
+			state: "COMMENTED",
 		},
 	],
-});
+]);
+const CHECKS_JSON = JSON.stringify([
+	{
+		check_runs: [
+			{
+				id: 1,
+				name: "build",
+				status: "completed",
+				conclusion: "success",
+				started_at: "2026-05-01T00:00:00Z",
+				completed_at: "2026-05-01T00:01:00Z",
+				html_url: "https://example.com/run/1",
+				app: { name: "GitHub Actions", owner: { avatar_url: "https://example.com/a.png" } },
+			},
+		],
+	},
+]);
 const MERGE_JSON = JSON.stringify({
 	data: {
 		repository: {
