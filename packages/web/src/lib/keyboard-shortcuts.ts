@@ -50,6 +50,13 @@ export const KEYBOARD_SHORTCUTS = {
 		mac: { label: "v", ariaKeyshortcuts: "V" },
 		nonMac: { label: "v", ariaKeyshortcuts: "V" },
 	},
+	COPY_BRANCH_NAME: {
+		hotkey: "shift+c",
+		description: "Copy branch name",
+		group: "Review",
+		mac: { label: "⇧ C", ariaKeyshortcuts: "Shift+C" },
+		nonMac: { label: "Shift C", ariaKeyshortcuts: "Shift+C" },
+	},
 } as const;
 
 export type ShortcutKey = keyof typeof KEYBOARD_SHORTCUTS;

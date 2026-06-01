@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 import { KeyboardShortcutsDialog } from "@/components/keyboard/shortcuts-dialog";
+import { Toaster } from "@/components/ui/sonner";
 
 export const Route = createRootRouteWithContext<{
 	queryClient: QueryClient;
@@ -13,6 +14,7 @@ function RootLayout() {
 		<div className="flex min-h-screen flex-col bg-background text-foreground">
 			<Outlet />
 			<KeyboardShortcutsDialog />
+			<Toaster />
 		</div>
 	);
 }

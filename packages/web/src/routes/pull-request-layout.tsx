@@ -2,6 +2,7 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { BookOpen, FileText, FoldVertical, Settings2, UnfoldVertical } from "lucide-react";
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { DiffSettingsForm } from "@/components/diff/diff-settings-form";
+import { PullRequestHeader } from "@/components/pull-request/pull-request-header";
 import { SectionLabel } from "@/components/pull-request/section-label";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,8 +10,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ChapterProvider } from "@/lib/chapter-context";
 import { CollapseActionsProvider, useCollapseActionsFromNav } from "@/lib/collapse-actions-context";
 import { useFileDiffEntries } from "@/lib/parse-diff";
+import { PullRequestProvider } from "@/lib/pull-request-context";
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
+import { usePullRequest, usePullRequestMergeStatus } from "@/lib/use-pull-request";
 import { countViewedChapters, useViewStateData } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
 
@@ -108,6 +111,18 @@ function ErrorState({ error }: { error: unknown }) {
 
 export function PullRequestLayout({ runId }: { runId: string }) {
 	const { data, error } = useChapters(runId);
+	const { data: prData } = usePullRequest(runId);
+	const pullRequest = prData?.pullRequest ?? null;
+	const isPrOpen =
+		pullRequest !== null &&
+		pullRequest.state === "open" &&
+		!pullRequest.merged_at &&
+		!pullRequest.draft;
+	const { data: mergeStatusData } = usePullRequestMergeStatus(
+		runId,
+		pullRequest?.number ?? null,
+		isPrOpen,
+	);
 	const activeTab = useRouterState({
 		select: (state): PrTab => {
 			const routeIds = new Set(state.matches.map((match) => match.routeId));
@@ -185,12 +200,23 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		<CollapseActionsProvider>
 			<div className="@container flex flex-1 flex-col" style={layoutStyle}>
 				<div className="flex-1 px-6 pt-6 lg:px-8">
-					<header className="mb-4 space-y-1">
-						<SectionLabel>Run</SectionLabel>
-						<p className="break-all font-mono text-foreground/80 text-xs">
-							{data?.run.id ?? runId}
-						</p>
-					</header>
+					{pullRequest ? (
+						<div className="mb-4">
+							<PullRequestProvider runId={runId} pullRequest={pullRequest}>
+								<PullRequestHeader
+									pullRequest={pullRequest}
+									mergeInfo={mergeStatusData?.mergeStatus ?? undefined}
+								/>
+							</PullRequestProvider>
+						</div>
+					) : (
+						<header className="mb-4 space-y-1">
+							<SectionLabel>Run</SectionLabel>
+							<p className="break-all font-mono text-foreground/80 text-xs">
+								{data?.run.id ?? runId}
+							</p>
+						</header>
+					)}
 					<nav
 						ref={navRef}
 						className="-mx-6 lg:-mx-8 sticky top-12 z-20 mb-6 flex items-center justify-between gap-4 bg-background px-6 lg:px-8 py-2"
