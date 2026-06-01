@@ -82,6 +82,7 @@ function send(
 	method: string,
 	p: string,
 	body: unknown,
+	extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; body: string }> {
 	return new Promise((resolve, reject) => {
 		const payload = JSON.stringify(body);
@@ -95,6 +96,7 @@ function send(
 				headers: {
 					"Content-Type": "application/json",
 					"Content-Length": Buffer.byteLength(payload),
+					...extraHeaders,
 				},
 			},
 			(res) => {
@@ -182,6 +184,38 @@ describe("pull-request mutation API", () => {
 			"pr edit 7 --add-reviewer alice,bob",
 			"pr edit 7 --remove-reviewer bob",
 		]);
+	});
+
+	it("rejects a cross-origin mutation (CSRF guard) without invoking gh", async () => {
+		const runId = insertRun();
+		const port = await start();
+		const res = await send(
+			port,
+			"POST",
+			`/api/runs/${runId}/pull-request/close`,
+			{ number: 7 },
+			{
+				Origin: "https://evil.example",
+			},
+		);
+		expect(res.status).toBe(403);
+		expect(await ghArgs()).toEqual([]);
+	});
+
+	it("allows a mutation from a loopback origin", async () => {
+		const runId = insertRun();
+		const port = await start();
+		const res = await send(
+			port,
+			"POST",
+			`/api/runs/${runId}/pull-request/close`,
+			{ number: 7 },
+			{
+				Origin: `http://127.0.0.1:${port}`,
+			},
+		);
+		expect(res.status).toBe(200);
+		expect(await ghArgs()).toEqual(["pr close 7"]);
 	});
 
 	it("rejects an invalid body", async () => {

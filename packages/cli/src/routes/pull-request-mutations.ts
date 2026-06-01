@@ -17,7 +17,7 @@ import {
 } from "../github/index.js";
 import type { Route, RouteHandler } from "../server.js";
 import { readJsonBody, writeJson } from "./json.js";
-import { requireRepo, resolveRun } from "./pull-request-shared.js";
+import { enforceSameOrigin, requireRepo, resolveRun } from "./pull-request-shared.js";
 
 type Req = Parameters<RouteHandler>[0];
 type Res = Parameters<RouteHandler>[1];
@@ -66,6 +66,7 @@ export function pullRequestMutationRoutes(db: StageDb): Route[] {
 			method: "PATCH",
 			pattern: "/api/runs/:runId/pull-request/title",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const input = await parseBody(req, res, titleInput);
@@ -77,6 +78,7 @@ export function pullRequestMutationRoutes(db: StageDb): Route[] {
 			method: "POST",
 			pattern: "/api/runs/:runId/pull-request/close",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const input = await parseBody(req, res, numberInput);
@@ -88,6 +90,7 @@ export function pullRequestMutationRoutes(db: StageDb): Route[] {
 			method: "POST",
 			pattern: "/api/runs/:runId/pull-request/reopen",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const input = await parseBody(req, res, numberInput);
@@ -99,6 +102,7 @@ export function pullRequestMutationRoutes(db: StageDb): Route[] {
 			method: "POST",
 			pattern: "/api/runs/:runId/pull-request/draft",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const input = await parseBody(req, res, draftInput);
@@ -110,6 +114,7 @@ export function pullRequestMutationRoutes(db: StageDb): Route[] {
 			method: "POST",
 			pattern: "/api/runs/:runId/pull-request/merge",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const input = await parseBody(req, res, mergeInput);
@@ -123,6 +128,7 @@ export function pullRequestMutationRoutes(db: StageDb): Route[] {
 			method: "POST",
 			pattern: "/api/runs/:runId/pull-request/auto-merge",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const input = await parseBody(req, res, autoMergeInput);
@@ -142,6 +148,7 @@ export function pullRequestMutationRoutes(db: StageDb): Route[] {
 			method: "POST",
 			pattern: "/api/runs/:runId/pull-request/reviewers",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const input = await parseBody(req, res, reviewersInput);
@@ -153,6 +160,7 @@ export function pullRequestMutationRoutes(db: StageDb): Route[] {
 			method: "DELETE",
 			pattern: "/api/runs/:runId/pull-request/reviewers",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const input = await parseBody(req, res, reviewersInput);
