@@ -1,6 +1,8 @@
 import {
 	type ChecksResponse,
 	ChecksResponseSchema,
+	type CollaboratorsResponse,
+	CollaboratorsResponseSchema,
 	type MergeStatusResponse,
 	MergeStatusResponseSchema,
 	type PullRequestResponse,
@@ -73,5 +75,16 @@ export function usePullRequestMergeStatus(runId: string, number: number | null, 
 							await jsonFetch(prPath(runId, `/merge-status?number=${number}`)),
 						),
 		...LIVE,
+	});
+}
+
+export function usePullRequestCollaborators(runId: string, enabled: boolean) {
+	return useQuery<CollaboratorsResponse>({
+		queryKey: ["pull-request-collaborators", runId],
+		queryFn: !enabled
+			? skipToken
+			: async () =>
+					CollaboratorsResponseSchema.parse(await jsonFetch(prPath(runId, "/collaborators"))),
+		staleTime: 5 * 60 * 1000,
 	});
 }
