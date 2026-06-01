@@ -79,7 +79,7 @@ Examples:
 
 ### `.stageignore`
 
-Add a `.stageignore` file to your repo root to exclude files from the diff analysis. Uses glob patterns, one per line:
+Add a `.stageignore` file to your repo root to exclude files from the diff analysis. Uses `.gitignore`-style patterns, one per line:
 
 ```
 # Build artifacts

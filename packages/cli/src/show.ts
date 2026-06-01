@@ -4,7 +4,7 @@ import open from "open";
 import { buildOtherChangesChapter } from "./build-other-changes.js";
 import { closeDb, getDb } from "./db/client.js";
 import { parseGitDiff } from "./diff-parser.js";
-import { filterFilesForLlm, loadStageIgnorePatterns } from "./filter-files.js";
+import { filterFilesForLlm, loadStageIgnore } from "./filter-files.js";
 import { type ResolveScopeOptions, readRepoContext, readRepoRoot, resolveScope } from "./git.js";
 import { diffRoutes } from "./routes/diff.js";
 import { runRoutes } from "./routes/runs.js";
@@ -90,8 +90,8 @@ function assembleChaptersFile(
 	};
 	const { scope, rawDiff } = resolveScope(options);
 	const allFiles = parseGitDiff(rawDiff);
-	const stageIgnorePatterns = loadStageIgnorePatterns(readRepoRoot());
-	const { files: filteredFiles, excludedByPath } = filterFilesForLlm(allFiles, stageIgnorePatterns);
+	const stageIgnore = loadStageIgnore(readRepoRoot());
+	const { files: filteredFiles, excludedByPath } = filterFilesForLlm(allFiles, stageIgnore);
 
 	validateHunkCoverage(filteredFiles, agentOutput.chapters);
 	const sanitized = sanitizeLineRefs(agentOutput.chapters, filteredFiles);

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { PullRequestFile } from "@stagereview/types/parsed-diff";
-import picomatch from "picomatch";
+import ignore, { type Ignore } from "ignore";
 
 const IGNORED_FILENAMES = new Set([
 	"package-lock.json",
@@ -48,59 +48,15 @@ export function shouldIncludeFile(filePath: string): boolean {
 }
 
 /**
- * Load exclusion patterns from a `.stageignore` file in the repo root.
- * Format follows `.gitignore` conventions: one glob pattern per line,
- * blank lines and `#` comments are ignored. Prefix a pattern with `!`
- * to negate (re-include) a previously excluded match.
+ * Load a `.stageignore` file from the repo root into an `Ignore` matcher.
+ * Returns `null` when the file is absent. Parsing, comments, blank lines,
+ * negation, and anchoring semantics all follow `.gitignore` via the
+ * `ignore` package.
  */
-export function loadStageIgnorePatterns(repoRoot: string): string[] {
+export function loadStageIgnore(repoRoot: string): Ignore | null {
 	const ignorePath = path.join(repoRoot, ".stageignore");
-	if (!existsSync(ignorePath)) return [];
-	const content = readFileSync(ignorePath, "utf8");
-	return content
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line !== "" && !line.startsWith("#"));
-}
-
-interface CompiledPattern {
-	negated: boolean;
-	matcher: picomatch.Matcher;
-}
-
-/**
- * Pre-compile `.stageignore` patterns into matchers. Patterns without a
- * slash use `matchBase` so bare globs like `*.generated.ts` match in
- * subdirectories. Patterns with a slash match the full path. Patterns
- * prefixed with `!` negate a previous match (`.gitignore` semantics:
- * last matching pattern wins).
- */
-export function compileIgnorePatterns(patterns: string[]): CompiledPattern[] {
-	const compiled: CompiledPattern[] = [];
-	for (const raw of patterns) {
-		const negated = raw.startsWith("!");
-		const stripped = negated ? raw.slice(1) : raw;
-		const rooted = stripped.startsWith("/");
-		const unrooted = rooted ? stripped.slice(1) : stripped;
-		const glob = unrooted.endsWith("/") ? `${unrooted}**` : unrooted;
-		if (!glob) continue;
-		const useMatchBase = !rooted && !glob.includes("/");
-		compiled.push({
-			negated,
-			matcher: picomatch(glob, { dot: true, matchBase: useMatchBase }),
-		});
-	}
-	return compiled;
-}
-
-function isIgnoredByPatterns(filePath: string, compiled: CompiledPattern[]): boolean {
-	let ignored = false;
-	for (const { negated, matcher } of compiled) {
-		if (matcher(filePath)) {
-			ignored = !negated;
-		}
-	}
-	return ignored;
+	if (!existsSync(ignorePath)) return null;
+	return ignore().add(readFileSync(ignorePath, "utf8"));
 }
 
 export interface FilterFilesResult {
@@ -110,18 +66,13 @@ export interface FilterFilesResult {
 
 export function filterFilesForLlm(
 	files: PullRequestFile[],
-	stageIgnorePatterns?: string[],
+	stageIgnore?: Ignore | null,
 ): FilterFilesResult {
-	const compiled =
-		stageIgnorePatterns && stageIgnorePatterns.length > 0
-			? compileIgnorePatterns(stageIgnorePatterns)
-			: null;
-
 	const excludedByPath: string[] = [];
 	const reviewable: PullRequestFile[] = [];
 
 	for (const file of files) {
-		if (!shouldIncludeFile(file.path) || (compiled && isIgnoredByPatterns(file.path, compiled))) {
+		if (!shouldIncludeFile(file.path) || stageIgnore?.ignores(file.path)) {
 			excludedByPath.push(file.path);
 			continue;
 		}
