@@ -8,6 +8,7 @@ import { filterFilesForLlm, loadStageIgnore } from "./filter-files.js";
 import { type ResolveScopeOptions, readRepoContext, readRepoRoot, resolveScope } from "./git.js";
 import { diffRoutes } from "./routes/diff.js";
 import { pullRequestRoutes } from "./routes/pull-request.js";
+import { pullRequestMutationRoutes } from "./routes/pull-request-mutations.js";
 import { runRoutes } from "./routes/runs.js";
 import { viewStateRoutes } from "./routes/view-state.js";
 import { insertChaptersFile } from "./runs/import-chapters.js";
@@ -34,7 +35,13 @@ export async function show(
 	const { runId } = insertChaptersFile(db, chaptersFile, readRepoContext());
 
 	const handle = await startServer({
-		routes: [...runRoutes(db), ...viewStateRoutes(db), ...diffRoutes(db), ...pullRequestRoutes(db)],
+		routes: [
+			...runRoutes(db),
+			...viewStateRoutes(db),
+			...diffRoutes(db),
+			...pullRequestRoutes(db),
+			...pullRequestMutationRoutes(db),
+		],
 	});
 	const { port } = handle;
 	const url = `http://${LOOPBACK_HOST}:${port}/runs/${encodeURIComponent(runId)}`;

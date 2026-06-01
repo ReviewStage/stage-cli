@@ -200,6 +200,11 @@ export const ReviewsResponseSchema = z.object({
 });
 export type ReviewsResponse = z.infer<typeof ReviewsResponseSchema>;
 
+export const CollaboratorsResponseSchema = z.object({
+	collaborators: z.array(ReviewUserSchema),
+});
+export type CollaboratorsResponse = z.infer<typeof CollaboratorsResponseSchema>;
+
 // ─── Merge status ─────────────────────────────────────────────────────────────
 
 export const MergeQueueEntrySchema = z.object({

@@ -1,76 +1,14 @@
-import path from "node:path";
 import type {
 	ChecksResponse,
 	MergeStatusResponse,
 	PullRequestResponse,
 	ReviewsResponse,
 } from "@stagereview/types/pull-request";
-import { eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
-import { chapterRun } from "../db/schema/index.js";
-import {
-	type GitHubRepo,
-	getChecks,
-	getMergeStatus,
-	getPullRequest,
-	getReviews,
-	parseGitHubRepo,
-} from "../github/index.js";
-import type { Route, RouteHandler, RouteParams } from "../server.js";
+import { getChecks, getMergeStatus, getPullRequest, getReviews } from "../github/index.js";
+import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
-
-interface RunRepo {
-	repoRoot: string;
-	originUrl: string | null;
-}
-
-/** Resolve a run's repo context, writing the matching error response on failure. */
-function resolveRun(
-	db: StageDb,
-	params: RouteParams,
-	res: Parameters<RouteHandler>[1],
-): RunRepo | null {
-	const runId = params.runId;
-	if (!runId) {
-		writeJson(res, 400, { error: "Missing runId" });
-		return null;
-	}
-	const [run] = db.select().from(chapterRun).where(eq(chapterRun.id, runId)).limit(1).all();
-	if (!run) {
-		writeJson(res, 404, { error: `Run ${runId} not found` });
-		return null;
-	}
-	const repoRoot = run.repoRoot;
-	if (!path.isAbsolute(repoRoot) || repoRoot.split(path.sep).includes("..")) {
-		writeJson(res, 500, {
-			error: "Run repoRoot is not an absolute path or contains traversal segments",
-		});
-		return null;
-	}
-	return { repoRoot, originUrl: run.originUrl };
-}
-
-function requireRepo(run: RunRepo, res: Parameters<RouteHandler>[1]): GitHubRepo | null {
-	const repo = parseGitHubRepo(run.originUrl);
-	if (!repo) {
-		writeJson(res, 404, { error: "Run is not associated with a GitHub remote" });
-		return null;
-	}
-	return repo;
-}
-
-function query(req: Parameters<RouteHandler>[0], key: string): string | null {
-	const url = req.url ?? "";
-	const qIdx = url.indexOf("?");
-	if (qIdx < 0) return null;
-	return new URLSearchParams(url.slice(qIdx + 1)).get(key);
-}
-
-function parseNumber(value: string | null): number | null {
-	if (value === null) return null;
-	const n = Number(value);
-	return Number.isInteger(n) && n > 0 ? n : null;
-}
+import { parseNumber, query, requireRepo, resolveRun } from "./pull-request-shared.js";
 
 const SHA_RE = /^[0-9a-f]{40}$/i;
 
