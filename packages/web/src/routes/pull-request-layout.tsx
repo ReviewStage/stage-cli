@@ -3,6 +3,7 @@ import { BookOpen, FileText, FoldVertical, Settings2, UnfoldVertical } from "luc
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { DiffSettingsForm } from "@/components/diff/diff-settings-form";
 import { PullRequestHeader } from "@/components/pull-request/pull-request-header";
+import { PullRequestHeaderSkeleton } from "@/components/pull-request/pull-request-header-skeleton";
 import { SectionLabel } from "@/components/pull-request/section-label";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -111,7 +112,7 @@ function ErrorState({ error }: { error: unknown }) {
 
 export function PullRequestLayout({ runId }: { runId: string }) {
 	const { data, error } = useChapters(runId);
-	const { data: prData } = usePullRequest(runId);
+	const { data: prData, isLoading: isPrLoading } = usePullRequest(runId);
 	const pullRequest = prData?.pullRequest ?? null;
 	const isPrOpen =
 		pullRequest !== null &&
@@ -200,7 +201,11 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		<CollapseActionsProvider>
 			<div className="@container flex flex-1 flex-col" style={layoutStyle}>
 				<div className="flex-1 px-6 pt-6 lg:px-8">
-					{pullRequest ? (
+					{isPrLoading ? (
+						<div className="mb-4">
+							<PullRequestHeaderSkeleton />
+						</div>
+					) : pullRequest ? (
 						<div className="mb-4">
 							<PullRequestProvider runId={runId} pullRequest={pullRequest}>
 								<PullRequestHeader
