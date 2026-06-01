@@ -225,4 +225,29 @@ describe("pull-request mutation API", () => {
 		});
 		expect(res.status).toBe(400);
 	});
+
+	it("returns 400 (not 500) for a malformed JSON body", async () => {
+		const runId = insertRun();
+		const port = await start();
+		const res = await new Promise<{ status: number }>((resolve, reject) => {
+			const req = http.request(
+				{
+					hostname: LOOPBACK_HOST,
+					port,
+					method: "POST",
+					path: `/api/runs/${runId}/pull-request/close`,
+					agent: false,
+					headers: { "Content-Type": "application/json" },
+				},
+				(r) => {
+					r.on("data", () => {});
+					r.on("end", () => resolve({ status: r.statusCode ?? 0 }));
+				},
+			);
+			req.on("error", reject);
+			req.end("{ not valid json");
+		});
+		expect(res.status).toBe(400);
+		expect(await ghArgs()).toEqual([]);
+	});
 });

@@ -42,7 +42,16 @@ const autoMergeInput = z.object({
 const reviewersInput = z.object({ number: numberField, reviewers: z.array(z.string()).min(1) });
 
 async function parseBody<T>(req: Req, res: Res, schema: z.ZodType<T>): Promise<T | null> {
-	const parsed = schema.safeParse(await readJsonBody(req));
+	let raw: unknown;
+	try {
+		raw = await readJsonBody(req);
+	} catch {
+		// Malformed JSON throws inside readJsonBody — return 400 rather than letting
+		// it escape to the server's plain-text 500 catch-all.
+		writeJson(res, 400, { error: "Invalid request body" });
+		return null;
+	}
+	const parsed = schema.safeParse(raw);
 	if (!parsed.success) {
 		writeJson(res, 400, { error: "Invalid request body" });
 		return null;
