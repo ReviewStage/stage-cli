@@ -14,7 +14,7 @@ import {
 	reopenPullRequest,
 	setAutoMerge,
 	setDraft,
-} from "../github-mutations.js";
+} from "../github/index.js";
 import type { Route, RouteHandler } from "../server.js";
 import { readJsonBody, writeJson } from "./json.js";
 import { requireRepo, resolveRun } from "./pull-request-shared.js";

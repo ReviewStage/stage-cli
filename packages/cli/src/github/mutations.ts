@@ -4,14 +4,14 @@ import {
 	PULL_REQUEST_MERGE_METHOD,
 	type PullRequestMergeMethod,
 } from "@stagereview/types/pull-request";
-import type { GitHubRepo } from "./github/index.js";
+import type { GitHubRepo } from "./repo.js";
 
 const execFileAsync = promisify(execFile);
 
 /**
  * Run a `gh` write command in `repoRoot`. Unlike the read adapters in
- * github.ts (which swallow errors to null), writes surface failures so the UI
- * can toast them — the user explicitly asked to mutate their PR.
+ * pull-request.ts (which swallow errors to null), writes surface failures so
+ * the UI can toast them — the user explicitly asked to mutate their PR.
  */
 async function ghWrite(args: string[], repoRoot: string): Promise<void> {
 	try {
