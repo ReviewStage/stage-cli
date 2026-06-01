@@ -174,18 +174,18 @@ function MergeActions({
 							} else {
 								autoMergeMutation.mutate({ owner, repo, number, enabled: true, mergeMethod });
 							}
-						} else {
-							if (mergeInfo.isInMergeQueue && mergeInfo.entry) {
-								dequeueMutation.mutate({
-									owner,
-									repo,
-									number,
-									mergeQueueEntryId: mergeInfo.entry.id,
-								});
-							}
-							if (mergeInfo.autoMergeEnabled) {
-								autoMergeMutation.mutate({ owner, repo, number, enabled: false });
-							}
+						} else if (mergeInfo.isInMergeQueue && mergeInfo.entry) {
+							dequeueMutation.mutate({
+								owner,
+								repo,
+								number,
+								mergeQueueEntryId: mergeInfo.entry.id,
+							});
+						} else if (mergeInfo.autoMergeEnabled) {
+							// `else if`: both dequeue and disabling auto-merge map to the same
+							// `gh pr merge --disable-auto` here, so fire only one to avoid a
+							// duplicate request (and a spurious error toast on the second).
+							autoMergeMutation.mutate({ owner, repo, number, enabled: false });
 						}
 					}}
 				/>

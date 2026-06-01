@@ -155,6 +155,18 @@ describe("pull-request mutation API", () => {
 		expect(await ghArgs()).toEqual(["pr merge 7 --auto --merge", "pr merge 7 --disable-auto"]);
 	});
 
+	it("forwards expectedHeadOid to gh as --match-head-commit when enabling auto-merge", async () => {
+		const runId = insertRun();
+		const res = await send(await start(), "POST", `/api/runs/${runId}/pull-request/auto-merge`, {
+			number: 7,
+			enabled: true,
+			mergeMethod: "SQUASH",
+			expectedHeadOid: SHA,
+		});
+		expect(res.status).toBe(200);
+		expect(await ghArgs()).toEqual([`pr merge 7 --auto --squash --match-head-commit ${SHA}`]);
+	});
+
 	it("adds and removes reviewers via gh pr edit", async () => {
 		const runId = insertRun();
 		const port = await start();

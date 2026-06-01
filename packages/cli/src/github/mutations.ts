@@ -70,10 +70,13 @@ export function setAutoMerge(
 	number: number,
 	enabled: boolean,
 	mergeMethod?: PullRequestMergeMethod,
+	expectedHeadOid?: string,
 ): Promise<void> {
 	if (!enabled) return ghWrite(["pr", "merge", String(number), "--disable-auto"], repoRoot);
 	const args = ["pr", "merge", String(number), "--auto"];
 	if (mergeMethod) args.push(MERGE_METHOD_FLAG[mergeMethod]);
+	// Guard against enabling auto-merge for a stale head the user hasn't seen.
+	if (expectedHeadOid) args.push("--match-head-commit", expectedHeadOid);
 	return ghWrite(args, repoRoot);
 }
 

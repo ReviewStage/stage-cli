@@ -37,6 +37,7 @@ const autoMergeInput = z.object({
 	number: numberField,
 	enabled: z.boolean(),
 	mergeMethod: mergeMethod.optional(),
+	expectedHeadOid: z.string().optional(),
 });
 const reviewersInput = z.object({ number: numberField, reviewers: z.array(z.string()).min(1) });
 
@@ -127,7 +128,13 @@ export function pullRequestMutationRoutes(db: StageDb): Route[] {
 				const input = await parseBody(req, res, autoMergeInput);
 				if (!input) return;
 				await runMutation(res, () =>
-					setAutoMerge(run.repoRoot, input.number, input.enabled, input.mergeMethod),
+					setAutoMerge(
+						run.repoRoot,
+						input.number,
+						input.enabled,
+						input.mergeMethod,
+						input.expectedHeadOid,
+					),
 				);
 			},
 		},

@@ -1,22 +1,39 @@
 import type { PullRequestMergeMethod } from "@stagereview/types/pull-request";
 import { useQueryClient } from "@tanstack/react-query";
-import { jsonFetch } from "@/lib/use-view-state";
 
 function prPath(runId: string, suffix: string): string {
 	return `/api/runs/${encodeURIComponent(runId)}/pull-request${suffix}`;
 }
 
-function write(
+async function write(
 	runId: string,
 	suffix: string,
 	method: "POST" | "PATCH" | "DELETE",
 	body: Record<string, unknown>,
 ): Promise<unknown> {
-	return jsonFetch(prPath(runId, suffix), {
+	const path = prPath(runId, suffix);
+	const res = await fetch(path, {
 		method,
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(body),
 	});
+	const text = await res.text();
+	if (!res.ok) {
+		// The server returns `{ error: <gh stderr> }` on failure — surface it so the
+		// toast shows the actionable gh message, not a generic "POST … failed: 500".
+		let message = `${method} ${path} failed: ${res.status}`;
+		try {
+			const parsed: unknown = text ? JSON.parse(text) : null;
+			if (parsed && typeof parsed === "object" && "error" in parsed) {
+				const { error } = parsed as { error: unknown };
+				if (typeof error === "string" && error) message = error;
+			}
+		} catch {
+			// non-JSON body — keep the generic message
+		}
+		throw new Error(message);
+	}
+	return text ? JSON.parse(text) : {};
 }
 
 /** Invalidate every PR-derived query for a run after a mutation. */
@@ -83,10 +100,15 @@ export function mergeMutationOptions(runId: string) {
 }
 
 // Merge-queue enqueue maps to "enable auto-merge" — gh enqueues when ready.
+// Forward the head SHA so the server can guard against a stale head (--match-head-commit).
 export function enqueueMutationOptions(runId: string) {
 	return {
 		mutationFn: (v: RepoVars & { number: number; expectedHeadOid?: string }) =>
-			write(runId, "/auto-merge", "POST", { number: v.number, enabled: true }),
+			write(runId, "/auto-merge", "POST", {
+				number: v.number,
+				enabled: true,
+				expectedHeadOid: v.expectedHeadOid,
+			}),
 	};
 }
 
