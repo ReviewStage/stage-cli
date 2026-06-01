@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isGitHubRemote, parseGitHubRepo } from "../github.js";
+import { isGitHubRemote, parseGitHubRepo } from "../github/index.js";
 
 describe("parseGitHubRepo", () => {
 	it("parses the SSH shorthand form", () => {

@@ -1,5 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import {
 	CHECK_CONCLUSION,
 	CHECK_ITEM_SOURCE,
@@ -17,42 +15,8 @@ import {
 	type ReviewerStatus,
 } from "@stagereview/types/pull-request";
 import { z } from "zod";
-
-const execFileAsync = promisify(execFile);
-
-export interface GitHubRepo {
-	owner: string;
-	repo: string;
-}
-
-/**
- * Parse `owner`/`repo` from a github.com origin URL, or null for non-GitHub
- * remotes. Skips the `gh` invocation entirely for GitLab/Bitbucket/self-hosted
- * rather than shelling out only to have `gh` fail. Matches the URL shapes git
- * emits: git@github.com:owner/repo(.git), https://github.com/owner/repo(.git),
- * ssh://git@github.com/owner/repo(.git).
- */
-export function parseGitHubRepo(originUrl: string | null): GitHubRepo | null {
-	if (!originUrl) return null;
-	const match = originUrl.match(/(?:^|@|\/\/)github\.com[:/]([^/]+)\/(.+?)(?:\.git)?\/?$/);
-	if (!match) return null;
-	const [, owner, repo] = match;
-	if (!owner || !repo) return null;
-	return { owner, repo };
-}
-
-export function isGitHubRemote(originUrl: string | null): boolean {
-	return parseGitHubRepo(originUrl) !== null;
-}
-
-async function gh(args: string[], cwd: string): Promise<string> {
-	const { stdout } = await execFileAsync("gh", args, {
-		cwd,
-		encoding: "utf8",
-		maxBuffer: 10 * 1024 * 1024,
-	});
-	return stdout;
-}
+import { gh } from "./exec.js";
+import { type GitHubRepo, parseGitHubRepo } from "./repo.js";
 
 // ─── Pull request ─────────────────────────────────────────────────────────────
 

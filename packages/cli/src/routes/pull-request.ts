@@ -15,7 +15,7 @@ import {
 	getPullRequest,
 	getReviews,
 	parseGitHubRepo,
-} from "../github.js";
+} from "../github/index.js";
 import type { Route, RouteHandler, RouteParams } from "../server.js";
 import { writeJson } from "./json.js";
 
