@@ -331,6 +331,26 @@ describe("pull-request API", () => {
 		]);
 	});
 
+	it("treats a re-requested reviewer as awaiting review even if they already reviewed", async () => {
+		// alice has an APPROVED review AND is in requested_reviewers (re-requested).
+		const restPr = JSON.stringify({
+			user: { login: "octocat", type: "User", avatar_url: "https://example.com/o.png" },
+			requested_reviewers: [
+				{
+					login: "alice",
+					type: "User",
+					avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+				},
+			],
+		});
+		await writeFakeGh({ reviews: REST_REVIEWS_JSON, restPr });
+		const runId = insertRun(GITHUB_ORIGIN);
+		const res = await request(await start(), `/api/runs/${runId}/pull-request/reviews?number=7`);
+		const { reviews } = JSON.parse(res.body) as ReviewsResponse;
+		const alice = reviews?.reviewers.find((r) => r.user.login === "alice");
+		expect(alice?.status).toBe("REQUESTED");
+	});
+
 	it("maps the merge-status GraphQL response", async () => {
 		await writeFakeGh({ merge: MERGE_JSON });
 		const runId = insertRun(GITHUB_ORIGIN);

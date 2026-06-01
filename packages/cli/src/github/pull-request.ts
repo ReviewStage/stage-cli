@@ -305,10 +305,11 @@ export async function getReviews(
 			byLogin.set(review.user.login, { user: review.user, status });
 		}
 
-		// Reviewers requested but not yet reviewed come from the PR's requested_reviewers.
+		// A currently-requested reviewer is awaiting (re-)review, which overrides any
+		// earlier submitted review — re-requesting someone who already approved should
+		// show "Awaiting review", not the stale approval.
 		const rest = await fetchRestPullRequest(repoRoot, repo, prNumber);
 		for (const user of rest?.requested_reviewers ?? []) {
-			if (byLogin.has(user.login)) continue;
 			byLogin.set(user.login, { user, status: REVIEWER_STATUS.REQUESTED });
 		}
 
