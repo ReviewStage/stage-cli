@@ -104,10 +104,10 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 			setIsEditing(false);
 			toast.success("Title updated");
 		},
-		onError: () => {
+		onError: (error) => {
 			setEditValue(pullRequest.title);
 			setIsEditing(false);
-			toast.error("Failed to update title");
+			toast.error(error instanceof Error ? error.message : "Failed to update title");
 		},
 	});
 

@@ -84,9 +84,9 @@ function ReviewerRow({
 			invalidatePullRequestQueries();
 			toast.success("Reviewer removed");
 		},
-		onError: () => {
+		onError: (error) => {
 			onRemoveError(reviewer.user.login);
-			toast.error("Failed to remove reviewer");
+			toast.error(error instanceof Error ? error.message : "Failed to remove reviewer");
 		},
 	});
 
@@ -96,8 +96,8 @@ function ReviewerRow({
 			invalidatePullRequestQueries();
 			toast.success("Review re-requested");
 		},
-		onError: () => {
-			toast.error("Failed to re-request review");
+		onError: (error) => {
+			toast.error(error instanceof Error ? error.message : "Failed to re-request review");
 		},
 	});
 
@@ -228,9 +228,9 @@ function CollaboratorRow({
 			invalidatePullRequestQueries();
 			toast.success("Reviewer requested");
 		},
-		onError: () => {
+		onError: (error) => {
 			onAddError(user.login);
-			toast.error("Failed to add reviewer");
+			toast.error(error instanceof Error ? error.message : "Failed to add reviewer");
 		},
 	});
 
