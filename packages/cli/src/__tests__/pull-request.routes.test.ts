@@ -110,6 +110,37 @@ const MERGE_JSON = JSON.stringify({
 		},
 	},
 });
+// Deployments GraphQL response (newest-first). Exercises dedupe-by-environment,
+// skipping non-success and non-https/null URLs.
+const DEPLOYMENTS_JSON = JSON.stringify({
+	data: {
+		repository: {
+			object: {
+				deployments: {
+					nodes: [
+						{
+							environment: "Preview",
+							latestStatus: { state: "SUCCESS", environmentUrl: "https://preview-2.example.app" },
+						},
+						{
+							environment: "Preview",
+							latestStatus: { state: "SUCCESS", environmentUrl: "https://preview-1.example.app" },
+						},
+						{
+							environment: "Production",
+							latestStatus: { state: "SUCCESS", environmentUrl: "https://prod.example.app" },
+						},
+						{
+							environment: "Staging",
+							latestStatus: { state: "FAILURE", environmentUrl: "https://staging.example.app" },
+						},
+						{ environment: "NoUrl", latestStatus: { state: "SUCCESS", environmentUrl: null } },
+					],
+				},
+			},
+		},
+	},
+});
 
 beforeEach(async () => {
 	tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-cli-pr-routes-"));
@@ -143,6 +174,7 @@ async function writeFakeGh(fixtures: {
 	reviews?: string;
 	checks?: string;
 	merge?: string;
+	deployments?: string;
 }): Promise<void> {
 	const dir = path.join(binDir, "fixtures");
 	await fs.mkdir(dir, { recursive: true });
@@ -155,13 +187,15 @@ async function writeFakeGh(fixtures: {
 		write("reviews.json", fixtures.reviews),
 		write("checks.json", fixtures.checks),
 		write("merge.json", fixtures.merge),
+		write("deployments.json", fixtures.deployments),
 	]);
 	const script = `#!/bin/sh
 dir="${dir}"
 emit() { [ -f "$dir/$1" ] && cat "$dir/$1" || exit 1; }
 all="$*"
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then emit pr.json
-elif [ "$1" = "api" ] && [ "$2" = "graphql" ]; then emit merge.json
+elif [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
+  case "$all" in *deployments*) emit deployments.json ;; *) emit merge.json ;; esac
 elif [ "$1" = "api" ]; then
   case "$all" in
     *check-runs*) emit checks.json ;;
@@ -286,6 +320,23 @@ describe("pull-request API", () => {
 			avatarUrl: "https://example.com/a.png",
 			appName: "GitHub Actions",
 		});
+	});
+
+	it("returns one deployment link per environment (latest success, https only)", async () => {
+		await writeFakeGh({ checks: CHECKS_JSON, deployments: DEPLOYMENTS_JSON });
+		const runId = insertRun(GITHUB_ORIGIN);
+		const res = await request(
+			await start(),
+			`/api/runs/${runId}/pull-request/checks?headSha=${SHA}`,
+		);
+		expect(res.status).toBe(200);
+		const body = JSON.parse(res.body) as ChecksResponse;
+		// Preview deduped to the newest success; Production kept; Staging (failure)
+		// and NoUrl (null url) dropped.
+		expect(body.deploymentLinks).toEqual([
+			{ environment: "Preview", url: "https://preview-2.example.app" },
+			{ environment: "Production", url: "https://prod.example.app" },
+		]);
 	});
 
 	it("rejects a checks request without a valid headSha", async () => {

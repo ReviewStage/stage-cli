@@ -3,6 +3,7 @@ import {
 	CHECK_ITEM_SOURCE,
 	type CheckItem,
 	type ChecksResponse,
+	type DeploymentLink,
 	type GitHubPullRequest,
 	type GitHubUser,
 	type MergeStatusInfo,
@@ -206,20 +207,11 @@ function deriveCiState(items: CheckItem[]): ChecksResponse["state"] {
 	return anyPending ? PULL_REQUEST_CI_STATUS.PENDING : PULL_REQUEST_CI_STATUS.SUCCESS;
 }
 
-/**
- * CI check runs for `headSha`. Deployment links require a GitHub App
- * integration the CLI doesn't have, so `deploymentLinks` is always empty here.
- */
-export async function getChecks(
+async function getCheckRunItems(
 	repoRoot: string,
 	repo: GitHubRepo,
 	headSha: string,
-): Promise<ChecksResponse> {
-	const empty: ChecksResponse = {
-		state: PULL_REQUEST_CI_STATUS.NONE,
-		items: [],
-		deploymentLinks: [],
-	};
+): Promise<CheckItem[]> {
 	try {
 		// `--slurp` wraps every page into one JSON array (`[{page}, {page}, …]`);
 		// without it, `--paginate` concatenates raw page objects, which isn't valid
@@ -234,12 +226,114 @@ export async function getChecks(
 			repoRoot,
 		);
 		const parsed = z.array(GhCheckRunsSchema).safeParse(JSON.parse(stdout));
-		if (!parsed.success) return empty;
-		const items = parsed.data.flatMap((page) => page.check_runs).map(toCheckItem);
-		return { state: deriveCiState(items), items, deploymentLinks: [] };
+		if (!parsed.success) return [];
+		return parsed.data.flatMap((page) => page.check_runs).map(toCheckItem);
 	} catch {
-		return empty;
+		return [];
 	}
+}
+
+// ─── Deployments ──────────────────────────────────────────────────────────────
+
+// Fetch the commit's deployments + each one's latest status in a single query,
+// newest-first, so dedupe-by-environment below keeps the most recent per env.
+const DEPLOYMENTS_QUERY = `query GetDeployments($owner: String!, $repo: String!, $sha: GitObjectID!) {
+  repository(owner: $owner, name: $repo) {
+    object(oid: $sha) {
+      ... on Commit {
+        deployments(first: 20, orderBy: { field: CREATED_AT, direction: DESC }) {
+          nodes { environment latestStatus { state environmentUrl } }
+        }
+      }
+    }
+  }
+}`;
+
+const GhDeploymentsSchema = z.object({
+	data: z.object({
+		repository: z
+			.object({
+				object: z
+					.object({
+						deployments: z.object({
+							nodes: z.array(
+								z.object({
+									environment: z.string(),
+									latestStatus: z
+										.object({ state: z.string(), environmentUrl: z.string().nullable() })
+										.nullable(),
+								}),
+							),
+						}),
+					})
+					.nullable(),
+			})
+			.nullable(),
+	}),
+});
+
+/**
+ * Preview/deployment links for `headSha`: one per environment, keeping the
+ * latest successful deployment with an https URL (mirrors hosted Stage's
+ * resolveDeploymentLinks). Returns [] on any failure so checks still render.
+ */
+async function getDeploymentLinks(
+	repoRoot: string,
+	repo: GitHubRepo,
+	headSha: string,
+): Promise<DeploymentLink[]> {
+	try {
+		const stdout = await gh(
+			[
+				"api",
+				"graphql",
+				"-f",
+				`query=${DEPLOYMENTS_QUERY}`,
+				"-F",
+				`owner=${repo.owner}`,
+				"-F",
+				`repo=${repo.repo}`,
+				"-F",
+				`sha=${headSha}`,
+			],
+			repoRoot,
+		);
+		const parsed = GhDeploymentsSchema.safeParse(JSON.parse(stdout));
+		if (!parsed.success) return [];
+		const nodes = parsed.data.data.repository?.object?.deployments.nodes ?? [];
+		const byEnvironment = new Map<string, DeploymentLink>();
+		for (const node of nodes) {
+			const url = node.latestStatus?.environmentUrl;
+			if (
+				node.latestStatus?.state === "SUCCESS" &&
+				url &&
+				url.startsWith("https://") &&
+				!byEnvironment.has(node.environment)
+			) {
+				byEnvironment.set(node.environment, { environment: node.environment, url });
+			}
+		}
+		return [...byEnvironment.values()];
+	} catch {
+		return [];
+	}
+}
+
+/**
+ * CI check runs plus preview-deployment links for `headSha`. Runs the two gh
+ * reads in parallel; each degrades to empty independently so a failure in one
+ * never blanks the other.
+ */
+export async function getChecks(
+	repoRoot: string,
+	repo: GitHubRepo,
+	headSha: string,
+): Promise<ChecksResponse> {
+	const [items, deploymentLinks] = await Promise.all([
+		getCheckRunItems(repoRoot, repo, headSha),
+		getDeploymentLinks(repoRoot, repo, headSha),
+	]);
+	return { state: deriveCiState(items), items, deploymentLinks };
 }
 
 // ─── Reviews ────────────────────────────────────────────────────────────────
