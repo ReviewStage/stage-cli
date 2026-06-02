@@ -1,6 +1,7 @@
+import type { Chapter } from "@stagereview/types/chapters";
 import { describe, expect, it } from "vitest";
 import { FILE_STATUS, type PullRequestFile } from "../diff-types";
-import { formatChapterAsMarkdown } from "../format-chapter-markdown";
+import { formatAllChaptersAsMarkdown, formatChapterAsMarkdown } from "../format-chapter-markdown";
 
 const baseFile: PullRequestFile = {
 	path: "src/foo.ts",
@@ -94,5 +95,22 @@ describe("formatChapterAsMarkdown", () => {
 			[],
 		);
 		expect(md).toBe("# Chapter 1: Empty");
+	});
+});
+
+describe("formatAllChaptersAsMarkdown", () => {
+	const chapter = (order: number, title: string): Chapter => ({
+		id: `c${order}`,
+		externalId: `ext-c${order}`,
+		order,
+		title,
+		summary: "",
+		hunkRefs: [],
+		keyChanges: [],
+	});
+
+	it("orders chapters by order and joins them with a horizontal rule", () => {
+		const md = formatAllChaptersAsMarkdown([chapter(2, "Second"), chapter(1, "First")], "");
+		expect(md).toBe("# Chapter 1: First\n\n---\n\n# Chapter 2: Second");
 	});
 });

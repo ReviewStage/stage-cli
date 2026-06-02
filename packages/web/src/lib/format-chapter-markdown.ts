@@ -1,5 +1,6 @@
 import type { Chapter } from "@stagereview/types/chapters";
 import { FILE_STATUS, type PullRequestFile } from "./diff-types";
+import { filterFilesForChapter } from "./filter-files-for-chapter";
 
 interface ChapterFileInput {
 	file: PullRequestFile;
@@ -44,4 +45,18 @@ export function formatChapterAsMarkdown(
 	}
 
 	return sections.join("\n\n");
+}
+
+/**
+ * Renders every chapter (ordered by `chapter.order`) as one Markdown document for
+ * the "Copy chapters" action, separated by horizontal rules. Per-chapter file
+ * lists are derived from `patch`; when it's empty the file sections are omitted.
+ */
+export function formatAllChaptersAsMarkdown(chapters: Chapter[], patch: string): string {
+	return [...chapters]
+		.sort((a, b) => a.order - b.order)
+		.map((chapter) =>
+			formatChapterAsMarkdown(chapter, filterFilesForChapter(patch, chapter.hunkRefs)),
+		)
+		.join("\n\n---\n\n");
 }

@@ -1,9 +1,11 @@
 import type { Prologue } from "@stagereview/types/prologue";
 import type { GitHubPullRequest } from "@stagereview/types/pull-request";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { PrologueSection } from "@/components/prologue/prologue-section";
 import { OverviewColumnHeader } from "@/components/pull-request/overview-column-header";
 import { PullRequestBodyCard } from "@/components/pull-request/pull-request-body-card";
+import { CopyMarkdownButton } from "@/components/shared/copy-markdown-button";
+import { formatPrologueAsMarkdown } from "@/lib/format-prologue-markdown";
 import { cn } from "@/lib/utils";
 
 const SIDEBAR_TAB = {
@@ -47,6 +49,11 @@ export function OverviewSidebar({ prologue, pullRequest, runId }: OverviewSideba
 				? SIDEBAR_TAB.DESCRIPTION
 				: activeTab;
 
+	const copyPrologue = useCallback(
+		() => (prologue ? formatPrologueAsMarkdown(prologue) : null),
+		[prologue],
+	);
+
 	return (
 		<div>
 			<OverviewColumnHeader>
@@ -84,6 +91,9 @@ export function OverviewSidebar({ prologue, pullRequest, runId }: OverviewSideba
 						</button>
 					)}
 				</div>
+				{resolvedTab === SIDEBAR_TAB.PROLOGUE && prologue && (
+					<CopyMarkdownButton getMarkdown={copyPrologue} label="prologue" />
+				)}
 			</OverviewColumnHeader>
 
 			{resolvedTab === SIDEBAR_TAB.PROLOGUE && prologue ? (

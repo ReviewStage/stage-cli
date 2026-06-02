@@ -1,14 +1,17 @@
 import type { Chapter } from "@stagereview/types/chapters";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, ChevronRight, Circle, CircleCheck, FileCode } from "lucide-react";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { OverviewColumnHeader } from "@/components/pull-request/overview-column-header";
 import { SectionLabel } from "@/components/pull-request/section-label";
+import { CopyMarkdownButton } from "@/components/shared/copy-markdown-button";
 import { LineCounts } from "@/components/shared/line-counts";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChapterContext } from "@/lib/chapter-context";
+import { formatAllChaptersAsMarkdown } from "@/lib/format-chapter-markdown";
+import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useViewState } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
 
@@ -140,10 +143,18 @@ interface ChaptersIndexPageProps {
 }
 
 export function ChaptersIndexPage({ chapters, runId, isLoading }: ChaptersIndexPageProps) {
+	const { data: diffData } = useDiffPatch(runId);
+	const hasChapters = (chapters?.length ?? 0) > 0;
+	const copyChapters = useCallback(
+		() => (chapters ? formatAllChaptersAsMarkdown(chapters, diffData?.patch ?? "") : null),
+		[chapters, diffData?.patch],
+	);
+
 	return (
 		<div>
 			<OverviewColumnHeader>
 				<SectionLabel>Chapters</SectionLabel>
+				{hasChapters && <CopyMarkdownButton getMarkdown={copyChapters} label="chapters" />}
 			</OverviewColumnHeader>
 			{isLoading || !chapters ? (
 				<ChapterLoadingSkeleton />

@@ -47,7 +47,7 @@ export function PullRequestBodyCard({ pullRequest }: { pullRequest: GitHubPullRe
 					</a>
 				</p>
 				{hasBody ? (
-					<Markdown content={pullRequest.body} />
+					<Markdown content={pullRequest.body} allowHtml />
 				) : (
 					<p className="text-muted-foreground text-sm italic">No description provided.</p>
 				)}
