@@ -29,6 +29,7 @@ const GhAuthorSchema = z
 const GhPullRequestSchema = z.object({
 	number: z.number(),
 	title: z.string(),
+	body: z.string(),
 	url: z.string(),
 	state: z.enum(["OPEN", "CLOSED", "MERGED"]),
 	isDraft: z.boolean(),
@@ -43,6 +44,7 @@ const GhPullRequestSchema = z.object({
 const PR_FIELDS = [
 	"number",
 	"title",
+	"body",
 	"url",
 	"state",
 	"isDraft",
@@ -127,6 +129,7 @@ export async function getPullRequest(
 		return {
 			number: pr.number,
 			title: pr.title,
+			body: pr.body,
 			html_url: pr.url,
 			// REST `state` is open|closed; merged implies closed.
 			state: pr.state === "OPEN" ? "open" : "closed",

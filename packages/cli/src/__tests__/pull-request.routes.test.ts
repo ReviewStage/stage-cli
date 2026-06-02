@@ -29,6 +29,7 @@ const GITHUB_ORIGIN = "git@github.com:owner/repo.git";
 const PR_JSON = JSON.stringify({
 	number: 7,
 	title: "Add the thing",
+	body: "This PR adds the thing.\n\nDetails here.",
 	url: "https://github.com/owner/repo/pull/7",
 	state: "OPEN",
 	isDraft: false,
@@ -263,6 +264,7 @@ describe("pull-request API", () => {
 		expect(pullRequest).toEqual({
 			number: 7,
 			title: "Add the thing",
+			body: "This PR adds the thing.\n\nDetails here.",
 			html_url: "https://github.com/owner/repo/pull/7",
 			state: "open",
 			draft: false,

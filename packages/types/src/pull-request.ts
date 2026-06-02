@@ -128,6 +128,8 @@ export type GitHubUser = z.infer<typeof GitHubUserSchema>;
 export const PullRequestSchema = z.object({
 	number: z.number().int().positive(),
 	title: z.string(),
+	/** Raw markdown body of the PR description; empty string when none was provided. */
+	body: z.string(),
 	html_url: z.string(),
 	state: z.enum(["open", "closed"]),
 	draft: z.boolean(),

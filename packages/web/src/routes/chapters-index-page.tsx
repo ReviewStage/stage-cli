@@ -1,264 +1,134 @@
-import type { Chapter, HunkReference } from "@stagereview/types/chapters";
+import type { Chapter } from "@stagereview/types/chapters";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Circle, CircleCheck } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRight, ChevronRight, Circle, CircleCheck, FileCode } from "lucide-react";
+import { useMemo } from "react";
+import { OverviewColumnHeader } from "@/components/pull-request/overview-column-header";
+import { SectionLabel } from "@/components/pull-request/section-label";
 import { LineCounts } from "@/components/shared/line-counts";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { type ChapterLineCounts, useChapterContext } from "@/lib/chapter-context";
+import { useChapterContext } from "@/lib/chapter-context";
 import { useViewState } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
 
 function ChapterLoadingSkeleton() {
 	return (
-		<div className="space-y-4">
-			<Skeleton className="h-8 w-48" />
-			<div className="space-y-3">
-				<Skeleton className="h-16 w-full" />
-				<Skeleton className="h-16 w-full" />
-				<Skeleton className="h-16 w-full" />
-			</div>
+		<div className="space-y-3">
+			<Skeleton className="h-16 w-full" />
+			<Skeleton className="h-16 w-full" />
+			<Skeleton className="h-16 w-full" />
 		</div>
 	);
 }
 
-interface FileCollapsibleProps {
-	fileCount: number;
-	isOpen: boolean;
-	onToggle: () => void;
-	onToggleAll: () => void;
-	children: React.ReactNode;
-}
-
-function FileCollapsible({
-	fileCount,
-	isOpen,
-	onToggle,
-	onToggleAll,
-	children,
-}: FileCollapsibleProps) {
-	return (
-		<Collapsible open={isOpen} onOpenChange={() => onToggle()} className="mt-1 ml-10">
-			<CollapsibleTrigger
-				onClick={(e) => {
-					if (e.altKey) {
-						e.preventDefault();
-						onToggleAll();
-					}
-				}}
-				className="flex w-full cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-muted-foreground text-xs transition-colors hover:bg-accent hover:text-foreground"
-			>
-				<ChevronRight
-					className={cn("size-3 shrink-0 transition-transform duration-200", isOpen && "rotate-90")}
-				/>
-				{fileCount} {fileCount === 1 ? "file" : "files"}
-			</CollapsibleTrigger>
-			<CollapsibleContent className="space-y-0">{children}</CollapsibleContent>
-		</Collapsible>
-	);
-}
-
-interface ChapterEntryProps {
-	chapter: Chapter;
-	isViewed: boolean;
-	filePaths: string[];
-	isFilesOpen: boolean;
-	runId: string;
-	lineCounts: ChapterLineCounts | undefined;
-	onToggleViewed: () => void;
-	onToggleFiles: () => void;
-	onToggleAllFiles: () => void;
-}
-
-function ChapterEntry({
-	chapter,
-	isViewed,
-	filePaths,
-	isFilesOpen,
-	runId,
-	lineCounts,
-	onToggleViewed,
-	onToggleFiles,
-	onToggleAllFiles,
-}: ChapterEntryProps) {
-	return (
-		<div>
-			<div className="flex w-full items-start gap-3 text-left">
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<button
-							type="button"
-							onClick={onToggleViewed}
-							className={cn(
-								"mt-0.5 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-accent",
-								isViewed
-									? "text-green-600 hover:text-green-700 dark:text-green-500 dark:hover:text-green-400"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-							aria-label={isViewed ? "Unmark as viewed" : "Mark as viewed"}
-						>
-							{isViewed ? <CircleCheck className="size-3.5" /> : <Circle className="size-3.5" />}
-						</button>
-					</TooltipTrigger>
-					<TooltipContent side="top">
-						{isViewed ? "Unmark as viewed" : "Mark as viewed"}
-					</TooltipContent>
-				</Tooltip>
-				<Link
-					to="/runs/$runId/chapters/$chapterNumber"
-					params={{ runId, chapterNumber: String(chapter.order) }}
-					className="min-w-0 flex-1 overflow-hidden rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-					style={{
-						backgroundImage:
-							"radial-gradient(circle, color-mix(in oklch, var(--muted-foreground) 30%, transparent) 1px, transparent 1px)",
-						backgroundSize: "6px 1em",
-						backgroundRepeat: "repeat-x",
-						backgroundPosition: "0 calc(100% - 0.35em)",
-					}}
-				>
-					{lineCounts && (
-						<LineCounts
-							additions={lineCounts.linesAdded}
-							deletions={lineCounts.linesDeleted}
-							className="float-right clear-right bg-background pl-1.5 font-mono text-xs text-muted-foreground"
-						/>
-					)}
-					<span
-						className={cn(
-							"[box-decoration-break:clone] bg-background pr-1.5 font-semibold text-base hover:underline",
-							isViewed && "text-muted-foreground",
-						)}
-					>
-						{chapter.order}. {chapter.title}
-					</span>
-				</Link>
-			</div>
-
-			{filePaths.length > 0 && (
-				<FileCollapsible
-					fileCount={filePaths.length}
-					isOpen={isFilesOpen}
-					onToggle={onToggleFiles}
-					onToggleAll={onToggleAllFiles}
-				>
-					{filePaths.map((p) => (
-						<FilePathRow key={p} filePath={p} />
-					))}
-				</FileCollapsible>
-			)}
-		</div>
-	);
-}
-
-function FilePathRow({ filePath }: { filePath: string }) {
-	const lastSlashIndex = filePath.lastIndexOf("/");
-	const directory = lastSlashIndex === -1 ? null : filePath.slice(0, lastSlashIndex + 1);
-	const displayFilename = lastSlashIndex === -1 ? filePath : filePath.slice(lastSlashIndex + 1);
-
-	return (
-		<span className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm">
-			<span className="flex min-w-0 flex-1 items-baseline overflow-hidden font-mono text-foreground/80 text-xs">
-				{directory && (
-					<span className="min-w-0 shrink-[999] truncate text-muted-foreground">{directory}</span>
-				)}
-				<span className="min-w-0 shrink truncate">{displayFilename}</span>
-			</span>
-		</span>
-	);
-}
-
-function distinctFilePaths(hunkRefs: HunkReference[]): string[] {
-	const seen = new Set<string>();
-	const out: string[] = [];
-	for (const h of hunkRefs) {
-		if (!seen.has(h.filePath)) {
-			seen.add(h.filePath);
-			out.push(h.filePath);
-		}
-	}
-	return out;
-}
-
-interface ChaptersListProps {
-	chapters: Chapter[];
-	runId: string;
-	viewedCount: number;
-}
-
-function ChaptersList({ chapters, runId, viewedCount }: ChaptersListProps) {
+function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string }) {
 	const { chapterLineCountsMap } = useChapterContext();
 	const view = useViewState(runId);
-	const [openFiles, setOpenFiles] = useState<Set<string>>(() => new Set());
-	const [mounted, setMounted] = useState(false);
 
-	useEffect(() => {
-		requestAnimationFrame(() => setMounted(true));
-	}, []);
+	const sorted = useMemo(() => [...chapters].sort((a, b) => a.order - b.order), [chapters]);
 
-	const filePathsByChapter = useMemo(() => {
-		const map = new Map<string, string[]>();
-		for (const c of chapters) map.set(c.id, distinctFilePaths(c.hunkRefs));
-		return map;
-	}, [chapters]);
-
-	const toggleFiles = useCallback((chapterId: string) => {
-		setOpenFiles((prev) => {
-			const next = new Set(prev);
-			if (next.has(chapterId)) next.delete(chapterId);
-			else next.add(chapterId);
-			return next;
-		});
-	}, []);
-
-	// Alt-click: collapse all when this chapter was open, expand all otherwise.
-	// Mirrors the hosted toggleAllFiles behavior.
-	const toggleAllFiles = useCallback(
-		(chapterId: string) => {
-			setOpenFiles((prev) => {
-				if (prev.has(chapterId)) return new Set();
-				return new Set(chapters.map((c) => c.id));
-			});
-		},
-		[chapters],
+	const total = sorted.length;
+	const viewedCount = sorted.reduce(
+		(count, ch) => (view.isChapterViewed(ch.externalId) ? count + 1 : count),
+		0,
 	);
-
-	const totalCount = chapters.length;
+	const firstUnviewedIndex =
+		viewedCount === total ? -1 : sorted.findIndex((ch) => !view.isChapterViewed(ch.externalId));
 
 	return (
-		<div>
-			<div className="mt-3 mb-6 flex items-center gap-3">
-				<Progress
-					value={mounted && totalCount > 0 ? (viewedCount / totalCount) * 100 : 0}
-					className="h-2 flex-1"
-				/>
-				<span className="shrink-0 text-muted-foreground text-xs">
-					{viewedCount}/{totalCount}
-				</span>
-			</div>
-			<div className="space-y-4">
-				{chapters.map((c) => {
-					const externalId = c.externalId;
-					const isViewed = view.isChapterViewed(externalId);
-					return (
-						<ChapterEntry
-							key={c.id}
-							chapter={c}
-							isViewed={isViewed}
-							filePaths={filePathsByChapter.get(c.id) ?? []}
-							isFilesOpen={openFiles.has(c.id)}
-							runId={runId}
-							lineCounts={chapterLineCountsMap.get(c.id)}
-							onToggleViewed={() =>
-								isViewed ? view.unmarkChapterViewed(externalId) : view.markChapterViewed(externalId)
-							}
-							onToggleFiles={() => toggleFiles(c.id)}
-							onToggleAllFiles={() => toggleAllFiles(c.id)}
+		<div className="divide-y divide-border overflow-hidden rounded-lg border">
+			{sorted.map((ch, index) => {
+				const isViewed = view.isChapterViewed(ch.externalId);
+				const counts = chapterLineCountsMap.get(ch.id);
+				const fileCount = new Set(ch.hunkRefs.map((h) => h.filePath)).size;
+				const isNextToReview = index === firstUnviewedIndex;
+
+				return (
+					<div
+						key={ch.id}
+						className="group relative flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-accent/50"
+					>
+						<Link
+							to="/runs/$runId/chapters/$chapterNumber"
+							params={{ runId, chapterNumber: String(ch.order) }}
+							aria-label={`Go to chapter ${ch.order}: ${ch.title}`}
+							className={cn(
+								"absolute inset-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring",
+								index === 0 && "rounded-t-lg",
+								index === total - 1 && "rounded-b-lg",
+							)}
 						/>
-					);
-				})}
-			</div>
+
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<button
+									type="button"
+									onClick={() =>
+										isViewed
+											? view.unmarkChapterViewed(ch.externalId)
+											: view.markChapterViewed(ch.externalId)
+									}
+									className={cn(
+										"relative z-10 shrink-0 cursor-pointer rounded-sm p-0.5 transition-colors hover:bg-accent",
+										isViewed
+											? "text-green-600 hover:text-green-700 dark:text-green-500 dark:hover:text-green-400"
+											: "text-muted-foreground hover:text-foreground",
+									)}
+									aria-label={isViewed ? "Unmark as viewed" : "Mark as viewed"}
+								>
+									{isViewed ? <CircleCheck className="size-4" /> : <Circle className="size-4" />}
+								</button>
+							</TooltipTrigger>
+							<TooltipContent side="top">
+								{isViewed ? "Unmark as viewed" : "Mark as viewed"}
+							</TooltipContent>
+						</Tooltip>
+
+						<div className="flex min-w-0 flex-1 items-center gap-3">
+							<div className="min-w-0 flex-1">
+								<div className="flex items-center gap-2">
+									<span className="shrink-0 text-muted-foreground text-xs">{ch.order}</span>
+									<span
+										className={cn(
+											"truncate font-medium text-foreground text-sm group-hover:text-primary",
+											isViewed && "text-muted-foreground",
+										)}
+									>
+										{ch.title}
+									</span>
+								</div>
+								<div className="mt-0.5 flex items-center gap-1.5 text-muted-foreground text-xs">
+									{counts && (
+										<LineCounts
+											additions={counts.linesAdded}
+											deletions={counts.linesDeleted}
+											className="font-mono text-[11px]"
+										/>
+									)}
+									{fileCount > 0 && (
+										<span className="flex items-center gap-0.5">
+											<FileCode className="size-3" />
+											{fileCount}
+										</span>
+									)}
+								</div>
+							</div>
+
+							{isNextToReview ? (
+								<Button size="sm" asChild className="pointer-events-none shrink-0 gap-1.5">
+									<span>
+										{viewedCount > 0 ? "Continue reviewing" : "Start reviewing"}
+										<ArrowRight className="size-3.5" />
+									</span>
+								</Button>
+							) : (
+								<ChevronRight className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+							)}
+						</div>
+					</div>
+				);
+			})}
 		</div>
 	);
 }
@@ -266,16 +136,20 @@ function ChaptersList({ chapters, runId, viewedCount }: ChaptersListProps) {
 interface ChaptersIndexPageProps {
 	chapters: Chapter[] | undefined;
 	runId: string;
-	viewedCount: number;
 	isLoading: boolean;
 }
 
-export function ChaptersIndexPage({
-	chapters,
-	runId,
-	viewedCount,
-	isLoading,
-}: ChaptersIndexPageProps) {
-	if (isLoading || !chapters) return <ChapterLoadingSkeleton />;
-	return <ChaptersList chapters={chapters} runId={runId} viewedCount={viewedCount} />;
+export function ChaptersIndexPage({ chapters, runId, isLoading }: ChaptersIndexPageProps) {
+	return (
+		<div>
+			<OverviewColumnHeader>
+				<SectionLabel>Chapters</SectionLabel>
+			</OverviewColumnHeader>
+			{isLoading || !chapters ? (
+				<ChapterLoadingSkeleton />
+			) : chapters.length === 0 ? null : (
+				<ChaptersList chapters={chapters} runId={runId} />
+			)}
+		</div>
+	);
 }
