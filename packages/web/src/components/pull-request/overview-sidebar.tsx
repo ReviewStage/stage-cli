@@ -30,10 +30,16 @@ interface OverviewSidebarProps {
 export function OverviewSidebar({ prologue, pullRequest, runId }: OverviewSidebarProps) {
 	const hasPrologue = prologue !== null;
 	const hasDescription = Boolean(pullRequest?.user && pullRequest.body.trim().length > 0);
-	const [activeTab, setActiveTab] = useState<SidebarTab>(SIDEBAR_TAB.PROLOGUE);
+	// Default to whichever content exists at mount (the sidebar only renders once at
+	// least one does), preferring the prologue. Capturing the initial tab this way —
+	// rather than hardcoding Prologue — means a later-arriving tab can't yank the user
+	// off the one they're reading: if the PR description loads before the prologue, the
+	// view stays on Description instead of jumping to Prologue when it arrives.
+	const [activeTab, setActiveTab] = useState<SidebarTab>(() =>
+		prologue !== null ? SIDEBAR_TAB.PROLOGUE : SIDEBAR_TAB.DESCRIPTION,
+	);
 
-	// Fall back to the available tab when the active one has no content (e.g. the
-	// PR description loads in after the prologue, or there is no prologue at all).
+	// Recover to the available tab if the active one ever has no content.
 	const resolvedTab: SidebarTab =
 		activeTab === SIDEBAR_TAB.DESCRIPTION && !hasDescription
 			? SIDEBAR_TAB.PROLOGUE

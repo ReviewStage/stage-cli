@@ -35,3 +35,4 @@ coverage
 # Claude Code
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
+.gstack/
