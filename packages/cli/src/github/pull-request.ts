@@ -29,7 +29,8 @@ const GhAuthorSchema = z
 const GhPullRequestSchema = z.object({
 	number: z.number(),
 	title: z.string(),
-	body: z.string(),
+	// gh emits null (not "") for a PR with no description, same as mergedAt; coerce below.
+	body: z.string().nullable(),
 	url: z.string(),
 	state: z.enum(["OPEN", "CLOSED", "MERGED"]),
 	isDraft: z.boolean(),
@@ -129,7 +130,7 @@ export async function getPullRequest(
 		return {
 			number: pr.number,
 			title: pr.title,
-			body: pr.body,
+			body: pr.body ?? "",
 			html_url: pr.url,
 			// REST `state` is open|closed; merged implies closed.
 			state: pr.state === "OPEN" ? "open" : "closed",

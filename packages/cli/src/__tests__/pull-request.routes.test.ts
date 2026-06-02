@@ -281,6 +281,16 @@ describe("pull-request API", () => {
 		});
 	});
 
+	it("coerces a null gh body to an empty string instead of dropping the PR", async () => {
+		const prNoBody = JSON.stringify({ ...JSON.parse(PR_JSON), body: null });
+		await writeFakeGh({ pr: prNoBody, restPr: REST_PR_JSON });
+		const runId = insertRun(GITHUB_ORIGIN);
+		const res = await request(await start(), `/api/runs/${runId}/pull-request`);
+		expect(res.status).toBe(200);
+		const { pullRequest } = JSON.parse(res.body) as PullRequestResponse;
+		expect(pullRequest?.body).toBe("");
+	});
+
 	it("returns null when gh finds no PR for the branch", async () => {
 		await writeFakeGh({});
 		const runId = insertRun(GITHUB_ORIGIN);
