@@ -4,12 +4,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { ChapterSidePanel } from "@/components/chapter";
-import {
-	type ChapterOverlayProps,
-	FileDiffList,
-	type FileDiffListHandle,
-	SidebarLayout,
-} from "@/components/files";
+import { type ChapterOverlayProps, FileDiffList, SidebarLayout } from "@/components/files";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChapterContext } from "@/lib/chapter-context";
@@ -20,7 +15,6 @@ import { formatChapterAsMarkdown } from "@/lib/format-chapter-markdown";
 import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import { groupAnnotatedLineRefsByFile, groupLineRefsByFile } from "@/lib/line-refs-by-file";
 import { sortLineRefsByChapterOrder } from "@/lib/sort-line-refs";
-import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
 import {
 	NAVIGATION_DIRECTION,
 	type NavigationDirection,
@@ -29,7 +23,7 @@ import {
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
-import { useFileNavigationKeys } from "@/lib/use-file-navigation-keys";
+import { useFileDiffNavigation } from "@/lib/use-file-diff-navigation";
 import { useViewState } from "@/lib/use-view-state";
 
 interface ChapterDetailPageProps {
@@ -113,21 +107,9 @@ function ChapterDetailContent({
 		[focusedLineRefs],
 	);
 
-	const diffListRef = useRef<FileDiffListHandle>(null);
-
 	const chapterFiles = useMemo(() => chapterEntries.map((e) => e.file), [chapterEntries]);
 	const chapterFilePaths = useMemo(() => chapterFiles.map((f) => f.path), [chapterFiles]);
 	const chapterFilePathSet = useMemo(() => new Set(chapterFilePaths), [chapterFilePaths]);
-
-	const { activeFilePath, setActiveFileManually } = useActiveFileOnScroll(chapterFiles);
-
-	const handleSelectFile = useCallback(
-		(filePath: string) => {
-			setActiveFileManually(filePath);
-			diffListRef.current?.scrollToFile(filePath);
-		},
-		[setActiveFileManually],
-	);
 
 	const handleToggleKeyChangeChecked = useCallback(
 		(keyChangeId: string) => {
@@ -153,21 +135,6 @@ function ChapterDetailContent({
 		[view],
 	);
 
-	const handleFocusKeyChange = useCallback(
-		(keyChangeId: string | null, scrollTarget?: LineRef | null) => {
-			setFocusedKeyChangeId(keyChangeId);
-			if (!keyChangeId) {
-				diffListRef.current?.cancelScrollToLine();
-				return;
-			}
-			const target = scrollTarget ?? findScrollTarget(chapter, keyChangeId);
-			if (target) {
-				diffListRef.current?.scrollToLine(target.filePath, target.side, target.startLine);
-			}
-		},
-		[chapter],
-	);
-
 	const defaultCollapsedIds = useMemo(() => {
 		const ids = new Set<string>();
 		for (const file of chapterFiles) {
@@ -187,7 +154,33 @@ function ChapterDetailContent({
 	);
 	useProvideCollapseActions(collapseState, chapterFilePaths.length);
 
-	useFileNavigationKeys(chapterFiles, activeFilePath, handleSelectFile);
+	const {
+		diffListRef,
+		currentFilePath,
+		keyboardFocusedFilePath,
+		handleSelectFile,
+		scrollToLine,
+		cancelScrollToLine,
+	} = useFileDiffNavigation({
+		files: chapterFiles,
+		onToggleViewed: handleToggleFileViewed,
+		collapse: collapseState,
+	});
+
+	const handleFocusKeyChange = useCallback(
+		(keyChangeId: string | null, scrollTarget?: LineRef | null) => {
+			setFocusedKeyChangeId(keyChangeId);
+			if (!keyChangeId) {
+				cancelScrollToLine();
+				return;
+			}
+			const target = scrollTarget ?? findScrollTarget(chapter, keyChangeId);
+			if (target) {
+				scrollToLine(target.filePath, target.side, target.startLine);
+			}
+		},
+		[chapter, scrollToLine, cancelScrollToLine],
+	);
 
 	const navigate = useNavigate();
 	const handleChapterNavigate = useCallback(
@@ -211,7 +204,6 @@ function ChapterDetailContent({
 		{
 			preventDefault: true,
 			enableOnFormTags: false,
-			...KEYBOARD_SHORTCUTS.MARK_CHAPTER_AS_VIEWED.hotkeyOptions,
 		},
 		[handleToggleChapterViewed, chapter.externalId],
 	);
@@ -249,7 +241,7 @@ function ChapterDetailContent({
 					chapter={chapter}
 					chapterIndex={chapterIndex}
 					files={chapterFiles}
-					focusedFilePath={activeFilePath}
+					focusedFilePath={currentFilePath}
 					viewedChapterIds={view.chapterIdSet}
 					checkedKeyChangeIds={view.keyChangeIdSet}
 					viewedFilePathSet={view.filePathSet}
@@ -272,6 +264,7 @@ function ChapterDetailContent({
 				onToggleViewed={handleToggleFileViewed}
 				collapseState={collapseState}
 				chapterOverlay={chapterOverlay}
+				focusedFilePath={keyboardFocusedFilePath}
 			/>
 		</SidebarLayout>
 	);

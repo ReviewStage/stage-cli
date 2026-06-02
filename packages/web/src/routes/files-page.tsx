@@ -1,20 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import {
-	FileDiffList,
-	type FileDiffListHandle,
-	FilePicker,
-	SidebarLayout,
-	type ViewedConfig,
-} from "@/components/files";
+import { useCallback, useEffect, useMemo } from "react";
+import { FileDiffList, FilePicker, SidebarLayout, type ViewedConfig } from "@/components/files";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProvideCollapseActions } from "@/lib/collapse-actions-context";
 import { FILE_STATUS, FILE_VIEWED_STATE } from "@/lib/diff-types";
 import { buildFileTree, flattenFileTree, sortFileTree } from "@/lib/file-tree";
 import { type FileDiffEntry, useFileDiffEntries } from "@/lib/parse-diff";
-import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
-import { useFileNavigationKeys } from "@/lib/use-file-navigation-keys";
+import { useFileDiffNavigation } from "@/lib/use-file-diff-navigation";
 import { useViewState } from "@/lib/use-view-state";
 
 // The CLI has no review comments, so the file tree never renders comment badges.
@@ -56,22 +49,18 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 	const collapseState = useFileCollapseState(defaultCollapsedFileIds, filePaths, runId);
 	useProvideCollapseActions(collapseState, filePaths.length);
 
-	const diffListRef = useRef<FileDiffListHandle>(null);
-	const { activeFilePath, setActiveFileManually } = useActiveFileOnScroll(files);
-
-	const handleSelectFile = useCallback(
-		(filePath: string) => {
-			setActiveFileManually(filePath);
-			diffListRef.current?.scrollToFile(filePath);
-		},
-		[setActiveFileManually],
-	);
+	const { diffListRef, currentFilePath, keyboardFocusedFilePath, handleSelectFile } =
+		useFileDiffNavigation({
+			files,
+			onToggleViewed: handleToggleViewed,
+			collapse: collapseState,
+		});
 
 	useEffect(() => {
 		if (scrollTo && !isLoading) {
 			diffListRef.current?.scrollToFile(scrollTo);
 		}
-	}, [scrollTo, isLoading]);
+	}, [scrollTo, isLoading, diffListRef]);
 
 	const viewed = useMemo<ViewedConfig>(
 		() => ({
@@ -86,8 +75,6 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 		[files, filePathSet, handleToggleViewed],
 	);
 
-	useFileNavigationKeys(files, activeFilePath, handleSelectFile);
-
 	if (error) return <FilesPageError error={error} />;
 	if (isLoading || diffData === undefined) return <FilesPageSkeleton />;
 
@@ -96,7 +83,7 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 			sidebar={
 				<FilePicker
 					files={files}
-					focusedFilePath={activeFilePath}
+					focusedFilePath={currentFilePath}
 					viewed={viewed}
 					commentCountsByPath={NO_COMMENT_COUNTS}
 					onSelectFile={handleSelectFile}
@@ -110,6 +97,7 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 				viewedPathSet={filePathSet}
 				onToggleViewed={handleToggleViewed}
 				collapseState={collapseState}
+				focusedFilePath={keyboardFocusedFilePath}
 			/>
 		</SidebarLayout>
 	);
