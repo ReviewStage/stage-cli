@@ -1,7 +1,7 @@
 import type { Chapter, LineRef } from "@stagereview/types/chapters";
 import type { FileContentsMap } from "@stagereview/types/diff";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { ChapterSidePanel } from "@/components/chapter";
 import { type ChapterOverlayProps, FileDiffList, SidebarLayout } from "@/components/files";
@@ -210,6 +210,26 @@ function ChapterDetailContent({
 		onToggleViewed: handleToggleFileViewed,
 		collapse: collapseState,
 	});
+
+	// On chapter change, realign the diff column to the new chapter's first file
+	// (matches the hosted app). `resetScroll: false` keeps the prior scroll
+	// offset, so when the user had scrolled down into the previous chapter the
+	// new first file lands above the sticky header — snap it back under the
+	// header. When already near the top (first file still below the header), the
+	// view is left alone so the chapter summary stays in sight.
+	const scrollAlignChapterRef = useRef(chapter.id);
+	useLayoutEffect(() => {
+		if (scrollAlignChapterRef.current === chapter.id) return;
+		scrollAlignChapterRef.current = chapter.id;
+		const firstPath = chapterFiles[0]?.path;
+		if (!firstPath) return;
+		const el = document.getElementById(`file-${firstPath}`);
+		if (!el) return;
+		const contentTop = Number.parseFloat(getComputedStyle(el).getPropertyValue("--content-top"));
+		if (el.getBoundingClientRect().top < contentTop) {
+			diffListRef.current?.scrollToFile(firstPath);
+		}
+	}, [chapter.id, chapterFiles, diffListRef]);
 
 	const handleFocusKeyChange = useCallback(
 		(keyChangeId: string | null, scrollTarget?: LineRef | null) => {
