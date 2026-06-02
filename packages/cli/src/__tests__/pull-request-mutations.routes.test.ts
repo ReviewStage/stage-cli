@@ -218,6 +218,26 @@ describe("pull-request mutation API", () => {
 		expect(await ghArgs()).toEqual([]);
 	});
 
+	it("rejects a DNS-rebinding mutation (matching Origin + non-loopback Host)", async () => {
+		const runId = insertRun();
+		const port = await start();
+		// DNS rebinding: the attacker's page is served from attacker.example:PORT,
+		// rebound to 127.0.0.1, so the browser sends that hostname in BOTH Origin and
+		// Host — a bare Origin===Host check would pass. The loopback-Host guard rejects.
+		const res = await send(
+			port,
+			"POST",
+			`/api/runs/${runId}/pull-request/close`,
+			{ number: 7 },
+			{
+				Origin: `http://attacker.example:${port}`,
+				Host: `attacker.example:${port}`,
+			},
+		);
+		expect(res.status).toBe(403);
+		expect(await ghArgs()).toEqual([]);
+	});
+
 	it("allows a same-origin mutation (Origin host matches the server)", async () => {
 		const runId = insertRun();
 		const port = await start();

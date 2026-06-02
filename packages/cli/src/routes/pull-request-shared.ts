@@ -58,22 +58,53 @@ export function parseNumber(value: string | null): number | null {
 	return Number.isInteger(n) && n > 0 ? n : null;
 }
 
+/** The server only ever binds to loopback, so a legitimate `Host` is one of these. */
+const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost"]);
+
+/** Hostname from a `Host` header (`host[:port]`), or null if it can't be parsed. */
+function hostHeaderHostname(host: string | undefined): string | null {
+	if (!host) return null;
+	try {
+		return new URL(`http://${host}`).hostname;
+	} catch {
+		return null;
+	}
+}
+
 /**
- * Reject cross-origin state-changing requests (CSRF guard for the gh-backed
- * mutations). The server binds to loopback, but a browser on any site can POST
- * to the predictable port and trigger a write. Browsers always attach an
- * accurate `Origin` on cross-origin requests and JS can't forge it, so we
- * require the request to be same-origin: the `Origin`'s host:port must match
- * the `Host` it connected to. This rejects not just remote sites but other
- * local origins too (e.g. a page on `http://localhost:3000`). Non-browser
- * clients (curl, scripts) send no `Origin` and are allowed — they aren't a CSRF
- * vector. Returns false (and writes 403) when the request must be rejected.
+ * Reject state-changing requests that could be CSRF or DNS-rebinding vectors
+ * against the gh-backed mutations. The server binds to loopback, but a browser
+ * on any site can POST to the predictable port and trigger a write.
+ *
+ * Two checks, both required:
+ *
+ * 1. **Loopback Host.** The server only binds to `127.0.0.1`, so a legitimate
+ *    request always carries a loopback `Host`. This is the anti-DNS-rebinding
+ *    guard: an attacker who rebinds their hostname to `127.0.0.1` reaches us
+ *    with that hostname in *both* `Origin` and `Host` — defeating a bare
+ *    `Origin === Host` check — but the hostname isn't a loopback literal, so we
+ *    reject it here. `Host` is mandatory under HTTP/1.1, so this also rejects
+ *    requests that omit it.
+ * 2. **Same-origin.** Browsers always attach an accurate `Origin` on
+ *    cross-origin requests and JS can't forge it, so when an `Origin` is present
+ *    its host:port must match the `Host` connected to. This rejects remote sites
+ *    and other local origins alike (e.g. a page on `http://localhost:3000`).
+ *
+ * Non-browser clients (curl, scripts) send no `Origin` and are allowed once the
+ * Host check passes — they aren't a CSRF vector. Returns false (and writes 403)
+ * when the request must be rejected.
  */
 export function enforceSameOrigin(req: Req, res: Res): boolean {
+	const host = req.headers.host;
+	const hostname = hostHeaderHostname(host);
+	if (hostname === null || !LOOPBACK_HOSTNAMES.has(hostname)) {
+		writeJson(res, 403, { error: "Cross-origin request rejected" });
+		return false;
+	}
 	const origin = req.headers.origin;
 	if (origin === undefined) return true;
 	try {
-		if (req.headers.host && new URL(origin).host === req.headers.host) return true;
+		if (new URL(origin).host === host) return true;
 	} catch {
 		// malformed Origin — fall through to reject
 	}
