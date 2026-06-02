@@ -202,7 +202,7 @@ describe("pull-request mutation API", () => {
 		expect(await ghArgs()).toEqual([]);
 	});
 
-	it("allows a mutation from a loopback origin", async () => {
+	it("rejects another local origin on a different port (CSRF guard)", async () => {
 		const runId = insertRun();
 		const port = await start();
 		const res = await send(
@@ -211,7 +211,23 @@ describe("pull-request mutation API", () => {
 			`/api/runs/${runId}/pull-request/close`,
 			{ number: 7 },
 			{
-				Origin: `http://127.0.0.1:${port}`,
+				Origin: "http://localhost:3000",
+			},
+		);
+		expect(res.status).toBe(403);
+		expect(await ghArgs()).toEqual([]);
+	});
+
+	it("allows a same-origin mutation (Origin host matches the server)", async () => {
+		const runId = insertRun();
+		const port = await start();
+		const res = await send(
+			port,
+			"POST",
+			`/api/runs/${runId}/pull-request/close`,
+			{ number: 7 },
+			{
+				Origin: `http://${LOOPBACK_HOST}:${port}`,
 			},
 		);
 		expect(res.status).toBe(200);
