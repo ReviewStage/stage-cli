@@ -172,7 +172,14 @@ function MergeActions({
 							if (isReady) {
 								enqueueMutation.mutate({ owner, repo, number, expectedHeadOid: headSha });
 							} else {
-								autoMergeMutation.mutate({ owner, repo, number, enabled: true, mergeMethod });
+								autoMergeMutation.mutate({
+									owner,
+									repo,
+									number,
+									enabled: true,
+									mergeMethod,
+									expectedHeadOid: headSha,
+								});
 							}
 						} else if (mergeInfo.isInMergeQueue && mergeInfo.entry) {
 							dequeueMutation.mutate({
@@ -213,7 +220,7 @@ function MergeActions({
 							repo,
 							number,
 							enabled: checked,
-							...(checked && { mergeMethod }),
+							...(checked && { mergeMethod, expectedHeadOid: headSha }),
 						});
 					}}
 				/>

@@ -115,12 +115,20 @@ export function enqueueMutationOptions(runId: string) {
 export function setAutoMergeMutationOptions(runId: string) {
 	return {
 		mutationFn: (
-			v: RepoVars & { number: number; enabled: boolean; mergeMethod?: PullRequestMergeMethod },
+			v: RepoVars & {
+				number: number;
+				enabled: boolean;
+				mergeMethod?: PullRequestMergeMethod;
+				// Forward the head SHA so enabling auto-merge guards against a stale head
+				// (--match-head-commit). The server ignores it when disabling.
+				expectedHeadOid?: string;
+			},
 		) =>
 			write(runId, "/auto-merge", "POST", {
 				number: v.number,
 				enabled: v.enabled,
 				mergeMethod: v.mergeMethod,
+				expectedHeadOid: v.expectedHeadOid,
 			}),
 	};
 }
