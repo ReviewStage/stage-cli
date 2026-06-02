@@ -3,7 +3,6 @@ export { ChapterNavigator } from "./chapter-navigator";
 export { ChapterSidePanel } from "./chapter-side-panel";
 export { ChapterSummary } from "./chapter-summary";
 export { FileHeader } from "./file-header";
-export { FILE_VIEWED_STATE, type FileViewedState, FileViewRow } from "./file-view-row";
 export {
 	findKeyChangeIdAtPoint,
 	isPointInReviewStateBadge,

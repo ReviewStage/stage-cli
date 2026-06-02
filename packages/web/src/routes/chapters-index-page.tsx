@@ -2,7 +2,6 @@ import type { Chapter, HunkReference } from "@stagereview/types/chapters";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, Circle, CircleCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileViewRow } from "@/components/chapter";
 import { LineCounts } from "@/components/shared/line-counts";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
@@ -145,11 +144,28 @@ function ChapterEntry({
 					onToggleAll={onToggleAllFiles}
 				>
 					{filePaths.map((p) => (
-						<FileViewRow key={p} filePath={p} />
+						<FilePathRow key={p} filePath={p} />
 					))}
 				</FileCollapsible>
 			)}
 		</div>
+	);
+}
+
+function FilePathRow({ filePath }: { filePath: string }) {
+	const lastSlashIndex = filePath.lastIndexOf("/");
+	const directory = lastSlashIndex === -1 ? null : filePath.slice(0, lastSlashIndex + 1);
+	const displayFilename = lastSlashIndex === -1 ? filePath : filePath.slice(lastSlashIndex + 1);
+
+	return (
+		<span className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm">
+			<span className="flex min-w-0 flex-1 items-baseline overflow-hidden font-mono text-foreground/80 text-xs">
+				{directory && (
+					<span className="min-w-0 shrink-[999] truncate text-muted-foreground">{directory}</span>
+				)}
+				<span className="min-w-0 shrink truncate">{displayFilename}</span>
+			</span>
+		</span>
 	);
 }
 

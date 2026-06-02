@@ -1,22 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
 	FileDiffList,
 	type FileDiffListHandle,
 	FilePicker,
 	SidebarLayout,
+	type ViewedConfig,
 } from "@/components/files";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProvideCollapseActions } from "@/lib/collapse-actions-context";
-import { FILE_STATUS } from "@/lib/diff-types";
+import { FILE_STATUS, FILE_VIEWED_STATE } from "@/lib/diff-types";
 import { buildFileTree, flattenFileTree, sortFileTree } from "@/lib/file-tree";
-import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import { type FileDiffEntry, useFileDiffEntries } from "@/lib/parse-diff";
 import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
 import { useFileNavigationKeys } from "@/lib/use-file-navigation-keys";
 import { useViewState } from "@/lib/use-view-state";
+
+// The CLI has no review comments, so the file tree never renders comment badges.
+const NO_COMMENT_COUNTS: Map<string, number> = new Map();
 
 interface FilesPageProps {
 	runId: string;
@@ -71,11 +73,19 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 		}
 	}, [scrollTo, isLoading]);
 
-	const [isPickerCollapsed, setIsPickerCollapsed] = useState(false);
-	useHotkeys(KEYBOARD_SHORTCUTS.TOGGLE_FILES.hotkey, () => setIsPickerCollapsed((c) => !c), {
-		preventDefault: true,
-		enableOnFormTags: false,
-	});
+	const viewed = useMemo<ViewedConfig>(
+		() => ({
+			stateByPath: new Map(
+				files.map((file) => [
+					file.path,
+					filePathSet.has(file.path) ? FILE_VIEWED_STATE.VIEWED : FILE_VIEWED_STATE.UNVIEWED,
+				]),
+			),
+			onToggle: handleToggleViewed,
+		}),
+		[files, filePathSet, handleToggleViewed],
+	);
+
 	useFileNavigationKeys(files, activeFilePath, handleSelectFile);
 
 	if (error) return <FilesPageError error={error} />;
@@ -86,11 +96,10 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 			sidebar={
 				<FilePicker
 					files={files}
-					activeFilePath={activeFilePath}
-					viewedPathSet={filePathSet}
+					focusedFilePath={activeFilePath}
+					viewed={viewed}
+					commentCountsByPath={NO_COMMENT_COUNTS}
 					onSelectFile={handleSelectFile}
-					isCollapsed={isPickerCollapsed}
-					onCollapsedChange={setIsPickerCollapsed}
 				/>
 			}
 		>

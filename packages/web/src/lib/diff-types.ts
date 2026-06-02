@@ -25,6 +25,13 @@ export const FILE_STATUS = {
 } as const;
 export type FileStatus = (typeof FILE_STATUS)[keyof typeof FILE_STATUS];
 
+export const FILE_VIEWED_STATE = {
+	DISMISSED: "DISMISSED",
+	UNVIEWED: "UNVIEWED",
+	VIEWED: "VIEWED",
+} as const;
+export type FileViewedState = (typeof FILE_VIEWED_STATE)[keyof typeof FILE_VIEWED_STATE];
+
 export interface DiffLineRecord {
 	type: "context" | "addition" | "deletion" | "header";
 	content: string;

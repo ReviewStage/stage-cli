@@ -248,7 +248,8 @@ function ChapterDetailContent({
 				<ChapterSidePanel
 					chapter={chapter}
 					chapterIndex={chapterIndex}
-					chapterEntries={chapterEntries}
+					files={chapterFiles}
+					focusedFilePath={activeFilePath}
 					viewedChapterIds={view.chapterIdSet}
 					checkedKeyChangeIds={view.keyChangeIdSet}
 					viewedFilePathSet={view.filePathSet}
