@@ -73,6 +73,7 @@ export function ChapterNavigator({
 						<Link
 							to="/runs/$runId/chapters/$chapterNumber"
 							params={{ runId, chapterNumber: String(prevChapter.order) }}
+							resetScroll={false}
 							className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 						>
 							<ChevronLeft className="size-4" />
@@ -105,6 +106,7 @@ export function ChapterNavigator({
 									<Link
 										to="/runs/$runId/chapters/$chapterNumber"
 										params={{ runId, chapterNumber: String(ch.order) }}
+										resetScroll={false}
 										className={cn("cursor-pointer", isActive && "bg-accent")}
 									>
 										<StatusBadge
@@ -146,6 +148,7 @@ export function ChapterNavigator({
 						<Link
 							to="/runs/$runId/chapters/$chapterNumber"
 							params={{ runId, chapterNumber: String(nextChapter.order) }}
+							resetScroll={false}
 							className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 						>
 							<ChevronRight className="size-4" />

@@ -131,6 +131,9 @@ function ChapterDetailContent({
 			void navigate({
 				to: "/runs/$runId/chapters/$chapterNumber",
 				params: { runId, chapterNumber: String(next.order) },
+				// Preserve scroll position when moving between chapters on the detail
+				// page (matches the hosted app); resetting would jump to the top.
+				resetScroll: false,
 			});
 		}
 	}, [allChapters, chapter.externalId, view.chapterIdSet, chapterIndex, navigate, runId]);
@@ -232,6 +235,9 @@ function ChapterDetailContent({
 			void navigate({
 				to: "/runs/$runId/chapters/$chapterNumber",
 				params: { runId, chapterNumber: String(target.order) },
+				// Keep scroll position when stepping chapters via the keyboard
+				// (matches the hosted app); the default would jump to the top.
+				resetScroll: false,
 			});
 		},
 		[allChapters, chapterIndex, navigate, runId],
