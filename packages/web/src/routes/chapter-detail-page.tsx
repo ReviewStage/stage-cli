@@ -111,6 +111,30 @@ function ChapterDetailContent({
 	const chapterFilePaths = useMemo(() => chapterFiles.map((f) => f.path), [chapterFiles]);
 	const chapterFilePathSet = useMemo(() => new Set(chapterFilePaths), [chapterFilePaths]);
 
+	const navigate = useNavigate();
+
+	// After a chapter is marked viewed, advance to the next chapter — or, once
+	// every chapter is viewed, return to the run's chapter list. Mirrors the
+	// hosted app's mark-complete flow (minus the confetti the CLI omits).
+	const advanceAfterChapterComplete = useCallback(() => {
+		// markChapterViewed patches the cache on a later tick, so this snapshot
+		// still excludes the chapter just marked — treat it as about-to-be-viewed.
+		const willBeAllViewed = allChapters.every(
+			(ch) => ch.externalId === chapter.externalId || view.chapterIdSet.has(ch.externalId),
+		);
+		if (willBeAllViewed) {
+			void navigate({ to: "/runs/$runId", params: { runId } });
+			return;
+		}
+		const next = allChapters[chapterIndex + 1];
+		if (next) {
+			void navigate({
+				to: "/runs/$runId/chapters/$chapterNumber",
+				params: { runId, chapterNumber: String(next.order) },
+			});
+		}
+	}, [allChapters, chapter.externalId, view.chapterIdSet, chapterIndex, navigate, runId]);
+
 	const handleToggleKeyChangeChecked = useCallback(
 		(keyChangeId: string) => {
 			if (view.keyChangeIdSet.has(keyChangeId)) view.unmarkKeyChangeChecked(keyChangeId);
@@ -121,18 +145,35 @@ function ChapterDetailContent({
 
 	const handleToggleChapterViewed = useCallback(
 		(externalId: string) => {
-			if (view.chapterIdSet.has(externalId)) view.unmarkChapterViewed(externalId);
-			else view.markChapterViewed(externalId);
+			if (view.chapterIdSet.has(externalId)) {
+				view.unmarkChapterViewed(externalId);
+				return;
+			}
+			view.markChapterViewed(externalId);
+			// Advance only when completing the chapter currently on screen.
+			if (externalId === chapter.externalId) advanceAfterChapterComplete();
 		},
-		[view],
+		[view, chapter.externalId, advanceAfterChapterComplete],
 	);
 
 	const handleToggleFileViewed = useCallback(
 		(filePath: string) => {
-			if (view.filePathSet.has(filePath)) view.unmarkFileViewed(filePath);
-			else view.markFileViewed(filePath);
+			if (view.filePathSet.has(filePath)) {
+				view.unmarkFileViewed(filePath);
+				return;
+			}
+			view.markFileViewed(filePath);
+			// Auto-complete the chapter once its last unviewed file is marked, so
+			// finishing a chapter's files also marks the chapter viewed and advances.
+			const willCompleteChapter =
+				!view.chapterIdSet.has(chapter.externalId) &&
+				chapterFilePaths.every((path) => path === filePath || view.filePathSet.has(path));
+			if (willCompleteChapter) {
+				view.markChapterViewed(chapter.externalId);
+				advanceAfterChapterComplete();
+			}
 		},
-		[view],
+		[view, chapter.externalId, chapterFilePaths, advanceAfterChapterComplete],
 	);
 
 	const defaultCollapsedIds = useMemo(() => {
@@ -182,7 +223,6 @@ function ChapterDetailContent({
 		[chapter, scrollToLine, cancelScrollToLine],
 	);
 
-	const navigate = useNavigate();
 	const handleChapterNavigate = useCallback(
 		(direction: NavigationDirection) => {
 			const targetIndex =
