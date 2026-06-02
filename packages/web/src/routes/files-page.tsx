@@ -58,9 +58,11 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 
 	useEffect(() => {
 		if (scrollTo && !isLoading) {
-			diffListRef.current?.scrollToFile(scrollTo);
+			// Select (not just scroll) so the picker highlights the linked file and
+			// j/k/v/; start from it instead of defaulting to the first/last file.
+			handleSelectFile(scrollTo);
 		}
-	}, [scrollTo, isLoading, diffListRef]);
+	}, [scrollTo, isLoading, handleSelectFile]);
 
 	const viewed = useMemo<ViewedConfig>(
 		() => ({

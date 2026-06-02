@@ -202,6 +202,7 @@ function ChapterDetailContent({
 		diffListRef,
 		currentFilePath,
 		keyboardFocusedFilePath,
+		selectFile,
 		handleSelectFile,
 		scrollToLine,
 		cancelScrollToLine,
@@ -228,8 +229,11 @@ function ChapterDetailContent({
 		const contentTop = Number.parseFloat(getComputedStyle(el).getPropertyValue("--content-top"));
 		if (el.getBoundingClientRect().top < contentTop) {
 			diffListRef.current?.scrollToFile(firstPath);
+			// Sync focus to the file now at the top so j/k/v/; act on it rather than
+			// a stale path carried over from the previous chapter.
+			selectFile(firstPath);
 		}
-	}, [chapter.id, chapterFiles, diffListRef]);
+	}, [chapter.id, chapterFiles, diffListRef, selectFile]);
 
 	const handleFocusKeyChange = useCallback(
 		(keyChangeId: string | null, scrollTarget?: LineRef | null) => {
@@ -241,9 +245,11 @@ function ChapterDetailContent({
 			const target = scrollTarget ?? findScrollTarget(chapter, keyChangeId);
 			if (target) {
 				scrollToLine(target.filePath, target.side, target.startLine);
+				// Focus the file the key change lives in so file shortcuts act on it.
+				selectFile(target.filePath);
 			}
 		},
-		[chapter, scrollToLine, cancelScrollToLine],
+		[chapter, scrollToLine, cancelScrollToLine, selectFile],
 	);
 
 	const handleChapterNavigate = useCallback(

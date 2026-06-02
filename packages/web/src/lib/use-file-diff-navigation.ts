@@ -88,7 +88,11 @@ export function useFileDiffNavigation({
 
 	const hasFiles = files.length > 0;
 	const navEnabled = enabled && hasFiles;
-	const allCollapsed = hasFiles && collapsedFiles.size >= files.length;
+	// Test membership rather than comparing sizes: `collapsedFiles` can carry
+	// paths that aren't in the current `files` list (e.g. viewed-state defaults
+	// for files outside this view), which would inflate a size comparison and
+	// flip Shift+; to expand-all while a visible file is still expanded.
+	const allCollapsed = hasFiles && files.every((file) => collapsedFiles.has(file.path));
 
 	useFileNavigationKeys(files, currentFilePath, handleKeyboardFocusFile, navEnabled);
 	// Gate `v` on viewed-state readiness so advancing never walks past files
