@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { FileDiffList, FilePicker, SidebarLayout, type ViewedConfig } from "@/components/files";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProvideCollapseActions } from "@/lib/collapse-actions-context";
@@ -15,10 +15,9 @@ const NO_COMMENT_COUNTS: Map<string, number> = new Map();
 
 interface FilesPageProps {
 	runId: string;
-	scrollTo?: string;
 }
 
-export function FilesPage({ runId, scrollTo }: FilesPageProps) {
+export function FilesPage({ runId }: FilesPageProps) {
 	const { data: diffData, isLoading, error } = useDiffPatch(runId);
 
 	const rawEntries = useFileDiffEntries(diffData?.patch, diffData?.fileContents);
@@ -58,14 +57,6 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 			onToggleViewed: handleToggleViewed,
 			collapse: collapseState,
 		});
-
-	useEffect(() => {
-		if (scrollTo && !isLoading) {
-			// Select (not just scroll) so the picker highlights the linked file and
-			// j/k/v/; start from it instead of defaulting to the first/last file.
-			handleSelectFile(scrollTo);
-		}
-	}, [scrollTo, isLoading, handleSelectFile]);
 
 	const viewed = useMemo<ViewedConfig>(
 		() => ({
