@@ -229,11 +229,8 @@ function ChapterDetailContent({
 		const contentTop = Number.parseFloat(getComputedStyle(el).getPropertyValue("--content-top"));
 		if (el.getBoundingClientRect().top < contentTop) {
 			diffListRef.current?.scrollToFile(firstPath);
-			// Sync focus to the file now at the top so j/k/v/; act on it rather than
-			// a stale path carried over from the previous chapter.
-			selectFile(firstPath);
 		}
-	}, [chapter.id, chapterFiles, diffListRef, selectFile]);
+	}, [chapter.id, chapterFiles, diffListRef]);
 
 	const handleFocusKeyChange = useCallback(
 		(keyChangeId: string | null, scrollTarget?: LineRef | null) => {

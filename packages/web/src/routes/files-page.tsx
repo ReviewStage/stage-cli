@@ -34,14 +34,17 @@ export function FilesPage({ runId, scrollTo }: FilesPageProps) {
 		[filePathSet, markFileViewed, unmarkFileViewed],
 	);
 
-	// Deleted and viewed files start collapsed; useFileCollapseState lets the
-	// user override per-file while keeping these defaults reactive.
+	// Deleted and already-viewed files start collapsed; useFileCollapseState lets
+	// the user override per-file while keeping these defaults reactive. Scoped to
+	// the current files (a viewed path may linger in view-state for a file no
+	// longer in the diff) so collapsedFiles stays a subset of files.
 	const defaultCollapsedFileIds = useMemo(() => {
 		const ids = new Set<string>();
 		for (const file of files) {
-			if (file.status === FILE_STATUS.DELETED) ids.add(file.path);
+			if (file.status === FILE_STATUS.DELETED || filePathSet.has(file.path)) {
+				ids.add(file.path);
+			}
 		}
-		for (const path of filePathSet) ids.add(path);
 		return ids;
 	}, [files, filePathSet]);
 
