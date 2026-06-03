@@ -144,20 +144,24 @@ interface ChaptersIndexPageProps {
 
 export function ChaptersIndexPage({ chapters, runId, isLoading }: ChaptersIndexPageProps) {
 	const { data: diffData } = useDiffPatch(runId);
-	const patch = diffData?.patch;
+	// Gate on the diff query having settled, not on a non-empty patch, so the button
+	// still shows for a legitimately empty diff (the formatter just omits file sections).
+	const diffLoaded = diffData !== undefined;
 	const hasChapters = (chapters?.length ?? 0) > 0;
 	const copyChapters = useCallback(
-		() => (chapters && patch ? formatAllChaptersAsMarkdown(chapters, patch) : null),
-		[chapters, patch],
+		() => (chapters ? formatAllChaptersAsMarkdown(chapters, diffData?.patch ?? "") : null),
+		[chapters, diffData?.patch],
 	);
 
 	return (
 		<div>
 			<OverviewColumnHeader>
 				<SectionLabel>Chapters</SectionLabel>
-				{/* Gated on the diff being loaded so a copy can't omit the per-chapter
+				{/* Shown once the diff has loaded so a copy includes the per-chapter
 				    file lists (the patch drives them). Mirrors hosted's onCopy gate. */}
-				{hasChapters && patch && <CopyMarkdownButton getMarkdown={copyChapters} label="chapters" />}
+				{hasChapters && diffLoaded && (
+					<CopyMarkdownButton getMarkdown={copyChapters} label="chapters" />
+				)}
 			</OverviewColumnHeader>
 			{isLoading || !chapters ? (
 				<ChapterLoadingSkeleton />
