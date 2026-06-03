@@ -1,6 +1,6 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { BookOpen, FileText, FoldVertical, Settings2, UnfoldVertical } from "lucide-react";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useMemo, useRef, useState } from "react";
 import { DiffSettingsForm } from "@/components/diff/diff-settings-form";
 import { PullRequestHeader } from "@/components/pull-request/pull-request-header";
 import { PullRequestHeaderSkeleton } from "@/components/pull-request/pull-request-header-skeleton";
@@ -23,6 +23,10 @@ const PR_TAB = {
 	FILES: "files",
 } as const;
 type PrTab = (typeof PR_TAB)[keyof typeof PR_TAB];
+
+// The topbar's h-12 (48px). The contained layout reserves it so the page itself
+// never scrolls — only the prologue/chapters panels do.
+const TOPBAR_PX = 48;
 
 const tabs = [
 	{ id: PR_TAB.CHAPTERS, label: "Chapters", icon: BookOpen, to: "/runs/$runId" as const },
@@ -125,10 +129,21 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		isPrOpen,
 	);
 	const activeTab = useRouterState({
-		select: (state): PrTab => {
-			const routeIds = new Set(state.matches.map((match) => match.routeId));
-			if (routeIds.has("/runs/$runId/files")) return PR_TAB.FILES;
-			return PR_TAB.CHAPTERS;
+		select: (state): PrTab =>
+			state.matches.some((match) => match.routeId === "/runs/$runId/files")
+				? PR_TAB.FILES
+				: PR_TAB.CHAPTERS,
+	});
+	// The chapters index uses contained scroll (the page is locked to the viewport
+	// and only the panels scroll); files and chapter detail keep page scroll for
+	// their long diff lists, where the header scrolls away under a sticky nav.
+	const usesPageScroll = useRouterState({
+		select: (state) => {
+			const routeIds = state.matches.map((match) => match.routeId);
+			return (
+				routeIds.includes("/runs/$runId/files") ||
+				routeIds.includes("/runs/$runId/chapters/$chapterNumber")
+			);
 		},
 	});
 
@@ -167,16 +182,34 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		return String(totalFileCount);
 	})();
 
-	// `--content-top` and `--main-height` are read by the sticky file picker.
-	const navRef = useRef<HTMLElement>(null);
+	// Page-scroll tabs read `--content-top` (topbar + sticky nav) to pin their own
+	// sticky content; the contained index instead measures the content area height
+	// so its panels can size to it via `--main-height`. Callback refs re-attach the
+	// observers cleanly as the content element swaps between the two scroll modes.
 	const [navHeight, setNavHeight] = useState(0);
-	useEffect(() => {
-		const el = navRef.current;
-		if (!el) return;
-		const observer = new ResizeObserver(() => setNavHeight(el.getBoundingClientRect().height));
-		observer.observe(el);
-		setNavHeight(el.getBoundingClientRect().height);
-		return () => observer.disconnect();
+	const navObserverRef = useRef<ResizeObserver | null>(null);
+	const navRef = useCallback((node: HTMLElement | null) => {
+		navObserverRef.current?.disconnect();
+		navObserverRef.current = null;
+		if (node) {
+			const observer = new ResizeObserver(() => setNavHeight(node.offsetHeight));
+			observer.observe(node);
+			navObserverRef.current = observer;
+			setNavHeight(node.offsetHeight);
+		}
+	}, []);
+
+	const [contentHeight, setContentHeight] = useState(0);
+	const contentObserverRef = useRef<ResizeObserver | null>(null);
+	const contentRef = useCallback((node: HTMLDivElement | null) => {
+		contentObserverRef.current?.disconnect();
+		contentObserverRef.current = null;
+		if (node) {
+			const observer = new ResizeObserver(() => setContentHeight(node.clientHeight));
+			observer.observe(node);
+			contentObserverRef.current = observer;
+			setContentHeight(node.clientHeight);
+		}
 	}, []);
 
 	const { totalAdditions, totalDeletions } = useMemo(() => {
@@ -191,95 +224,119 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 
 	if (error) return <ErrorState error={error} />;
 
-	// 48 = the app-shell Topbar's `h-12`, which the picker also has to clear.
-	const layoutStyle = {
-		"--content-top": `${48 + navHeight}px`,
-		"--main-height": "100vh",
-	} as CSSProperties;
-
 	return (
 		<CollapseActionsProvider>
-			<div className="@container flex flex-1 flex-col" style={layoutStyle}>
-				<div className="flex-1 px-6 pt-6 lg:px-8">
+			<div
+				className={cn(
+					"@container flex flex-col px-6 pt-6 lg:px-8",
+					usesPageScroll ? "flex-1" : "h-[calc(100vh_-_3rem)] overflow-hidden",
+				)}
+			>
+				<div className={cn("mb-4", !usesPageScroll && "shrink-0")}>
 					{isPrLoading ? (
-						<div className="mb-4">
-							<PullRequestHeaderSkeleton />
-						</div>
+						<PullRequestHeaderSkeleton />
 					) : pullRequest ? (
-						<div className="mb-4">
-							<PullRequestProvider runId={runId} pullRequest={pullRequest}>
-								<PullRequestHeader
-									pullRequest={pullRequest}
-									mergeInfo={mergeStatusData?.mergeStatus ?? undefined}
-								/>
-							</PullRequestProvider>
-						</div>
+						<PullRequestProvider runId={runId} pullRequest={pullRequest}>
+							<PullRequestHeader
+								pullRequest={pullRequest}
+								mergeInfo={mergeStatusData?.mergeStatus ?? undefined}
+							/>
+						</PullRequestProvider>
 					) : (
-						<header className="mb-4 space-y-1">
+						<header className="space-y-1">
 							<SectionLabel>Run</SectionLabel>
 							<p className="break-all font-mono text-foreground/80 text-xs">
 								{data?.run.id ?? runId}
 							</p>
 						</header>
 					)}
-					<nav
-						ref={navRef}
-						className="-mx-6 lg:-mx-8 sticky top-12 z-20 mb-6 flex items-center justify-between gap-4 bg-background px-6 lg:px-8 py-2"
-					>
-						<div className="flex shrink-0 items-center gap-1">
-							{tabs.map((tab) => (
-								<TabLink
-									key={tab.id}
-									tab={tab}
-									runId={runId}
-									isActive={tab.id === activeTab}
-									countLabel={
-										tab.id === PR_TAB.CHAPTERS
-											? chapterCountLabel
-											: tab.id === PR_TAB.FILES
-												? fileCountLabel
-												: undefined
-									}
-								/>
-							))}
-						</div>
-						<div className="flex shrink-0 items-center gap-3 text-sm @xl:gap-6">
-							<CollapseExpandAllButton />
-							<Popover>
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<PopoverTrigger asChild>
-											<Button
-												variant="outline"
-												size="sm"
-												className="h-7 cursor-pointer px-2"
-												aria-label="Display settings"
-											>
-												<Settings2 className="size-3.5" />
-												<span className="ml-1 hidden text-xs @7xl:inline">Display</span>
-											</Button>
-										</PopoverTrigger>
-									</TooltipTrigger>
-									<TooltipContent>Display settings</TooltipContent>
-								</Tooltip>
-								<PopoverContent align="end" className="w-80">
-									<DiffSettingsForm compact />
-								</PopoverContent>
-							</Popover>
-							<div className="hidden items-center gap-3 @5xl:flex">
-								<span className="font-medium text-green-600 dark:text-green-500">
-									+{totalAdditions.toLocaleString()}
-								</span>
-								<span className="font-medium text-red-600 dark:text-red-500">
-									-{totalDeletions.toLocaleString()}
-								</span>
-							</div>
-						</div>
-					</nav>
-					<ChapterProvider runId={runId}>
-						<Outlet />
-					</ChapterProvider>
 				</div>
+				<nav
+					ref={navRef}
+					className={cn(
+						"z-20 flex items-center justify-between gap-4 py-2",
+						usesPageScroll
+							? "-mx-6 lg:-mx-8 sticky top-12 mb-6 bg-background px-6 lg:px-8"
+							: "mb-6 shrink-0",
+					)}
+				>
+					<div className="flex shrink-0 items-center gap-1">
+						{tabs.map((tab) => (
+							<TabLink
+								key={tab.id}
+								tab={tab}
+								runId={runId}
+								isActive={tab.id === activeTab}
+								countLabel={
+									tab.id === PR_TAB.CHAPTERS
+										? chapterCountLabel
+										: tab.id === PR_TAB.FILES
+											? fileCountLabel
+											: undefined
+								}
+							/>
+						))}
+					</div>
+					<div className="flex shrink-0 items-center gap-3 text-sm @xl:gap-6">
+						<CollapseExpandAllButton />
+						<Popover>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<PopoverTrigger asChild>
+										<Button
+											variant="outline"
+											size="sm"
+											className="h-7 cursor-pointer px-2"
+											aria-label="Display settings"
+										>
+											<Settings2 className="size-3.5" />
+											<span className="ml-1 hidden text-xs @7xl:inline">Display</span>
+										</Button>
+									</PopoverTrigger>
+								</TooltipTrigger>
+								<TooltipContent>Display settings</TooltipContent>
+							</Tooltip>
+							<PopoverContent align="end" className="w-80">
+								<DiffSettingsForm compact />
+							</PopoverContent>
+						</Popover>
+						<div className="hidden items-center gap-3 @5xl:flex">
+							<span className="font-medium text-green-600 dark:text-green-500">
+								+{totalAdditions.toLocaleString()}
+							</span>
+							<span className="font-medium text-red-600 dark:text-red-500">
+								-{totalDeletions.toLocaleString()}
+							</span>
+						</div>
+					</div>
+				</nav>
+				<ChapterProvider runId={runId}>
+					{usesPageScroll ? (
+						<div
+							style={
+								{
+									"--content-top": `${TOPBAR_PX + navHeight}px`,
+									"--main-height": "100vh",
+								} as CSSProperties
+							}
+						>
+							<Outlet />
+						</div>
+					) : (
+						<div
+							ref={contentRef}
+							className="scrollbar-thin min-h-0 flex-1 overflow-y-auto"
+							style={
+								{
+									"--content-top": "0px",
+									"--main-height": `${contentHeight}px`,
+								} as CSSProperties
+							}
+						>
+							<Outlet />
+						</div>
+					)}
+				</ChapterProvider>
 			</div>
 		</CollapseActionsProvider>
 	);

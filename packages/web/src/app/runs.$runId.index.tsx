@@ -32,8 +32,8 @@ function ChaptersRoute() {
 	}
 
 	return (
-		<div className="@container">
-			<div className="grid grid-cols-1 gap-6 @4xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+		<div className="@container h-full">
+			<div className="grid h-full grid-cols-1 gap-6 @4xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
 				<div className={COLUMN_CLASS}>
 					<OverviewSidebar prologue={prologue} pullRequest={pullRequest} runId={runId} />
 				</div>
