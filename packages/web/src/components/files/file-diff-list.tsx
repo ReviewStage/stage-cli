@@ -5,6 +5,7 @@ import { PierreDiffViewer } from "@/components/chapter/pierre-diff-viewer";
 import { findRenderedDiffLine } from "@/components/chapter/rendered-line-target";
 import type { AnnotatedLineRef, DiffSide, LineRef } from "@/lib/diff-types";
 import type { FileDiffEntry } from "@/lib/parse-diff";
+import { cn } from "@/lib/utils";
 
 export interface FileDiffListHandle {
 	scrollToFile: (filePath: string) => void;
@@ -41,6 +42,8 @@ interface FileDiffListProps {
 	onToggleViewed?: (path: string) => void;
 	collapseState: CollapseState;
 	chapterOverlay?: ChapterOverlayProps;
+	/** The keyboard-focused file, outlined to mark it as the active diff. */
+	focusedFilePath?: string;
 }
 
 const FILE_TOP_PADDING = 16;
@@ -48,7 +51,15 @@ const SCROLL_TO_LINE_POLL_MS = 100;
 const SCROLL_TO_LINE_TIMEOUT_MS = 3000;
 
 export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(function FileDiffList(
-	{ entries, emptyMessage, viewedPathSet, onToggleViewed, collapseState, chapterOverlay },
+	{
+		entries,
+		emptyMessage,
+		viewedPathSet,
+		onToggleViewed,
+		collapseState,
+		chapterOverlay,
+		focusedFilePath,
+	},
 	ref,
 ) {
 	const scrollRequestRef = useRef(0);
@@ -197,6 +208,7 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 					key={entry.file.path}
 					entry={entry}
 					isViewed={viewedPathSet?.has(entry.file.path) ?? false}
+					isFocused={entry.file.path === focusedFilePath}
 					onToggleViewed={onToggleViewed}
 					collapseState={collapseState}
 					chapterOverlay={chapterOverlay}
@@ -209,6 +221,7 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 interface FileDiffSectionProps {
 	entry: FileDiffEntry;
 	isViewed: boolean;
+	isFocused: boolean;
 	onToggleViewed?: (path: string) => void;
 	collapseState: CollapseState;
 	chapterOverlay?: ChapterOverlayProps;
@@ -217,6 +230,7 @@ interface FileDiffSectionProps {
 function FileDiffSection({
 	entry,
 	isViewed,
+	isFocused,
 	onToggleViewed,
 	collapseState,
 	chapterOverlay,
@@ -239,7 +253,11 @@ function FileDiffSection({
 	}, [onToggleViewed, file.path]);
 
 	return (
-		<div id={`file-${file.path}`}>
+		<div
+			id={`file-${file.path}`}
+			data-focused-file={isFocused ? "true" : undefined}
+			className={cn("rounded-lg", isFocused && "outline-2 outline-primary/70")}
+		>
 			<FileHeader
 				file={file}
 				isCollapsed={isCollapsed}

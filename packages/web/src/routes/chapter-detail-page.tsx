@@ -1,15 +1,10 @@
 import type { Chapter, LineRef } from "@stagereview/types/chapters";
 import type { FileContentsMap } from "@stagereview/types/diff";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { ChapterSidePanel } from "@/components/chapter";
-import {
-	type ChapterOverlayProps,
-	FileDiffList,
-	type FileDiffListHandle,
-	SidebarLayout,
-} from "@/components/files";
+import { type ChapterOverlayProps, FileDiffList, SidebarLayout } from "@/components/files";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChapterContext } from "@/lib/chapter-context";
@@ -20,7 +15,6 @@ import { formatChapterAsMarkdown } from "@/lib/format-chapter-markdown";
 import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import { groupAnnotatedLineRefsByFile, groupLineRefsByFile } from "@/lib/line-refs-by-file";
 import { sortLineRefsByChapterOrder } from "@/lib/sort-line-refs";
-import { useActiveFileOnScroll } from "@/lib/use-active-file-on-scroll";
 import {
 	NAVIGATION_DIRECTION,
 	type NavigationDirection,
@@ -29,7 +23,7 @@ import {
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
-import { useFileNavigationKeys } from "@/lib/use-file-navigation-keys";
+import { useFileDiffNavigation } from "@/lib/use-file-diff-navigation";
 import { useViewState } from "@/lib/use-view-state";
 
 interface ChapterDetailPageProps {
@@ -113,21 +107,36 @@ function ChapterDetailContent({
 		[focusedLineRefs],
 	);
 
-	const diffListRef = useRef<FileDiffListHandle>(null);
-
 	const chapterFiles = useMemo(() => chapterEntries.map((e) => e.file), [chapterEntries]);
 	const chapterFilePaths = useMemo(() => chapterFiles.map((f) => f.path), [chapterFiles]);
 	const chapterFilePathSet = useMemo(() => new Set(chapterFilePaths), [chapterFilePaths]);
 
-	const { activeFilePath, setActiveFileManually } = useActiveFileOnScroll(chapterFiles);
+	const navigate = useNavigate();
 
-	const handleSelectFile = useCallback(
-		(filePath: string) => {
-			setActiveFileManually(filePath);
-			diffListRef.current?.scrollToFile(filePath);
-		},
-		[setActiveFileManually],
-	);
+	// After a chapter is marked viewed, advance to the next chapter — or, once
+	// every chapter is viewed, return to the run's chapter list. Mirrors the
+	// hosted app's mark-complete flow (minus the confetti the CLI omits).
+	const advanceAfterChapterComplete = useCallback(() => {
+		// markChapterViewed patches the cache on a later tick, so this snapshot
+		// still excludes the chapter just marked — treat it as about-to-be-viewed.
+		const willBeAllViewed = allChapters.every(
+			(ch) => ch.externalId === chapter.externalId || view.chapterIdSet.has(ch.externalId),
+		);
+		if (willBeAllViewed) {
+			void navigate({ to: "/runs/$runId", params: { runId } });
+			return;
+		}
+		const next = allChapters[chapterIndex + 1];
+		if (next) {
+			void navigate({
+				to: "/runs/$runId/chapters/$chapterNumber",
+				params: { runId, chapterNumber: String(next.order) },
+				// Preserve scroll position when moving between chapters on the detail
+				// page (matches the hosted app); resetting would jump to the top.
+				resetScroll: false,
+			});
+		}
+	}, [allChapters, chapter.externalId, view.chapterIdSet, chapterIndex, navigate, runId]);
 
 	const handleToggleKeyChangeChecked = useCallback(
 		(keyChangeId: string) => {
@@ -139,33 +148,35 @@ function ChapterDetailContent({
 
 	const handleToggleChapterViewed = useCallback(
 		(externalId: string) => {
-			if (view.chapterIdSet.has(externalId)) view.unmarkChapterViewed(externalId);
-			else view.markChapterViewed(externalId);
+			if (view.chapterIdSet.has(externalId)) {
+				view.unmarkChapterViewed(externalId);
+				return;
+			}
+			view.markChapterViewed(externalId);
+			// Advance only when completing the chapter currently on screen.
+			if (externalId === chapter.externalId) advanceAfterChapterComplete();
 		},
-		[view],
+		[view, chapter.externalId, advanceAfterChapterComplete],
 	);
 
 	const handleToggleFileViewed = useCallback(
 		(filePath: string) => {
-			if (view.filePathSet.has(filePath)) view.unmarkFileViewed(filePath);
-			else view.markFileViewed(filePath);
-		},
-		[view],
-	);
-
-	const handleFocusKeyChange = useCallback(
-		(keyChangeId: string | null, scrollTarget?: LineRef | null) => {
-			setFocusedKeyChangeId(keyChangeId);
-			if (!keyChangeId) {
-				diffListRef.current?.cancelScrollToLine();
+			if (view.filePathSet.has(filePath)) {
+				view.unmarkFileViewed(filePath);
 				return;
 			}
-			const target = scrollTarget ?? findScrollTarget(chapter, keyChangeId);
-			if (target) {
-				diffListRef.current?.scrollToLine(target.filePath, target.side, target.startLine);
+			view.markFileViewed(filePath);
+			// Auto-complete the chapter once its last unviewed file is marked, so
+			// finishing a chapter's files also marks the chapter viewed and advances.
+			const willCompleteChapter =
+				!view.chapterIdSet.has(chapter.externalId) &&
+				chapterFilePaths.every((path) => path === filePath || view.filePathSet.has(path));
+			if (willCompleteChapter) {
+				view.markChapterViewed(chapter.externalId);
+				advanceAfterChapterComplete();
 			}
 		},
-		[chapter],
+		[view, chapter.externalId, chapterFilePaths, advanceAfterChapterComplete],
 	);
 
 	const defaultCollapsedIds = useMemo(() => {
@@ -187,9 +198,57 @@ function ChapterDetailContent({
 	);
 	useProvideCollapseActions(collapseState, chapterFilePaths.length);
 
-	useFileNavigationKeys(chapterFiles, activeFilePath, handleSelectFile);
+	const {
+		diffListRef,
+		currentFilePath,
+		keyboardFocusedFilePath,
+		selectFile,
+		handleSelectFile,
+		scrollToLine,
+		cancelScrollToLine,
+	} = useFileDiffNavigation({
+		files: chapterFiles,
+		onToggleViewed: handleToggleFileViewed,
+		collapse: collapseState,
+	});
 
-	const navigate = useNavigate();
+	// On chapter change, realign the diff column to the new chapter's first file
+	// (matches the hosted app). `resetScroll: false` keeps the prior scroll
+	// offset, so when the user had scrolled down into the previous chapter the
+	// new first file lands above the sticky header — snap it back under the
+	// header. When already near the top (first file still below the header), the
+	// view is left alone so the chapter summary stays in sight.
+	const scrollAlignChapterRef = useRef(chapter.id);
+	useLayoutEffect(() => {
+		if (scrollAlignChapterRef.current === chapter.id) return;
+		scrollAlignChapterRef.current = chapter.id;
+		const firstPath = chapterFiles[0]?.path;
+		if (!firstPath) return;
+		const el = document.getElementById(`file-${firstPath}`);
+		if (!el) return;
+		const contentTop = Number.parseFloat(getComputedStyle(el).getPropertyValue("--content-top"));
+		if (el.getBoundingClientRect().top < contentTop) {
+			diffListRef.current?.scrollToFile(firstPath);
+		}
+	}, [chapter.id, chapterFiles, diffListRef]);
+
+	const handleFocusKeyChange = useCallback(
+		(keyChangeId: string | null, scrollTarget?: LineRef | null) => {
+			setFocusedKeyChangeId(keyChangeId);
+			if (!keyChangeId) {
+				cancelScrollToLine();
+				return;
+			}
+			const target = scrollTarget ?? findScrollTarget(chapter, keyChangeId);
+			if (target) {
+				scrollToLine(target.filePath, target.side, target.startLine);
+				// Focus the file the key change lives in so file shortcuts act on it.
+				selectFile(target.filePath);
+			}
+		},
+		[chapter, scrollToLine, cancelScrollToLine, selectFile],
+	);
+
 	const handleChapterNavigate = useCallback(
 		(direction: NavigationDirection) => {
 			const targetIndex =
@@ -199,6 +258,9 @@ function ChapterDetailContent({
 			void navigate({
 				to: "/runs/$runId/chapters/$chapterNumber",
 				params: { runId, chapterNumber: String(target.order) },
+				// Keep scroll position when stepping chapters via the keyboard
+				// (matches the hosted app); the default would jump to the top.
+				resetScroll: false,
 			});
 		},
 		[allChapters, chapterIndex, navigate, runId],
@@ -211,7 +273,6 @@ function ChapterDetailContent({
 		{
 			preventDefault: true,
 			enableOnFormTags: false,
-			...KEYBOARD_SHORTCUTS.MARK_CHAPTER_AS_VIEWED.hotkeyOptions,
 		},
 		[handleToggleChapterViewed, chapter.externalId],
 	);
@@ -249,7 +310,7 @@ function ChapterDetailContent({
 					chapter={chapter}
 					chapterIndex={chapterIndex}
 					files={chapterFiles}
-					focusedFilePath={activeFilePath}
+					focusedFilePath={currentFilePath}
 					viewedChapterIds={view.chapterIdSet}
 					checkedKeyChangeIds={view.keyChangeIdSet}
 					viewedFilePathSet={view.filePathSet}
@@ -272,6 +333,7 @@ function ChapterDetailContent({
 				onToggleViewed={handleToggleFileViewed}
 				collapseState={collapseState}
 				chapterOverlay={chapterOverlay}
+				focusedFilePath={keyboardFocusedFilePath}
 			/>
 		</SidebarLayout>
 	);

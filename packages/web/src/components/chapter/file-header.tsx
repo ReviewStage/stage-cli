@@ -8,11 +8,15 @@ import {
 } from "lucide-react";
 import type { MouseEvent } from "react";
 import { useCallback } from "react";
+import { ShortcutLabel } from "@/components/keyboard/shortcut-label";
 import { LineCounts } from "@/components/shared/line-counts";
+import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FILE_STATUS, type PullRequestFile } from "@/lib/diff-types";
 import { FILE_STATUS_ICONS, FILE_STATUS_LABELS, FILE_STATUS_TEXT_COLORS } from "@/lib/file-status";
+import { SHORTCUT_KEY } from "@/lib/keyboard-shortcuts";
 import { useIsMac } from "@/lib/use-is-mac";
+import { useShortcut } from "@/lib/use-shortcut";
 import { cn } from "@/lib/utils";
 
 function CopyableFilename({
@@ -71,6 +75,7 @@ export function FileHeader({
 }: FileHeaderProps) {
 	const isMac = useIsMac();
 	const altLabel = isMac ? "⌥" : "Alt";
+	const { label: collapseShortcutLabel } = useShortcut(SHORTCUT_KEY.TOGGLE_FILE_COLLAPSED);
 
 	const copyPath = useCallback(
 		(path: string, label: string) => {
@@ -146,7 +151,10 @@ export function FileHeader({
 					</button>
 				</TooltipTrigger>
 				<TooltipContent side="top" className="text-center">
-					<p>{isCollapsed ? "Expand file" : "Collapse file"}</p>
+					<p className="flex items-center justify-center gap-1">
+						{isCollapsed ? "Expand file" : "Collapse file"}
+						<ShortcutLabel label={collapseShortcutLabel} />
+					</p>
 					<p className="text-muted-foreground">
 						{altLabel}-click to {isCollapsed ? "expand" : "collapse"} all files
 					</p>
@@ -213,27 +221,26 @@ export function FileHeader({
 				className="relative z-10 shrink-0"
 			/>
 			{onToggleViewed && (
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<button
-							type="button"
-							onClick={(e) => {
-								e.stopPropagation();
-								onToggleViewed();
-							}}
-							className={cn(
-								"relative z-10 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-accent",
-								isViewed
-									? "text-green-600 hover:text-green-700 dark:text-green-500 dark:hover:text-green-400"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-							aria-label={isViewed ? "Mark file as unviewed" : "Mark file as viewed"}
-						>
-							{isViewed ? <CircleCheck className="size-3.5" /> : <Circle className="size-3.5" />}
-						</button>
-					</TooltipTrigger>
-					<TooltipContent>{isViewed ? "Mark as unviewed" : "Mark as viewed"}</TooltipContent>
-				</Tooltip>
+				<ShortcutTooltip
+					shortcutKey={SHORTCUT_KEY.MARK_FILE_AS_VIEWED}
+					label={isViewed ? "Mark as unviewed" : "Mark as viewed"}
+				>
+					<button
+						type="button"
+						onClick={(e) => {
+							e.stopPropagation();
+							onToggleViewed();
+						}}
+						className={cn(
+							"relative z-10 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-accent",
+							isViewed
+								? "text-green-600 hover:text-green-700 dark:text-green-500 dark:hover:text-green-400"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						{isViewed ? <CircleCheck className="size-3.5" /> : <Circle className="size-3.5" />}
+					</button>
+				</ShortcutTooltip>
 			)}
 			{handleCommentClick && (
 				<Tooltip>

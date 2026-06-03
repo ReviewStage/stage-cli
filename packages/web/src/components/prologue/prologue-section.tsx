@@ -1,6 +1,5 @@
 import type { FocusArea, FocusAreaSeverity, Prologue } from "@stagereview/types/prologue";
 import { FOCUS_AREA_SEVERITY } from "@stagereview/types/prologue";
-import { Link } from "@tanstack/react-router";
 import { AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +17,7 @@ function getFileName(filePath: string): string {
 	return filePath.split("/").pop() ?? filePath;
 }
 
-function PrologueDisplay({ prologue, runId }: { prologue: Prologue; runId: string }) {
+function PrologueDisplay({ prologue }: { prologue: Prologue }) {
 	const concerns = getConcerns(prologue.focusAreas);
 
 	return (
@@ -81,14 +80,9 @@ function PrologueDisplay({ prologue, runId }: { prologue: Prologue; runId: strin
 									/>
 									<span className="min-w-0 truncate">{area.title}</span>
 									{area.locations[0] && (
-										<Link
-											to="/runs/$runId/files"
-											params={{ runId }}
-											search={{ scrollTo: area.locations[0] }}
-											className="ml-auto shrink-0 text-xs text-muted-foreground transition-colors hover:text-foreground"
-										>
-											{getFileName(area.locations[0])} &rarr;
-										</Link>
+										<span className="ml-auto shrink-0 text-xs text-muted-foreground">
+											{getFileName(area.locations[0])}
+										</span>
 									)}
 								</span>
 								<p className="mt-0.5 ml-6 text-xs text-muted-foreground">{area.description}</p>
@@ -103,10 +97,9 @@ function PrologueDisplay({ prologue, runId }: { prologue: Prologue; runId: strin
 
 interface PrologueSectionProps {
 	prologue: Prologue | null | undefined;
-	runId: string;
 }
 
-export function PrologueSection({ prologue, runId }: PrologueSectionProps) {
+export function PrologueSection({ prologue }: PrologueSectionProps) {
 	if (!prologue) return null;
-	return <PrologueDisplay prologue={prologue} runId={runId} />;
+	return <PrologueDisplay prologue={prologue} />;
 }

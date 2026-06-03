@@ -1,50 +1,64 @@
 import { useHotkeys } from "react-hotkeys-hook";
+import type { PullRequestFile } from "@/lib/diff-types";
 import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 
 /**
- * Bind j/k to step through `files` by path. Falls back to the first file when
- * nothing is currently active. No-op at the ends of the list.
+ * Hook for keyboard navigation between files (j/k keys)
+ * Uses react-hotkeys-hook for automatic cleanup and input field exclusion
  */
 export function useFileNavigationKeys(
-	files: { path: string }[],
-	activeFilePath: string | undefined,
-	onSelectFile: (filePath: string) => void,
+	files: PullRequestFile[],
+	currentFilePath: string | undefined,
+	onFocusFile: (filePath: string) => void,
+	enabled = true,
 ) {
 	useHotkeys(
 		KEYBOARD_SHORTCUTS.NEXT_FILE.hotkey,
 		() => {
-			const next = stepFile(files, activeFilePath, 1);
-			if (next) onSelectFile(next);
+			if (files.length === 0) return;
+
+			if (currentFilePath === undefined) {
+				const firstFile = files[0];
+				if (!firstFile) return;
+				onFocusFile(firstFile.path);
+				return;
+			}
+
+			const currentIndex = files.findIndex((f) => f.path === currentFilePath);
+			if (currentIndex === -1) return;
+			const targetFile = files[currentIndex + 1] ?? files[currentIndex];
+			if (targetFile) onFocusFile(targetFile.path);
 		},
-		{ preventDefault: true, enableOnFormTags: false },
-		[files, activeFilePath, onSelectFile],
+		{
+			enabled,
+			preventDefault: true,
+			enableOnFormTags: false,
+		},
+		[files, currentFilePath, onFocusFile],
 	);
 
 	useHotkeys(
 		KEYBOARD_SHORTCUTS.PREV_FILE.hotkey,
 		() => {
-			const prev = stepFile(files, activeFilePath, -1);
-			if (prev) onSelectFile(prev);
+			if (files.length === 0) return;
+
+			if (currentFilePath === undefined) {
+				const lastFile = files.at(-1);
+				if (!lastFile) return;
+				onFocusFile(lastFile.path);
+				return;
+			}
+
+			const currentIndex = files.findIndex((f) => f.path === currentFilePath);
+			if (currentIndex === -1) return;
+			const targetFile = files[currentIndex - 1] ?? files[currentIndex];
+			if (targetFile) onFocusFile(targetFile.path);
 		},
-		{ preventDefault: true, enableOnFormTags: false },
-		[files, activeFilePath, onSelectFile],
+		{
+			enabled,
+			preventDefault: true,
+			enableOnFormTags: false,
+		},
+		[files, currentFilePath, onFocusFile],
 	);
-}
-
-function stepFile(
-	files: { path: string }[],
-	activeFilePath: string | undefined,
-	delta: 1 | -1,
-): string | undefined {
-	if (files.length === 0) return undefined;
-	const first = files[0];
-	if (!first) return undefined;
-	if (!activeFilePath) return first.path;
-
-	const currentIndex = files.findIndex((f) => f.path === activeFilePath);
-	if (currentIndex === -1) return first.path;
-
-	const targetIndex = currentIndex + delta;
-	const target = files[targetIndex];
-	return target?.path;
 }
