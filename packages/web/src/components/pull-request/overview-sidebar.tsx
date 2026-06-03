@@ -20,7 +20,6 @@ const TAB_CLASS =
 interface OverviewSidebarProps {
 	prologue: Prologue | null;
 	pullRequest: GitHubPullRequest | null;
-	runId: string;
 }
 
 /**
@@ -29,7 +28,7 @@ interface OverviewSidebarProps {
  * only when its content exists; the route renders this only when at least one
  * does. Mirrors hosted Stage's PrologueSidebar.
  */
-export function OverviewSidebar({ prologue, pullRequest, runId }: OverviewSidebarProps) {
+export function OverviewSidebar({ prologue, pullRequest }: OverviewSidebarProps) {
 	const hasPrologue = prologue !== null;
 	const hasDescription = Boolean(pullRequest?.user && pullRequest.body.trim().length > 0);
 	// Default to whichever content exists at mount (the sidebar only renders once at
@@ -97,7 +96,7 @@ export function OverviewSidebar({ prologue, pullRequest, runId }: OverviewSideba
 			</OverviewColumnHeader>
 
 			{resolvedTab === SIDEBAR_TAB.PROLOGUE && prologue ? (
-				<PrologueSection prologue={prologue} runId={runId} />
+				<PrologueSection prologue={prologue} />
 			) : pullRequest ? (
 				<section className="rounded-lg border bg-card p-4">
 					<PullRequestBodyCard pullRequest={pullRequest} />
