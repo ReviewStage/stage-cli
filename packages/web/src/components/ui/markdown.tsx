@@ -20,6 +20,9 @@ interface MarkdownProps {
 
 // Extend rehype-sanitize's GitHub schema to keep the `<picture>`/`<source>` image
 // badges GitHub renders in PR bodies, while still stripping scripts/handlers.
+// `target`/`rel` are deliberately NOT allowed through: the `a` renderer below
+// forces target="_blank" rel="noopener noreferrer", so letting a raw link's own
+// rel/target survive sanitization could only weaken that (e.g. rel="opener").
 const htmlSchema = {
 	...defaultSchema,
 	tagNames: [...(defaultSchema.tagNames ?? []), "picture", "source"],
@@ -27,7 +30,6 @@ const htmlSchema = {
 		...defaultSchema.attributes,
 		source: ["srcSet", "media", "type", "sizes"],
 		img: [...(defaultSchema.attributes?.img ?? []), "width", "height", "loading"],
-		a: [...(defaultSchema.attributes?.a ?? []), "target", "rel"],
 	},
 };
 

@@ -144,17 +144,20 @@ interface ChaptersIndexPageProps {
 
 export function ChaptersIndexPage({ chapters, runId, isLoading }: ChaptersIndexPageProps) {
 	const { data: diffData } = useDiffPatch(runId);
+	const patch = diffData?.patch;
 	const hasChapters = (chapters?.length ?? 0) > 0;
 	const copyChapters = useCallback(
-		() => (chapters ? formatAllChaptersAsMarkdown(chapters, diffData?.patch ?? "") : null),
-		[chapters, diffData?.patch],
+		() => (chapters && patch ? formatAllChaptersAsMarkdown(chapters, patch) : null),
+		[chapters, patch],
 	);
 
 	return (
 		<div>
 			<OverviewColumnHeader>
 				<SectionLabel>Chapters</SectionLabel>
-				{hasChapters && <CopyMarkdownButton getMarkdown={copyChapters} label="chapters" />}
+				{/* Gated on the diff being loaded so a copy can't omit the per-chapter
+				    file lists (the patch drives them). Mirrors hosted's onCopy gate. */}
+				{hasChapters && patch && <CopyMarkdownButton getMarkdown={copyChapters} label="chapters" />}
 			</OverviewColumnHeader>
 			{isLoading || !chapters ? (
 				<ChapterLoadingSkeleton />
