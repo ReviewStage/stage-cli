@@ -226,8 +226,6 @@ function ChapterDetailContent({
 		if (!firstPath) return;
 		const el = document.getElementById(`file-${firstPath}`);
 		if (!el) return;
-		// Mirrors the hosted app's getContentTop: --content-top resolves to a px
-		// value here, but guard against a non-finite parse just like the monorepo.
 		const parsed = Number.parseFloat(getComputedStyle(el).getPropertyValue("--content-top"));
 		const contentTop = Number.isFinite(parsed) ? parsed : 0;
 		if (el.getBoundingClientRect().top < contentTop) {
