@@ -269,23 +269,25 @@ export function PierreDiffViewer({
 
 	const renderGutterUtility = useCallback(
 		(getHoveredLine: () => GetHoveredLineResult<"diff"> | undefined): ReactNode => (
-			<button
-				type="button"
-				aria-label="Comment on this line"
-				className="flex size-4 cursor-pointer items-center justify-center rounded-sm bg-primary text-primary-foreground transition-transform hover:scale-110"
-				onClick={() => {
-					const hovered = getHoveredLine();
-					if (!hovered) return;
-					setDraftError(null);
-					setDraft({
-						side: hovered.side,
-						startLine: hovered.lineNumber,
-						endLine: hovered.lineNumber,
-					});
-				}}
-			>
-				<Plus className="size-3 stroke-[3]" />
-			</button>
+			<div className="flex h-full items-start justify-center pt-0.5">
+				<button
+					type="button"
+					aria-label="Add comment"
+					className="flex size-4 cursor-pointer items-center justify-center rounded-sm bg-blue-500 text-white"
+					onClick={() => {
+						const hovered = getHoveredLine();
+						if (!hovered) return;
+						setDraftError(null);
+						setDraft({
+							side: hovered.side,
+							startLine: hovered.lineNumber,
+							endLine: hovered.lineNumber,
+						});
+					}}
+				>
+					<Plus className="size-3 stroke-[3]" />
+				</button>
+			</div>
 		),
 		[],
 	);
