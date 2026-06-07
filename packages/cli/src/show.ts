@@ -6,6 +6,7 @@ import { closeDb, getDb } from "./db/client.js";
 import { parseGitDiff } from "./diff-parser.js";
 import { filterFilesForLlm, loadStageIgnore } from "./filter-files.js";
 import { readRepoContext, readRepoRoot } from "./git.js";
+import { commentRoutes } from "./routes/comments.js";
 import { diffRoutes } from "./routes/diff.js";
 import { pullRequestRoutes } from "./routes/pull-request.js";
 import { pullRequestMutationRoutes } from "./routes/pull-request-mutations.js";
@@ -33,6 +34,7 @@ export async function show(jsonPath: string, options: DiffScopeOptions): Promise
 		routes: [
 			...runRoutes(db),
 			...viewStateRoutes(db),
+			...commentRoutes(db),
 			...diffRoutes(db),
 			...pullRequestRoutes(db),
 			...pullRequestMutationRoutes(db),
