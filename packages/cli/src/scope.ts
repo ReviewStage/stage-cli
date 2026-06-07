@@ -5,7 +5,7 @@ import {
 	resolveCommittedComparison,
 	resolveScope,
 } from "./git.js";
-import { resolvePullRequestRefs } from "./github/index.js";
+import { parseGitHubRepo, parsePullRequestNumber, resolvePullRequestRefs } from "./github/index.js";
 
 /**
  * Everything needed to scope a diff from the command line: the local-ref modes
@@ -34,4 +34,21 @@ export async function resolveDiffScope(options: DiffScopeOptions): Promise<Resol
 		return { ...resolveCommittedComparison(baseSha, headSha), prNumber: number };
 	}
 	return { ...resolveScope(options), prNumber: null };
+}
+
+/**
+ * Resolve just the PR number from a `--pr` reference, without fetching the PR's
+ * commits or computing a scope. Used when the diff scope comes from elsewhere
+ * (a complete chapters file carries its own scope) but the run still needs to
+ * record which PR it targets so the UI resolves the right one.
+ */
+export function pullRequestNumberFromRef(pr: string): number {
+	const { originUrl } = readRepoContext();
+	const repo = parseGitHubRepo(originUrl);
+	if (!repo) {
+		throw new Error(
+			"--pr requires a github.com origin remote, which the current repository doesn't have.",
+		);
+	}
+	return parsePullRequestNumber(pr, repo);
 }

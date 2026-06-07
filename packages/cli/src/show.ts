@@ -21,7 +21,7 @@ import {
 	DIFF_SIDE,
 	type Scope,
 } from "./schema.js";
-import { type DiffScopeOptions, resolveDiffScope } from "./scope.js";
+import { type DiffScopeOptions, pullRequestNumberFromRef, resolveDiffScope } from "./scope.js";
 import { LOOPBACK_HOST, startServer } from "./server.js";
 
 export async function show(jsonPath: string, options: DiffScopeOptions): Promise<void> {
@@ -70,10 +70,15 @@ async function buildChaptersFile(
 	const raw = readFileSync(absolute, "utf8");
 	const parsed = JSON.parse(raw) as unknown;
 
-	// A fully-formed chapters file carries its own scope; it isn't recomputed
-	// from the working tree, so PR context doesn't apply.
+	// A fully-formed chapters file carries its own scope, so the diff isn't
+	// recomputed from the working tree or PR. `--pr` still records which PR the
+	// run targets (so the UI resolves the right one) — only the number is needed
+	// here, not a fetch, since the scope already comes from the file.
 	const fullResult = ChaptersFileSchema.safeParse(parsed);
-	if (fullResult.success) return { chaptersFile: fullResult.data, prNumber: null };
+	if (fullResult.success) {
+		const prNumber = options.pr === undefined ? null : pullRequestNumberFromRef(options.pr);
+		return { chaptersFile: fullResult.data, prNumber };
+	}
 
 	const agentResult = AgentOutputSchema.safeParse(parsed);
 	if (agentResult.success) {
