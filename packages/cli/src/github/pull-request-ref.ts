@@ -24,7 +24,9 @@ const PrViewSchema = z.object({
 });
 
 // https://github.com/owner/repo/pull/123 (with optional .git, trailing path, query, or hash).
-const PR_URL_RE = /github\.com[:/]([^/]+)\/(.+?)(?:\.git)?\/pull\/(\d+)/;
+// `github.com` is anchored to a host boundary (start, after `@`, or after `//`) so look-alike
+// hosts like `notgithub.com/owner/repo/pull/1` aren't accepted — mirrors parseGitHubRepo.
+const PR_URL_RE = /(?:^|@|\/\/)github\.com[:/]([^/]+)\/(.+?)(?:\.git)?\/pull\/(\d+)/;
 const PR_NUMBER_RE = /^#?(\d+)$/;
 
 /**

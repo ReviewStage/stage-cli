@@ -60,6 +60,12 @@ describe("parsePullRequestNumber", () => {
 		expect(parsePullRequestNumber("https://github.com/Owner/Repo/pull/123", repo)).toBe(123);
 	});
 
+	it("rejects a look-alike host that merely contains github.com", () => {
+		expect(() => parsePullRequestNumber("https://notgithub.com/owner/repo/pull/123", repo)).toThrow(
+			/Invalid PR reference/,
+		);
+	});
+
 	it("throws when a PR URL points at a different repository", () => {
 		expect(() => parsePullRequestNumber("https://github.com/other/repo/pull/123", repo)).toThrow(
 			/different repository/,
