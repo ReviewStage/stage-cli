@@ -20,7 +20,7 @@ export function pullRequestRoutes(db: StageDb): Route[] {
 			handler: async (_req, res, params) => {
 				const run = resolveRun(db, params, res);
 				if (!run) return;
-				const pullRequest = await getPullRequest(run.repoRoot, run.originUrl);
+				const pullRequest = await getPullRequest(run.repoRoot, run.originUrl, run.prNumber);
 				const body: PullRequestResponse = { pullRequest };
 				writeJson(res, 200, body);
 			},

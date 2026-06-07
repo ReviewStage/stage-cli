@@ -106,20 +106,26 @@ async function fetchRestPullRequest(
 }
 
 /**
- * Detect the GitHub PR for the branch currently checked out in `repoRoot`,
- * mapped onto the REST-shaped `GitHubPullRequest` the UI consumes. Returns null
- * whenever detection isn't possible — non-GitHub remote, `gh` missing or
- * unauthenticated, no PR for the branch, or unparseable output — so PR context
- * never breaks the review UI.
+ * Resolve the GitHub PR for a run, mapped onto the REST-shaped
+ * `GitHubPullRequest` the UI consumes. When `prNumber` is set (a `--pr` run) it
+ * loads that PR; otherwise it detects the PR for the branch currently checked
+ * out in `repoRoot`. Returns null whenever resolution isn't possible —
+ * non-GitHub remote, `gh` missing or unauthenticated, no PR found, or
+ * unparseable output — so PR context never breaks the review UI.
  */
 export async function getPullRequest(
 	repoRoot: string,
 	originUrl: string | null,
+	prNumber: number | null = null,
 ): Promise<GitHubPullRequest | null> {
 	const repo = parseGitHubRepo(originUrl);
 	if (!repo) return null;
 	try {
-		const stdout = await gh(["pr", "view", "--json", PR_FIELDS.join(",")], repoRoot);
+		const viewArgs =
+			prNumber === null
+				? ["pr", "view", "--json", PR_FIELDS.join(",")]
+				: ["pr", "view", String(prNumber), "--json", PR_FIELDS.join(",")];
+		const stdout = await gh(viewArgs, repoRoot);
 		const parsed = GhPullRequestSchema.safeParse(JSON.parse(stdout));
 		if (!parsed.success) return null;
 		const pr = parsed.data;

@@ -61,6 +61,7 @@ This organizes your local changes into reviewable chapters and opens a browser U
 | `--base <ref>` | Base ref to diff against (default: auto-detect main/master) |
 | `--compare <ref>` | Compare ref to diff against `--base` |
 | `--ref <mode>` | Diff scope: `work` (staged + unstaged + untracked), `staged`, or `unstaged` (default: auto-detect) |
+| `--pr <number-or-url>` | Review a GitHub pull request by number or URL (requires `gh`) |
 
 Examples:
 
@@ -75,6 +76,10 @@ Examples:
 /stage-chapters main feature
 /stage-chapters main..feature
 /stage-chapters --base main --compare feature
+
+# Review a teammate's PR by number or URL
+/stage-chapters --pr 123
+/stage-chapters --pr https://github.com/owner/repo/pull/123
 ```
 
 ### `.stageignore`

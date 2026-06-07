@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isGitHubRemote, parseGitHubRepo } from "../github/index.js";
+import { isGitHubRemote, parseGitHubRepo, parsePullRequestNumber } from "../github/index.js";
 
 describe("parseGitHubRepo", () => {
 	it("parses the SSH shorthand form", () => {
@@ -34,6 +34,46 @@ describe("parseGitHubRepo", () => {
 
 	it("returns null when no origin is configured", () => {
 		expect(parseGitHubRepo(null)).toBeNull();
+	});
+});
+
+describe("parsePullRequestNumber", () => {
+	const repo = { owner: "owner", repo: "repo" };
+
+	it("parses a bare PR number", () => {
+		expect(parsePullRequestNumber("123", repo)).toBe(123);
+	});
+
+	it("parses a #-prefixed PR number", () => {
+		expect(parsePullRequestNumber("#123", repo)).toBe(123);
+	});
+
+	it("parses a PR URL for the current repo", () => {
+		expect(parsePullRequestNumber("https://github.com/owner/repo/pull/123", repo)).toBe(123);
+	});
+
+	it("ignores trailing path segments on a PR URL", () => {
+		expect(parsePullRequestNumber("https://github.com/owner/repo/pull/123/files", repo)).toBe(123);
+	});
+
+	it("matches owner/repo case-insensitively", () => {
+		expect(parsePullRequestNumber("https://github.com/Owner/Repo/pull/123", repo)).toBe(123);
+	});
+
+	it("rejects a look-alike host that merely contains github.com", () => {
+		expect(() => parsePullRequestNumber("https://notgithub.com/owner/repo/pull/123", repo)).toThrow(
+			/Invalid PR reference/,
+		);
+	});
+
+	it("throws when a PR URL points at a different repository", () => {
+		expect(() => parsePullRequestNumber("https://github.com/other/repo/pull/123", repo)).toThrow(
+			/different repository/,
+		);
+	});
+
+	it("throws on an unparseable reference", () => {
+		expect(() => parsePullRequestNumber("not-a-pr", repo)).toThrow(/Invalid PR reference/);
 	});
 });
 

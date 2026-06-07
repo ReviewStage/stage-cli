@@ -5,7 +5,7 @@ import { buildOtherChangesChapter } from "./build-other-changes.js";
 import { closeDb, getDb } from "./db/client.js";
 import { parseGitDiff } from "./diff-parser.js";
 import { filterFilesForLlm, loadStageIgnore } from "./filter-files.js";
-import { type ResolveScopeOptions, readRepoContext, readRepoRoot, resolveScope } from "./git.js";
+import { readRepoContext, readRepoRoot } from "./git.js";
 import { diffRoutes } from "./routes/diff.js";
 import { pullRequestRoutes } from "./routes/pull-request.js";
 import { pullRequestMutationRoutes } from "./routes/pull-request-mutations.js";
@@ -19,20 +19,15 @@ import {
 	type ChaptersFile,
 	ChaptersFileSchema,
 	DIFF_SIDE,
-	type WorkingTreeRef,
+	type Scope,
 } from "./schema.js";
+import { type DiffScopeOptions, pullRequestNumberFromRef, resolveDiffScope } from "./scope.js";
 import { LOOPBACK_HOST, startServer } from "./server.js";
 
-export async function show(
-	jsonPath: string,
-	base?: string,
-	workingTreeRef?: WorkingTreeRef,
-	refs?: string[],
-	compare?: string,
-): Promise<void> {
+export async function show(jsonPath: string, options: DiffScopeOptions): Promise<void> {
 	const db = getDb();
-	const chaptersFile = loadChaptersFile(jsonPath, base, workingTreeRef, refs, compare);
-	const { runId } = insertChaptersFile(db, chaptersFile, readRepoContext());
+	const { chaptersFile, prNumber } = await buildChaptersFile(jsonPath, options);
+	const { runId } = insertChaptersFile(db, chaptersFile, readRepoContext(), prNumber);
 
 	const handle = await startServer({
 		routes: [
@@ -61,23 +56,34 @@ export async function show(
 	closeDb();
 }
 
-function loadChaptersFile(
+interface BuiltChaptersFile {
+	chaptersFile: ChaptersFile;
+	/** The reviewed PR's number when `--pr` was used, else null. */
+	prNumber: number | null;
+}
+
+async function buildChaptersFile(
 	jsonPath: string,
-	base?: string,
-	workingTreeRef?: WorkingTreeRef,
-	refs?: string[],
-	compare?: string,
-): ChaptersFile {
+	options: DiffScopeOptions,
+): Promise<BuiltChaptersFile> {
 	const absolute = path.resolve(jsonPath);
 	const raw = readFileSync(absolute, "utf8");
 	const parsed = JSON.parse(raw) as unknown;
 
+	// A fully-formed chapters file carries its own scope, so the diff isn't
+	// recomputed from the working tree or PR. `--pr` still records which PR the
+	// run targets (so the UI resolves the right one) — only the number is needed
+	// here, not a fetch, since the scope already comes from the file.
 	const fullResult = ChaptersFileSchema.safeParse(parsed);
-	if (fullResult.success) return fullResult.data;
+	if (fullResult.success) {
+		const prNumber = options.pr === undefined ? null : pullRequestNumberFromRef(options.pr);
+		return { chaptersFile: fullResult.data, prNumber };
+	}
 
 	const agentResult = AgentOutputSchema.safeParse(parsed);
 	if (agentResult.success) {
-		return assembleChaptersFile(agentResult.data, base, workingTreeRef, refs, compare);
+		const { scope, rawDiff, prNumber } = await resolveDiffScope(options);
+		return { chaptersFile: assembleChaptersFile(agentResult.data, scope, rawDiff), prNumber };
 	}
 
 	throw fullResult.error;
@@ -85,18 +91,9 @@ function loadChaptersFile(
 
 function assembleChaptersFile(
 	agentOutput: AgentOutput,
-	base?: string,
-	workingTreeRef?: WorkingTreeRef,
-	refs?: string[],
-	compare?: string,
+	scope: Scope,
+	rawDiff: string,
 ): ChaptersFile {
-	const options: ResolveScopeOptions = {
-		base,
-		compare,
-		refs,
-		workingTreeRef,
-	};
-	const { scope, rawDiff } = resolveScope(options);
 	const allFiles = parseGitDiff(rawDiff);
 	const stageIgnore = loadStageIgnore(readRepoRoot());
 	const { files: filteredFiles, excludedByPath } = filterFilesForLlm(allFiles, stageIgnore);
