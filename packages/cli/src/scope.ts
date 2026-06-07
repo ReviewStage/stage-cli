@@ -5,7 +5,7 @@ import {
 	resolveCommittedComparison,
 	resolveScope,
 } from "./git.js";
-import { parseGitHubRepo, parsePullRequestNumber, resolvePullRequestRefs } from "./github/index.js";
+import { parsePullRequestRef, resolvePullRequestRefs } from "./github/index.js";
 
 /**
  * Everything needed to scope a diff from the command line: the local-ref modes
@@ -43,12 +43,5 @@ export async function resolveDiffScope(options: DiffScopeOptions): Promise<Resol
  * record which PR it targets so the UI resolves the right one.
  */
 export function pullRequestNumberFromRef(pr: string): number {
-	const { originUrl } = readRepoContext();
-	const repo = parseGitHubRepo(originUrl);
-	if (!repo) {
-		throw new Error(
-			"--pr requires a github.com origin remote, which the current repository doesn't have.",
-		);
-	}
-	return parsePullRequestNumber(pr, repo);
+	return parsePullRequestRef(readRepoContext().originUrl, pr);
 }

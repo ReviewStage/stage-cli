@@ -60,6 +60,26 @@ export function parsePullRequestNumber(prRef: string, repo: GitHubRepo): number 
 	);
 }
 
+function requireGitHubRepo(originUrl: string | null): GitHubRepo {
+	const repo = parseGitHubRepo(originUrl);
+	if (!repo) {
+		throw new Error(
+			"--pr requires a github.com origin remote, which the current repository doesn't have.",
+		);
+	}
+	return repo;
+}
+
+/**
+ * Validate the repo has a github.com origin and resolve a `--pr` reference to
+ * its number. The single entry point for both PR-resolution paths — the
+ * fetch-and-diff path ({@link resolvePullRequestRefs}) and the number-only path
+ * used when the scope comes from elsewhere — so origin validation can't drift.
+ */
+export function parsePullRequestRef(originUrl: string | null, prRef: string): number {
+	return parsePullRequestNumber(prRef, requireGitHubRepo(originUrl));
+}
+
 async function ghPrView(repoRoot: string, prNumber: number): Promise<z.infer<typeof PrViewSchema>> {
 	let stdout: string;
 	try {
@@ -114,14 +134,7 @@ export async function resolvePullRequestRefs(
 	originUrl: string | null,
 	prRef: string,
 ): Promise<PullRequestRefs> {
-	const repo = parseGitHubRepo(originUrl);
-	if (!repo) {
-		throw new Error(
-			"--pr requires a github.com origin remote, which the current repository doesn't have.",
-		);
-	}
-
-	const prNumber = parsePullRequestNumber(prRef, repo);
+	const prNumber = parsePullRequestRef(originUrl, prRef);
 	const pr = await ghPrView(repoRoot, prNumber);
 	await fetchPullRequest(repoRoot, pr.number, pr.baseRefName);
 	const baseSha = await revParse(repoRoot, `origin/${pr.baseRefName}`);

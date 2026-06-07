@@ -13,6 +13,7 @@ export { getChecks, getMergeStatus, getPullRequest, getReviews } from "./pull-re
 export {
 	type PullRequestRefs,
 	parsePullRequestNumber,
+	parsePullRequestRef,
 	resolvePullRequestRefs,
 } from "./pull-request-ref.js";
 export { type GitHubRepo, isGitHubRemote, parseGitHubRepo } from "./repo.js";
