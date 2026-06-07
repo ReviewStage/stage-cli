@@ -62,6 +62,7 @@ Both `prep` and `show` accept these optional flags:
   - `staged` — only staged changes (index vs HEAD).
   - `unstaged` — only unstaged changes (working tree vs index).
   - Omitted — auto-detect (equivalent to `work` when uncommitted changes exist, committed branch diff otherwise).
+- **`--pr <number-or-url>`** — review a GitHub pull request instead of the local branch. The base/head come from the PR itself, and its commits are fetched locally. Cannot be combined with positional refs, `--base`, `--compare`, or `--ref`. Requires `gh` to be installed and authenticated, and a github.com `origin` remote. Useful for reviewing a teammate's PR you don't have checked out.
 
 When flags or positional refs are specified, pass the same scope to **both** `prep` and `show`:
 
@@ -73,6 +74,11 @@ stagereview show --base feature-a --ref staged "$AGENT_OUTPUT"
 PREP_FILE=$(stagereview prep --base main --compare feature)
 # ... later ...
 stagereview show --base main --compare feature "$AGENT_OUTPUT"
+
+# Review a GitHub PR by number or URL
+PREP_FILE=$(stagereview prep --pr 123)
+# ... later ...
+stagereview show --pr 123 "$AGENT_OUTPUT"
 ```
 
 If `prep` exits non-zero, relay its stderr to the user and stop.

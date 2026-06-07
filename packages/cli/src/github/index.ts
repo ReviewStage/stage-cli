@@ -10,4 +10,9 @@ export {
 	setDraft,
 } from "./mutations.js";
 export { getChecks, getMergeStatus, getPullRequest, getReviews } from "./pull-request.js";
+export {
+	type PullRequestRefs,
+	parsePullRequestNumber,
+	resolvePullRequestRefs,
+} from "./pull-request-ref.js";
 export { type GitHubRepo, isGitHubRemote, parseGitHubRepo } from "./repo.js";

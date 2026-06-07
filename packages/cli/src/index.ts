@@ -4,6 +4,7 @@ import { Command, Option } from "commander";
 import { z } from "zod";
 import { runPrep } from "./prep.js";
 import { WORKING_TREE_REF } from "./schema.js";
+import type { DiffScopeOptions } from "./scope.js";
 import { show } from "./show.js";
 
 const require = createRequire(import.meta.url);
@@ -25,14 +26,28 @@ interface DiffCommandOptions {
 	base?: string;
 	compare?: string;
 	ref?: string;
+	pr?: string;
 }
 
-function parseWorkingTreeRef(workingTreeRef?: string) {
-	return workingTreeRef !== undefined ? z.enum(WORKING_TREE_REF).parse(workingTreeRef) : undefined;
-}
-
-function readWorkingTreeRef(options: DiffCommandOptions) {
-	return parseWorkingTreeRef(options.ref);
+/**
+ * Build the diff scope from CLI input. `--pr` resolves the base/head from a
+ * GitHub PR and so can't be combined with the local-ref selectors.
+ */
+function toDiffScopeOptions(refs: string[], opts: DiffCommandOptions): DiffScopeOptions {
+	if (opts.pr !== undefined) {
+		if (
+			refs.length > 0 ||
+			opts.base !== undefined ||
+			opts.compare !== undefined ||
+			opts.ref !== undefined
+		) {
+			throw new Error("--pr cannot be combined with git refs, --base, --compare, or --ref.");
+		}
+		return { pr: opts.pr };
+	}
+	const workingTreeRef =
+		opts.ref !== undefined ? z.enum(WORKING_TREE_REF).parse(opts.ref) : undefined;
+	return { base: opts.base, compare: opts.compare, refs, workingTreeRef };
 }
 
 program
@@ -41,10 +56,10 @@ program
 	.argument("[refs...]", "Git refs to diff, for example: main, main feature, or main..feature")
 	.option("--base <ref>", "Base ref to diff against (default: auto-detect main/master)")
 	.option("--compare <ref>", "Compare ref to diff against --base")
+	.option("--pr <ref>", "Review a GitHub pull request by number or URL")
 	.addOption(refOption)
-	.action((refs: string[], opts: DiffCommandOptions) => {
-		const workingTreeRef = readWorkingTreeRef(opts);
-		const filePath = runPrep(opts.base, workingTreeRef, refs, opts.compare);
+	.action(async (refs: string[], opts: DiffCommandOptions) => {
+		const filePath = await runPrep(toDiffScopeOptions(refs, opts));
 		process.stdout.write(filePath);
 	});
 
@@ -55,10 +70,10 @@ program
 	.argument("[refs...]", "Git refs to diff, for example: main, main feature, or main..feature")
 	.option("--base <ref>", "Base ref to diff against (default: auto-detect main/master)")
 	.option("--compare <ref>", "Compare ref to diff against --base")
+	.option("--pr <ref>", "Review a GitHub pull request by number or URL")
 	.addOption(refOption)
 	.action(async (jsonPath: string, refs: string[], opts: DiffCommandOptions) => {
-		const workingTreeRef = readWorkingTreeRef(opts);
-		await show(jsonPath, opts.base, workingTreeRef, refs, opts.compare);
+		await show(jsonPath, toDiffScopeOptions(refs, opts));
 	});
 
 program.parseAsync(process.argv).catch((err) => {

@@ -5,8 +5,8 @@ import type { Hunk, PullRequestFile } from "@stagereview/types/parsed-diff";
 import { parseGitDiff } from "./diff-parser.js";
 import { filterFilesForLlm, loadStageIgnore } from "./filter-files.js";
 import { formatHunkDiffWithLineNumbers } from "./format-diff.js";
-import { getCommitMessages, type ResolveScopeOptions, readRepoRoot, resolveScope } from "./git.js";
-import type { WorkingTreeRef } from "./schema.js";
+import { getCommitMessages, readRepoRoot } from "./git.js";
+import { type DiffScopeOptions, resolveDiffScope } from "./scope.js";
 
 function formatHunkForPrompt(file: PullRequestFile, hunk: Hunk): string {
 	return `=== File: ${file.path} (${file.status}) | filePath: "${file.path}", oldStart: ${hunk.oldStart} ===
@@ -14,19 +14,8 @@ function formatHunkForPrompt(file: PullRequestFile, hunk: Hunk): string {
 ${formatHunkDiffWithLineNumbers(hunk)}`;
 }
 
-export function runPrep(
-	base?: string,
-	workingTreeRef?: WorkingTreeRef,
-	refs?: string[],
-	compare?: string,
-): string {
-	const options: ResolveScopeOptions = {
-		base,
-		compare,
-		refs,
-		workingTreeRef,
-	};
-	const { scope, rawDiff, mergeBaseSha } = resolveScope(options);
+export async function runPrep(options: DiffScopeOptions): Promise<string> {
+	const { scope, rawDiff, mergeBaseSha } = await resolveDiffScope(options);
 
 	const allFiles = parseGitDiff(rawDiff);
 	const stageIgnore = loadStageIgnore(readRepoRoot());

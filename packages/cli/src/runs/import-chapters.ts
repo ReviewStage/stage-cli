@@ -24,6 +24,7 @@ export function insertChaptersFile(
 	db: StageDb,
 	file: ChaptersFile,
 	repo: RepoContext,
+	prNumber: number | null = null,
 ): ImportChaptersResult {
 	return db.transaction((tx) => {
 		const [runRow] = tx
@@ -31,6 +32,7 @@ export function insertChaptersFile(
 			.values({
 				repoRoot: repo.root,
 				originUrl: repo.originUrl,
+				prNumber,
 				scopeKind: file.scope.kind,
 				workingTreeRef: file.scope.kind === SCOPE_KIND.WORKING_TREE ? file.scope.ref : null,
 				baseSha: file.scope.baseSha,

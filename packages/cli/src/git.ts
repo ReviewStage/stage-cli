@@ -293,7 +293,7 @@ function parseRefRange(ref: string): RefRange | null {
 	return null;
 }
 
-function resolveCommittedComparison(left: string, right: string): ResolvedScope {
+export function resolveCommittedComparison(left: string, right: string): ResolvedScope {
 	const effectiveLeft = left || "HEAD";
 	const effectiveRight = right || "HEAD";
 

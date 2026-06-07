@@ -4,6 +4,7 @@ import {
 	PULL_REQUEST_MERGE_METHOD,
 	type PullRequestMergeMethod,
 } from "@stagereview/types/pull-request";
+import { ghErrorMessage } from "./exec.js";
 import type { GitHubRepo } from "./repo.js";
 
 const execFileAsync = promisify(execFile);
@@ -17,11 +18,7 @@ async function ghWrite(args: string[], repoRoot: string): Promise<void> {
 	try {
 		await execFileAsync("gh", args, { cwd: repoRoot, encoding: "utf8" });
 	} catch (err: unknown) {
-		const stderr =
-			typeof err === "object" && err !== null && "stderr" in err && typeof err.stderr === "string"
-				? err.stderr.trim()
-				: "";
-		throw new Error(stderr || (err instanceof Error ? err.message : "gh command failed"));
+		throw new Error(ghErrorMessage(err));
 	}
 }
 

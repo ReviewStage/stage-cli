@@ -192,6 +192,7 @@ async function writeFakeGh(fixtures: {
 	]);
 	const script = `#!/bin/sh
 dir="${dir}"
+echo "$@" >> "${binDir}/gh-argv.log"
 emit() { [ -f "$dir/$1" ] && cat "$dir/$1" || exit 1; }
 all="$*"
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then emit pr.json
@@ -210,13 +211,14 @@ else exit 1; fi
 	await fs.chmod(file, 0o755);
 }
 
-function insertRun(originUrl: string | null): string {
+function insertRun(originUrl: string | null, prNumber: number | null = null): string {
 	const db = getDb({ dbPath });
 	const [row] = db
 		.insert(chapterRun)
 		.values({
 			repoRoot,
 			originUrl,
+			prNumber,
 			scopeKind: SCOPE_KIND.COMMITTED,
 			workingTreeRef: null,
 			baseSha: SHA,
@@ -289,6 +291,17 @@ describe("pull-request API", () => {
 		expect(res.status).toBe(200);
 		const { pullRequest } = JSON.parse(res.body) as PullRequestResponse;
 		expect(pullRequest?.body).toBe("");
+	});
+
+	it("loads a run's targeted PR by number instead of the checked-out branch", async () => {
+		await writeFakeGh({ pr: PR_JSON, restPr: REST_PR_JSON });
+		const runId = insertRun(GITHUB_ORIGIN, 7);
+		const res = await request(await start(), `/api/runs/${runId}/pull-request`);
+		expect(res.status).toBe(200);
+		expect((JSON.parse(res.body) as PullRequestResponse).pullRequest?.number).toBe(7);
+		// The PR number is forwarded to gh as a positional arg (branch detection omits it).
+		const argv = await fs.readFile(path.join(binDir, "gh-argv.log"), "utf8");
+		expect(argv).toContain("pr view 7 --json");
 	});
 
 	it("returns null when gh finds no PR for the branch", async () => {

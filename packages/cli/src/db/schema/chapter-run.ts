@@ -9,6 +9,8 @@ export const chapterRun = sqliteTable(
 		...baseColumns(),
 		repoRoot: text().notNull(),
 		originUrl: text(),
+		/** GitHub PR number when the run reviews a specific PR (`--pr`), else null. */
+		prNumber: integer(),
 		scopeKind: text({ enum: [SCOPE_KIND.COMMITTED, SCOPE_KIND.WORKING_TREE] }).notNull(),
 		workingTreeRef: text({
 			enum: [WORKING_TREE_REF.WORK, WORKING_TREE_REF.STAGED, WORKING_TREE_REF.UNSTAGED],
