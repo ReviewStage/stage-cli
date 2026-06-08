@@ -37,7 +37,7 @@ describe("CommentThreadsProvider", () => {
 		await waitFor(() =>
 			expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
 				"Couldn't load comments",
-				expect.anything(),
+				expect.objectContaining({ id: "comment-threads-error" }),
 			),
 		);
 	});

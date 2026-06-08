@@ -22,7 +22,10 @@ export function CommentThreadsProvider({
 	// toast (React Query only sets `error` once its retries are exhausted).
 	useEffect(() => {
 		if (!value.error) return;
+		// Stable id so a re-fire (StrictMode double-mount, remount with a cached error,
+		// refetch failing with a new error reference) updates one toast instead of stacking.
 		toast.error("Couldn't load comments", {
+			id: "comment-threads-error",
 			description: value.error instanceof Error ? value.error.message : undefined,
 		});
 	}, [value.error]);
