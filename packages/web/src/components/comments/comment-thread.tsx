@@ -9,7 +9,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Markdown } from "@/components/ui/markdown";
@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useCommentThreadsContext } from "@/lib/comment-threads-context";
 import { formatTimeAgo } from "@/lib/format";
 import type { Comment, CommentThread } from "@/lib/use-comment-threads";
+import { useViewer } from "@/lib/use-viewer";
 import { cn } from "@/lib/utils";
 import { CommentActions } from "./comment-actions";
 import { CommentForm } from "./comment-form";
@@ -231,14 +232,16 @@ function ResolveButton({ isResolved, onToggle }: { isResolved: boolean; onToggle
 }
 
 function CommentByline({ createdAt }: { createdAt: string }) {
+	const viewer = useViewer();
 	return (
 		<p className="flex min-w-0 flex-1 items-center gap-1.5 text-muted-foreground text-sm">
 			<Avatar className="size-5 shrink-0">
+				{viewer.avatarUrl && <AvatarImage src={viewer.avatarUrl} alt={viewer.name} />}
 				<AvatarFallback className="text-[10px]">
 					<User className="size-3" />
 				</AvatarFallback>
 			</Avatar>
-			<span className="font-medium text-foreground">You</span>
+			<span className="font-medium text-foreground">{viewer.name}</span>
 			<time dateTime={createdAt} title={new Date(createdAt).toLocaleString()}>
 				{formatTimeAgo(createdAt)}
 			</time>

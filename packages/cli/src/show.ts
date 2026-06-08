@@ -12,6 +12,7 @@ import { pullRequestRoutes } from "./routes/pull-request.js";
 import { pullRequestMutationRoutes } from "./routes/pull-request-mutations.js";
 import { runRoutes } from "./routes/runs.js";
 import { viewStateRoutes } from "./routes/view-state.js";
+import { viewerRoutes } from "./routes/viewer.js";
 import { insertChaptersFile } from "./runs/import-chapters.js";
 import {
 	type AgentOutput,
@@ -35,6 +36,7 @@ export async function show(jsonPath: string, options: DiffScopeOptions): Promise
 			...runRoutes(db),
 			...viewStateRoutes(db),
 			...commentRoutes(db),
+			...viewerRoutes(),
 			...diffRoutes(db),
 			...pullRequestRoutes(db),
 			...pullRequestMutationRoutes(db),

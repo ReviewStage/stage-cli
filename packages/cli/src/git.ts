@@ -50,6 +50,19 @@ function readOriginUrl(repoRoot: string): string | null {
 	}
 }
 
+/** Configured `user.name` for the repo, or null when unset. Used as a viewer-identity fallback. */
+export function readGitUserName(repoRoot: string): string | null {
+	try {
+		const out = execFileSync("git", ["-C", repoRoot, "config", "user.name"], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+		return out || null;
+	} catch {
+		return null;
+	}
+}
+
 export function buildDiffArgs(run: ChapterRunRow): string[] {
 	if (run.scopeKind === SCOPE_KIND.COMMITTED) {
 		return ["diff", "--no-color", `${run.baseSha}..${run.headSha}`];
