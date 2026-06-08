@@ -174,6 +174,61 @@ describe("ChaptersFileSchema", () => {
 		expect(result.prologue?.motivation).toBe(prologue.motivation);
 	});
 
+	it("defaults the prologue diagram to null when omitted", () => {
+		const prologue = {
+			motivation: null,
+			outcome: null,
+			keyChanges: [{ summary: "Tightens validation", description: "Rejects malformed input" }],
+			focusAreas: [
+				{
+					type: "data-integrity",
+					severity: "info",
+					title: "Input validation",
+					description: "Confirm the new constraints match the data model",
+					locations: ["src/schema.ts"],
+				},
+			],
+			complexity: { level: "low", reasoning: "Schema-only change" },
+		};
+		const result = ChaptersFileSchema.parse(makeFixture({ prologue }));
+		expect(result.prologue?.diagram).toBeNull();
+	});
+
+	it("preserves a Mermaid diagram on the prologue", () => {
+		const prologue = {
+			motivation: null,
+			outcome: null,
+			diagram: "graph TD;\n  A-->B",
+			keyChanges: [{ summary: "Adds a pipeline", description: "Wires producers to consumers" }],
+			focusAreas: [
+				{
+					type: "architecture",
+					severity: "info",
+					title: "New data flow",
+					description: "Confirm the pipeline ordering is correct",
+					locations: ["src/pipeline.ts"],
+				},
+			],
+			complexity: { level: "medium", reasoning: "New control flow across modules" },
+		};
+		const result = ChaptersFileSchema.parse(makeFixture({ prologue }));
+		expect(result.prologue?.diagram).toBe(prologue.diagram);
+	});
+
+	it("rejects a non-string prologue diagram", () => {
+		const prologue = {
+			motivation: null,
+			outcome: null,
+			diagram: 42,
+			keyChanges: [{ summary: "x", description: "y" }],
+			focusAreas: [
+				{ type: "architecture", severity: "info", title: "t", description: "d", locations: [] },
+			],
+			complexity: { level: "low", reasoning: "r" },
+		};
+		expectInvalidAt(makeFixture({ prologue }), "prologue.diagram");
+	});
+
 	it("accepts a file without a prologue (backward compatibility)", () => {
 		const result = ChaptersFileSchema.parse(makeFixture());
 		expect(result.prologue).toBeUndefined();

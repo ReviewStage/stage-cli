@@ -52,6 +52,8 @@ export type Complexity = z.infer<typeof ComplexitySchema>;
 export const PrologueSchema = z.object({
 	motivation: z.string().nullable(),
 	outcome: z.string().nullable(),
+	/** Mermaid diagram source (without code fences), or null when prose alone is clear. */
+	diagram: z.string().nullable().default(null),
 	keyChanges: z.array(PrologueKeyChangeSchema),
 	focusAreas: z.array(FocusAreaSchema),
 	complexity: ComplexitySchema,

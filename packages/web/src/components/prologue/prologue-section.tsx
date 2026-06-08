@@ -1,6 +1,7 @@
 import type { FocusArea, FocusAreaSeverity, Prologue } from "@stagereview/types/prologue";
 import { FOCUS_AREA_SEVERITY } from "@stagereview/types/prologue";
 import { AlertTriangle } from "lucide-react";
+import { MermaidDiagram } from "@/components/shared/mermaid-diagram";
 import { cn } from "@/lib/utils";
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -42,6 +43,8 @@ function PrologueDisplay({ prologue }: { prologue: Prologue }) {
 					)}
 				</section>
 			)}
+
+			{prologue.diagram && <MermaidDiagram chart={prologue.diagram} />}
 
 			<section>
 				<h3 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">

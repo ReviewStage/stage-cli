@@ -242,6 +242,19 @@ One sentence a non-engineer would understand. What's better now. Same null rule 
 **Good:** "Dashboards stay up during deploys now."
 **Bad:** "Added exponential backoff with a base delay of 100ms." (implementation detail)
 
+### diagram (string or null)
+
+A Mermaid diagram source string (**without** fenced code block markers) that gives a reviewer the big picture at a glance. Set this only when the change spans multiple components in a data or control flow — e.g. a new endpoint wiring through middleware to a database, a state machine gaining transitions, or an event pipeline connecting producers to consumers.
+
+Return `null` for single-file changes, renames, config updates, test-only changes, dependency bumps, or anything where the key changes alone are clear. **Most changes should NOT have a diagram.**
+
+Diagram type guide:
+- `graph TD` or `graph LR` for data flow, component wiring, module dependencies
+- `sequenceDiagram` for request/response or call chains across layers
+- `stateDiagram-v2` for lifecycle or state machine changes
+
+Keep diagrams concise — under 10 nodes. They render in a narrow side panel. Quote node labels that contain special characters (`@ # < >`): e.g. `A["@scope/package"]`, not `A[@scope/package]`.
+
 ### keyChanges (array of 2–5 objects)
 
 Each object has:
@@ -304,6 +317,7 @@ Field rules:
 | `prologue` | Optional object; omit entirely if not desired |
 | `prologue.motivation` | String or `null` |
 | `prologue.outcome` | String or `null` |
+| `prologue.diagram` | Mermaid source string (no code fences) or `null`; omit for most changes |
 | `prologue.keyChanges` | Array of 2–5 objects with `summary` and `description` |
 | `prologue.focusAreas` | Array of 1–5 objects |
 | `prologue.focusAreas[].type` | One of: `security`, `breaking-change`, `high-complexity`, `data-integrity`, `new-pattern`, `architecture`, `performance`, `testing-gap` |

@@ -190,6 +190,7 @@ describe("chapter import", () => {
 		const prologue = {
 			motivation: "Dashboards would break during deploys.",
 			outcome: "Dashboards stay up during deploys now.",
+			diagram: "graph LR;\n  Deploy-->Cache-->Dashboard",
 			keyChanges: [
 				{
 					summary: "Deploy-safe dashboard rendering",
