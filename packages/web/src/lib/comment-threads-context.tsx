@@ -1,4 +1,5 @@
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, type ReactNode, useContext, useEffect } from "react";
+import { toast } from "@/components/ui/sonner";
 import { type UseCommentThreadsResult, useCommentThreads } from "./use-comment-threads";
 
 const CommentThreadsContext = createContext<UseCommentThreadsResult | null>(null);
@@ -15,6 +16,17 @@ export function CommentThreadsProvider({
 	children: ReactNode;
 }) {
 	const value = useCommentThreads(runId);
+
+	// A failed threads fetch is otherwise indistinguishable from "no comments" —
+	// the diff still renders, but the overlay is silently empty. Surface it as a
+	// toast (React Query only sets `error` once its retries are exhausted).
+	useEffect(() => {
+		if (!value.error) return;
+		toast.error("Couldn't load comments", {
+			description: value.error instanceof Error ? value.error.message : undefined,
+		});
+	}, [value.error]);
+
 	return <CommentThreadsContext.Provider value={value}>{children}</CommentThreadsContext.Provider>;
 }
 
