@@ -9,6 +9,7 @@ import {
 import { FileDiff, PatchDiff } from "@pierre/diffs/react";
 import { Plus } from "lucide-react";
 import {
+	type CSSProperties,
 	type ReactNode,
 	useCallback,
 	useDeferredValue,
@@ -153,6 +154,27 @@ type PierreDiffViewerProps = {
 const noop = () => {};
 const noopChecked = () => false;
 
+// Literal styles for the hover "+" — see renderGutterUtility for why Tailwind
+// utilities can't be used here. `backgroundColor` is Tailwind blue-500's value.
+const GUTTER_SLOT_STYLE: CSSProperties = {
+	display: "flex",
+	height: "100%",
+	alignItems: "flex-start",
+	justifyContent: "center",
+	paddingTop: "2px",
+};
+const GUTTER_BUTTON_STYLE: CSSProperties = {
+	display: "flex",
+	alignItems: "center",
+	justifyContent: "center",
+	width: "16px",
+	height: "16px",
+	borderRadius: "4px",
+	backgroundColor: "oklch(62.3% 0.214 259.815)",
+	color: "#fff",
+	cursor: "pointer",
+};
+
 export function PierreDiffViewer({
 	patch,
 	fileDiff,
@@ -269,11 +291,16 @@ export function PierreDiffViewer({
 
 	const renderGutterUtility = useCallback(
 		(getHoveredLine: () => GetHoveredLineResult<"diff"> | undefined): ReactNode => (
-			<div className="flex h-full items-start justify-center pt-0.5">
+			// Pierre projects this into its shadow DOM via a <slot>, and slotted content
+			// inherits custom properties from the shadow tree, not the light-DOM :root.
+			// Tailwind v4 utilities resolve through `--color-*`/`--spacing`/`--radius`
+			// vars that aren't defined there, so they'd compute to transparent/zero.
+			// Style with literal values (blue-500 = the resolved `--color-blue-500`).
+			<div style={GUTTER_SLOT_STYLE}>
 				<button
 					type="button"
 					aria-label="Add comment"
-					className="flex size-4 cursor-pointer items-center justify-center rounded-sm bg-blue-500 text-white"
+					style={GUTTER_BUTTON_STYLE}
 					onClick={() => {
 						const hovered = getHoveredLine();
 						if (!hovered) return;
@@ -285,7 +312,7 @@ export function PierreDiffViewer({
 						});
 					}}
 				>
-					<Plus className="size-3 stroke-[3]" />
+					<Plus size={12} strokeWidth={3} />
 				</button>
 			</div>
 		),
