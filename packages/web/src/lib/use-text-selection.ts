@@ -70,15 +70,17 @@ function findLineElement(node: Node): HTMLElement | null {
  * Determines a line element's diff side from its `data-additions`/`data-deletions`
  * ancestor, falling back to its `data-line-type` for unified/single-sided diffs.
  */
-function getLineSide(lineEl: HTMLElement): DiffSide {
+export function getLineSide(lineEl: HTMLElement): DiffSide {
 	let current: HTMLElement | null = lineEl;
 	while (current) {
 		if (current.hasAttribute("data-additions")) return DIFF_SIDE.ADDITIONS;
 		if (current.hasAttribute("data-deletions")) return DIFF_SIDE.DELETIONS;
 		current = current.parentElement;
 	}
+	// Unified view has no side-column ancestor; Pierre marks deletion rows as
+	// "change-deletion" (see rendered-line-target.ts), so match that too.
 	const lineType = lineEl.getAttribute("data-line-type");
-	if (lineType === "deletion") return DIFF_SIDE.DELETIONS;
+	if (lineType === "deletion" || lineType === "change-deletion") return DIFF_SIDE.DELETIONS;
 	return DIFF_SIDE.ADDITIONS;
 }
 
