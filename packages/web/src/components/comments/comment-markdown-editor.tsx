@@ -2,6 +2,7 @@ import { type KeyboardEvent, type ReactNode, type RefObject, useState } from "re
 import TextareaAutosize from "react-textarea-autosize";
 import { Markdown } from "@/components/ui/markdown";
 import { cn } from "@/lib/utils";
+import { MarkdownToolbar } from "./markdown-toolbar";
 
 const EDITOR_MODE = {
 	WRITE: "write",
@@ -46,26 +47,36 @@ export function CommentMarkdownEditor({
 
 	return (
 		<fieldset className={className} onKeyDown={onKeyDown}>
-			<div className="flex items-center gap-1 border-border border-b px-2 py-1">
-				{Object.values(EDITOR_MODE).map((nextMode) => {
-					const isActive = mode === nextMode;
-					return (
-						<button
-							key={nextMode}
-							type="button"
-							aria-pressed={isActive}
-							onClick={() => setMode(nextMode)}
-							className={cn(
-								"rounded-md px-2 py-1 font-medium text-xs transition-colors",
-								isActive
-									? "bg-muted text-foreground"
-									: "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-							)}
-						>
-							{EDITOR_MODE_LABEL[nextMode]}
-						</button>
-					);
-				})}
+			<div className="flex min-w-0 items-center justify-between gap-2 overflow-hidden border-border border-b">
+				<div className="flex shrink-0 items-center gap-1 px-2">
+					{Object.values(EDITOR_MODE).map((nextMode) => {
+						const isActive = mode === nextMode;
+						return (
+							<button
+								key={nextMode}
+								type="button"
+								aria-pressed={isActive}
+								onClick={() => setMode(nextMode)}
+								className={cn(
+									"rounded-md px-2 py-1 font-medium text-xs transition-colors",
+									isActive
+										? "bg-muted text-foreground"
+										: "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+								)}
+							>
+								{EDITOR_MODE_LABEL[nextMode]}
+							</button>
+						);
+					})}
+				</div>
+				{/* Suggestion blocks only apply on a PR, so omit that toolbar item for local comments. */}
+				<MarkdownToolbar
+					textareaRef={textareaRef}
+					showSuggestion={false}
+					disabled={disabled || mode === EDITOR_MODE.PREVIEW}
+					onChange={onChange}
+					className="min-w-0 flex-1 justify-end border-b-0 py-1 pr-1 pl-0"
+				/>
 			</div>
 			<div className="p-3">
 				<TextareaAutosize
