@@ -63,7 +63,8 @@ export function toSingleSideSelection(
 	const norm = normalizeSelectedLineRange(range);
 	if (norm.side && norm.endSide && norm.side !== norm.endSide) return null;
 	return {
-		side: norm.side ?? DIFF_SIDE.ADDITIONS,
+		// Prefer the explicit side, then the only-known endSide, before defaulting.
+		side: norm.side ?? norm.endSide ?? DIFF_SIDE.ADDITIONS,
 		startLine: norm.start,
 		endLine: norm.end,
 	};
@@ -208,18 +209,29 @@ export function useTextSelection(containerRef: React.RefObject<HTMLDivElement | 
 				const startSide = getLineSide(startLineEl);
 				let endSide = getLineSide(endLineEl);
 
-				// Triple-click selects a full line but the browser extends the range to
-				// offset 0 of the next line. Pull the end back to the line with content.
-				const isTripleClick = endLine > startLine && range.endOffset === 0;
+				// A triple-click selects a full line, but the browser extends the range to
+				// offset 0 of the row *after* it, which shouldn't be included. Detect that
+				// trailing row by element identity, not line number: in unified view it can
+				// be the replacement line sharing the clicked line's number on the other side.
+				const isTripleClick = range.endOffset === 0 && endLineEl !== startLineEl;
 				if (isTripleClick) {
-					endLine--;
-					if (endLine === startLine) {
-						endSide = startSide;
+					if (endLine > startLine) {
+						// Drop the trailing offset-0 row and re-resolve the now-last line's side.
+						endLine--;
+						if (endLine === startLine) {
+							endSide = startSide;
+						} else {
+							const sideContainer =
+								endLineEl.closest("[data-additions], [data-deletions]") ?? shadowRoot ?? container;
+							const adjustedEl = sideContainer.querySelector<HTMLElement>(
+								`[data-line="${endLine}"]`,
+							);
+							if (adjustedEl) endSide = getLineSide(adjustedEl);
+						}
 					} else {
-						const sideContainer =
-							endLineEl.closest("[data-additions], [data-deletions]") ?? shadowRoot ?? container;
-						const adjustedEl = sideContainer.querySelector<HTMLElement>(`[data-line="${endLine}"]`);
-						if (adjustedEl) endSide = getLineSide(adjustedEl);
+						// Trailing row shares the clicked line's number (unified replacement):
+						// clamp to the clicked line's side so the range stays single-sided.
+						endSide = startSide;
 					}
 				}
 
@@ -265,7 +277,13 @@ export function useTextSelection(containerRef: React.RefObject<HTMLDivElement | 
 		};
 
 		container.addEventListener("mousedown", handleMouseDown, true);
-		container.addEventListener("mouseup", handleMouseUp, true);
+		// Capture mouseup on the document, not the container: dragging a multi-line
+		// selection often releases past the last visible row, outside the diff, where a
+		// container-scoped listener would miss it and leave the drag stuck open. Document
+		// capture fires before any inner handler, so it catches releases anywhere;
+		// handleMouseUp no-ops unless a drag started inside (isMouseDownRef) and the
+		// resolved selection is within the container.
+		document.addEventListener("mouseup", handleMouseUp, true);
 
 		// Bind directly on the shadow root as soon as it appears. Pierre may not
 		// have created it yet, so poll a bounded number of frames; the container
@@ -290,7 +308,7 @@ export function useTextSelection(containerRef: React.RefObject<HTMLDivElement | 
 			if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
 			if (pollFrame !== null) cancelAnimationFrame(pollFrame);
 			container.removeEventListener("mousedown", handleMouseDown, true);
-			container.removeEventListener("mouseup", handleMouseUp, true);
+			document.removeEventListener("mouseup", handleMouseUp, true);
 			if (boundShadowRoot) {
 				boundShadowRoot.removeEventListener("mousedown", handleMouseDown, true);
 				boundShadowRoot.removeEventListener("mouseup", handleMouseUp, true);

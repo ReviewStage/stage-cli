@@ -67,7 +67,15 @@ describe("toSingleSideSelection", () => {
 		).toBeNull();
 	});
 
-	it("defaults to the addition side when Pierre omits the side", () => {
+	it("falls back to endSide when only it is present, before defaulting to additions", () => {
+		expect(toSingleSideSelection({ start: 2, end: 4, endSide: "deletions" })).toEqual({
+			side: "deletions",
+			startLine: 2,
+			endLine: 4,
+		});
+	});
+
+	it("defaults to the addition side when Pierre omits both sides", () => {
 		expect(toSingleSideSelection({ start: 2, end: 4 })).toEqual({
 			side: "additions",
 			startLine: 2,
