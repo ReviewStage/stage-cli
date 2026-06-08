@@ -132,12 +132,15 @@ export function useTextSelection(containerRef: React.RefObject<HTMLDivElement | 
 		const container = containerRef.current;
 		if (!container) return;
 
-		// Pierre renders inside a shadow DOM (<diffs-container>). Events from inside
-		// the shadow root don't reach capture listeners on the outer div, so listen
-		// on the shadow root directly too.
-		const diffsContainer = container.querySelector("diffs-container");
-		const shadowRoot = diffsContainer?.shadowRoot ?? null;
-		shadowRootRef.current = shadowRoot;
+		// Pierre creates its <diffs-container> shadow root asynchronously (its
+		// highlighting is worker-backed), so it may not exist yet when this effect
+		// first runs. Resolve it lazily on each event instead of caching a
+		// possibly-null value.
+		const resolveShadowRoot = (): ShadowRoot | null => {
+			const root = container.querySelector("diffs-container")?.shadowRoot ?? null;
+			shadowRootRef.current = root;
+			return root;
+		};
 
 		const handleMouseDown = () => {
 			isMouseDownRef.current = true;
@@ -156,6 +159,7 @@ export function useTextSelection(containerRef: React.RefObject<HTMLDivElement | 
 			if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
 			rafIdRef.current = requestAnimationFrame(() => {
 				rafIdRef.current = null;
+				const shadowRoot = resolveShadowRoot();
 				const selection = hasGetSelection(shadowRoot)
 					? shadowRoot.getSelection()
 					: window.getSelection();
@@ -242,18 +246,34 @@ export function useTextSelection(containerRef: React.RefObject<HTMLDivElement | 
 
 		container.addEventListener("mousedown", handleMouseDown, true);
 		container.addEventListener("mouseup", handleMouseUp, true);
-		if (shadowRoot) {
-			shadowRoot.addEventListener("mousedown", handleMouseDown, true);
-			shadowRoot.addEventListener("mouseup", handleMouseUp, true);
-		}
+
+		// Bind directly on the shadow root as soon as it appears. Pierre may not
+		// have created it yet, so poll a bounded number of frames; the container
+		// capture listeners above are the fallback until it does.
+		let boundShadowRoot: ShadowRoot | null = null;
+		let pollFrame: number | null = null;
+		let framesLeft = 120;
+		const bindShadowRoot = () => {
+			pollFrame = null;
+			const root = resolveShadowRoot();
+			if (root) {
+				boundShadowRoot = root;
+				root.addEventListener("mousedown", handleMouseDown, true);
+				root.addEventListener("mouseup", handleMouseUp, true);
+			} else if (framesLeft-- > 0) {
+				pollFrame = requestAnimationFrame(bindShadowRoot);
+			}
+		};
+		bindShadowRoot();
 
 		return () => {
 			if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
+			if (pollFrame !== null) cancelAnimationFrame(pollFrame);
 			container.removeEventListener("mousedown", handleMouseDown, true);
 			container.removeEventListener("mouseup", handleMouseUp, true);
-			if (shadowRoot) {
-				shadowRoot.removeEventListener("mousedown", handleMouseDown, true);
-				shadowRoot.removeEventListener("mouseup", handleMouseUp, true);
+			if (boundShadowRoot) {
+				boundShadowRoot.removeEventListener("mousedown", handleMouseDown, true);
+				boundShadowRoot.removeEventListener("mouseup", handleMouseUp, true);
 			}
 		};
 	}, [containerRef]);
