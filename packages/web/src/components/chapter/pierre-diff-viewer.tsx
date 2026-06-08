@@ -32,7 +32,7 @@ import {
 import { resolveSyntaxTheme } from "@/lib/syntax-themes";
 import type { CommentThread } from "@/lib/use-comment-threads";
 import { useDiffSettings } from "@/lib/use-diff-settings";
-import { normalizeSelectedLineRange, useTextSelection } from "@/lib/use-text-selection";
+import { toSingleSideSelection, useTextSelection } from "@/lib/use-text-selection";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
 import { TextSelectionPopup } from "./text-selection-popup";
 
@@ -372,13 +372,11 @@ export function PierreDiffViewer({
 	// also changes `selectedLines` and would otherwise trigger this.
 	const handleLineSelected = useCallback((range: SelectedLineRange | null) => {
 		if (isHoveringRef.current || !range) return;
-		const norm = normalizeSelectedLineRange(range);
+		// A thread anchors to one side, so cross-side gutter drags are ignored.
+		const selection = toSingleSideSelection(range);
+		if (!selection) return;
 		setDraftError(null);
-		setDraft({
-			side: norm.side ?? DIFF_SIDE.ADDITIONS,
-			startLine: norm.start,
-			endLine: norm.end,
-		});
+		setDraft(selection);
 	}, []);
 
 	const options = useMemo(

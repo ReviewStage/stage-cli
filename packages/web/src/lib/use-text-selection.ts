@@ -52,6 +52,24 @@ export function normalizeSelectedLineRange(range: SelectedLineRange): SelectedLi
 }
 
 /**
+ * Resolves a Pierre gutter selection to single-side draft endpoints, or null if
+ * it spans both diff sides. A comment thread anchors to one side, so cross-side
+ * gutter drags are rejected — the same invariant {@link buildSelectedLineRange}
+ * enforces for the text-selection path.
+ */
+export function toSingleSideSelection(
+	range: SelectedLineRange,
+): { side: DiffSide; startLine: number; endLine: number } | null {
+	const norm = normalizeSelectedLineRange(range);
+	if (norm.side && norm.endSide && norm.side !== norm.endSide) return null;
+	return {
+		side: norm.side ?? DIFF_SIDE.ADDITIONS,
+		startLine: norm.start,
+		endLine: norm.end,
+	};
+}
+
+/**
  * Finds the closest ancestor element (including the node itself) with a
  * `data-line` attribute. Does not cross shadow DOM boundaries.
  */
