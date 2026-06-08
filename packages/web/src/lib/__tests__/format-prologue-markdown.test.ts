@@ -10,6 +10,7 @@ import { formatPrologueAsMarkdown } from "../format-prologue-markdown";
 const basePrologue: Prologue = {
 	motivation: "Reviews were hard to follow.",
 	outcome: "Reviews read like a story now.",
+	diagram: null,
 	keyChanges: [
 		{ summary: "Adds a sidebar", description: "Prologue and description tabs" },
 		{ summary: "Reworks the list", description: "" },
@@ -56,5 +57,15 @@ describe("formatPrologueAsMarkdown", () => {
 		const md = formatPrologueAsMarkdown({ ...basePrologue, motivation: null, outcome: null });
 		expect(md).not.toContain("## Why this change?");
 		expect(md).not.toContain("## What it does");
+	});
+
+	it("renders the diagram as a fenced mermaid block when present", () => {
+		const md = formatPrologueAsMarkdown({ ...basePrologue, diagram: "graph TD;\n  A-->B" });
+		expect(md).toContain("## Diagram\n```mermaid\ngraph TD;\n  A-->B\n```");
+	});
+
+	it("omits the Diagram section when diagram is null", () => {
+		const md = formatPrologueAsMarkdown(basePrologue);
+		expect(md).not.toContain("## Diagram");
 	});
 });

@@ -187,6 +187,7 @@ describe("runs API", () => {
 		const prologue = {
 			motivation: "Slow page loads on large repos.",
 			outcome: "Pages load fast now.",
+			diagram: null,
 			keyChanges: [
 				{ summary: "Pagination added to repo list", description: "Limits to 50 repos per page" },
 			],

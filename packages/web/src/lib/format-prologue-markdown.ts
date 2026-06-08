@@ -6,6 +6,7 @@ export function formatPrologueAsMarkdown(prologue: Prologue): string {
 
 	if (prologue.motivation) sections.push(`## Why this change?\n${prologue.motivation}`);
 	if (prologue.outcome) sections.push(`## What it does\n${prologue.outcome}`);
+	if (prologue.diagram) sections.push(`## Diagram\n\`\`\`mermaid\n${prologue.diagram}\n\`\`\``);
 
 	if (prologue.keyChanges.length > 0) {
 		const bullets = prologue.keyChanges
