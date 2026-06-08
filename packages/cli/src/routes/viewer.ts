@@ -16,13 +16,20 @@ export function viewerRoutes(): Route[] {
 	];
 }
 
-// gh-authenticated user → git config user.name → a generic local label. Each step
-// degrades silently, so the byline always has something to render.
+const FALLBACK_VIEWER: Viewer = { name: "You", avatarUrl: null };
+
+// gh-authenticated user → git config user.name → a generic local label. Every
+// step degrades to the fallback, so the byline always has something to render.
 async function resolveViewer(): Promise<Viewer> {
-	const repoRoot = readRepoRoot();
+	let repoRoot: string;
+	try {
+		repoRoot = readRepoRoot();
+	} catch {
+		return FALLBACK_VIEWER;
+	}
 	const ghViewer = await getGitHubViewer(repoRoot);
 	if (ghViewer) return { name: ghViewer.login, avatarUrl: ghViewer.avatarUrl };
 	const gitName = readGitUserName(repoRoot);
 	if (gitName) return { name: gitName, avatarUrl: null };
-	return { name: "You", avatarUrl: null };
+	return FALLBACK_VIEWER;
 }
