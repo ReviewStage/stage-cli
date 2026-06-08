@@ -226,6 +226,11 @@ export function PierreDiffViewer({
 	);
 	// The line range the user is composing a new comment on (null when idle).
 	const [draft, setDraft] = useState<CommentDraft | null>(null);
+	// Mirror the draft into a ref so the Pierre callbacks below can check "is a
+	// composer already open?" without taking `draft` as a dep — that would change
+	// their identity and re-init the diff. Read in handlers only, never in render.
+	const draftRef = useRef(draft);
+	draftRef.current = draft;
 	const [draftError, setDraftError] = useState<string | null>(null);
 	const { selectionInfo, clearSelection } = useTextSelection(diffContainerRef);
 
@@ -337,6 +342,8 @@ export function PierreDiffViewer({
 					aria-label="Add comment"
 					style={GUTTER_BUTTON_STYLE}
 					onClick={() => {
+						// Don't replace an open composer's anchor — it would drop typed text.
+						if (draftRef.current !== null) return;
 						const hovered = getHoveredLine();
 						if (!hovered) return;
 						setDraftError(null);
@@ -368,10 +375,12 @@ export function PierreDiffViewer({
 	);
 
 	// Dragging across the line-number gutter selects a range and opens the composer
-	// for the whole span. Suppressed while hovering a thread, since the highlight
-	// also changes `selectedLines` and would otherwise trigger this.
+	// for the whole span.
 	const handleLineSelected = useCallback((range: SelectedLineRange | null) => {
-		if (isHoveringRef.current || !range) return;
+		// Bail while hovering a thread (its highlight also fires onLineSelected) or while
+		// a composer is open, so a stray drag can't discard in-progress text — the
+		// text-selection path is guarded the same way (`draft === null`).
+		if (isHoveringRef.current || !range || draftRef.current !== null) return;
 		// A thread anchors to one side, so cross-side gutter drags are ignored.
 		const selection = toSingleSideSelection(range);
 		if (!selection) return;
