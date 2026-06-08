@@ -18,7 +18,10 @@ export function useViewer(): Viewer {
 	const { data } = useQuery<Viewer>({
 		queryKey: ["viewer"],
 		queryFn: fetchViewer,
+		// Identity is stable for the session: never refetch, and never GC the entry
+		// (staleTime alone would still let it be collected once unobserved).
 		staleTime: Number.POSITIVE_INFINITY,
+		gcTime: Number.POSITIVE_INFINITY,
 	});
 	return data ?? FALLBACK_VIEWER;
 }
