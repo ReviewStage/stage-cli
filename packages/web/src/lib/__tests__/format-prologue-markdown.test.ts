@@ -68,4 +68,10 @@ describe("formatPrologueAsMarkdown", () => {
 		const md = formatPrologueAsMarkdown(basePrologue);
 		expect(md).not.toContain("## Diagram");
 	});
+
+	it("widens the diagram fence so backtick runs in the content can't break out", () => {
+		const diagram = 'graph TD;\n  A["```"]-->B';
+		const md = formatPrologueAsMarkdown({ ...basePrologue, diagram });
+		expect(md).toContain(`## Diagram\n\`\`\`\`mermaid\n${diagram}\n\`\`\`\``);
+	});
 });
