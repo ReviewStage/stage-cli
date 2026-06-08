@@ -64,7 +64,8 @@ function get(port: number, p: string): Promise<{ status: number; body: string }>
 }
 
 describe("viewer API", () => {
-	it("returns the authenticated GitHub user from gh", async () => {
+	it("shows the GitHub login (not the display name) from gh", async () => {
+		// gh returns both a login and a display name; the byline should use the login.
 		await writeFakeGh(
 			`if [ "$1" = "api" ] && [ "$2" = "user" ]; then
   echo '{"login":"octocat","name":"The Octocat","avatar_url":"https://avatars.example/oct.png"}'
@@ -75,7 +76,7 @@ else exit 1; fi`,
 		const res = await get(port, "/api/viewer");
 		expect(res.status).toBe(200);
 		expect(JSON.parse(res.body)).toEqual({
-			name: "The Octocat",
+			name: "octocat",
 			avatarUrl: "https://avatars.example/oct.png",
 		});
 	});

@@ -21,7 +21,8 @@ export function viewerRoutes(): Route[] {
 async function resolveViewer(): Promise<Viewer> {
 	const repoRoot = readRepoRoot();
 	const ghViewer = await getGitHubViewer(repoRoot);
-	if (ghViewer) return { name: ghViewer.name ?? ghViewer.login, avatarUrl: ghViewer.avatarUrl };
+	// Show the GitHub login (e.g. "dastratakos"), not the display name.
+	if (ghViewer) return { name: ghViewer.login, avatarUrl: ghViewer.avatarUrl };
 	const gitName = readGitUserName(repoRoot);
 	if (gitName) return { name: gitName, avatarUrl: null };
 	return { name: "You", avatarUrl: null };

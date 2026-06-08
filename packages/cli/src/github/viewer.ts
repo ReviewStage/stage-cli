@@ -3,13 +3,11 @@ import { gh } from "./exec.js";
 
 const GhViewerSchema = z.object({
 	login: z.string(),
-	name: z.string().nullable().optional(),
 	avatar_url: z.string().optional(),
 });
 
 export interface GitHubViewer {
 	login: string;
-	name: string | null;
 	avatarUrl: string;
 }
 
@@ -20,13 +18,12 @@ export interface GitHubViewer {
  */
 export async function getGitHubViewer(repoRoot: string): Promise<GitHubViewer | null> {
 	try {
-		const stdout = await gh(["api", "user", "--jq", "{login,name,avatar_url}"], repoRoot);
+		const stdout = await gh(["api", "user", "--jq", "{login,avatar_url}"], repoRoot);
 		const parsed = GhViewerSchema.safeParse(JSON.parse(stdout));
 		if (!parsed.success) return null;
-		const { login, name, avatar_url } = parsed.data;
+		const { login, avatar_url } = parsed.data;
 		return {
 			login,
-			name: name ?? null,
 			avatarUrl: avatar_url || `https://github.com/${encodeURIComponent(login)}.png`,
 		};
 	} catch {
