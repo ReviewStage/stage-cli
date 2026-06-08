@@ -32,7 +32,7 @@ import {
 import { resolveSyntaxTheme } from "@/lib/syntax-themes";
 import type { CommentThread } from "@/lib/use-comment-threads";
 import { useDiffSettings } from "@/lib/use-diff-settings";
-import { useTextSelection } from "@/lib/use-text-selection";
+import { normalizeSelectedLineRange, useTextSelection } from "@/lib/use-text-selection";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
 import { TextSelectionPopup } from "./text-selection-popup";
 
@@ -229,6 +229,12 @@ export function PierreDiffViewer({
 	const [draftError, setDraftError] = useState<string | null>(null);
 	const { selectionInfo, clearSelection } = useTextSelection(diffContainerRef);
 
+	// Hovering a thread highlights its anchored lines. Highlighting sets Pierre's
+	// `selectedLines`, which makes Pierre fire `onLineSelected` — the ref lets us
+	// tell that apart from a genuine drag so a hover doesn't open the composer.
+	const [hoverLines, setHoverLines] = useState<SelectedLineRange | null>(null);
+	const isHoveringRef = useRef(false);
+
 	const lineAnnotations = useMemo(
 		() => buildCommentAnnotations(fileThreads, draft),
 		[fileThreads, draft],
@@ -260,6 +266,21 @@ export function PierreDiffViewer({
 		[draft, filePath, createThread],
 	);
 
+	const handleThreadMouseEnter = useCallback((thread: CommentThread) => {
+		isHoveringRef.current = true;
+		setHoverLines({
+			start: thread.startLine,
+			side: thread.side,
+			end: thread.endLine,
+			endSide: thread.side,
+		});
+	}, []);
+
+	const handleThreadMouseLeave = useCallback(() => {
+		isHoveringRef.current = false;
+		setHoverLines(null);
+	}, []);
+
 	const renderAnnotation = useCallback(
 		(annotation: DiffLineAnnotation<CommentThread[]>): ReactNode => {
 			const threads = annotation.metadata ?? [];
@@ -272,7 +293,14 @@ export function PierreDiffViewer({
 					style={{ maxWidth: "min(48rem, 90cqw)", whiteSpace: "normal" }}
 				>
 					{threads.map((thread) => (
-						<CommentThreadView key={thread.id} thread={thread} />
+						// biome-ignore lint/a11y/noStaticElementInteractions: hover only highlights the anchored lines, it's not an interactive control
+						<div
+							key={thread.id}
+							onMouseEnter={() => handleThreadMouseEnter(thread)}
+							onMouseLeave={handleThreadMouseLeave}
+						>
+							<CommentThreadView thread={thread} />
+						</div>
 					))}
 					{showComposer && (
 						<CommentForm
@@ -286,7 +314,14 @@ export function PierreDiffViewer({
 				</div>
 			);
 		},
-		[draft, draftError, handleCreateComment, cancelDraft],
+		[
+			draft,
+			draftError,
+			handleCreateComment,
+			cancelDraft,
+			handleThreadMouseEnter,
+			handleThreadMouseLeave,
+		],
 	);
 
 	const renderGutterUtility = useCallback(
@@ -332,6 +367,20 @@ export function PierreDiffViewer({
 		[clearSelection],
 	);
 
+	// Dragging across the line-number gutter selects a range and opens the composer
+	// for the whole span. Suppressed while hovering a thread, since the highlight
+	// also changes `selectedLines` and would otherwise trigger this.
+	const handleLineSelected = useCallback((range: SelectedLineRange | null) => {
+		if (isHoveringRef.current || !range) return;
+		const norm = normalizeSelectedLineRange(range);
+		setDraftError(null);
+		setDraft({
+			side: norm.side ?? DIFF_SIDE.ADDITIONS,
+			startLine: norm.start,
+			endLine: norm.end,
+		});
+	}, []);
+
 	const options = useMemo(
 		() => ({
 			theme: resolveSyntaxTheme(deferredSyntaxTheme, appTheme),
@@ -347,6 +396,7 @@ export function PierreDiffViewer({
 			overflow: deferredWrap ? ("wrap" as const) : ("scroll" as const),
 			enableLineSelection: true,
 			enableGutterUtility: true,
+			onLineSelected: handleLineSelected,
 		}),
 		[
 			appTheme,
@@ -358,12 +408,14 @@ export function PierreDiffViewer({
 			deferredWrap,
 			deferredLineNumbers,
 			deferredExpandUnchanged,
+			handleLineSelected,
 		],
 	);
 
 	const sharedProps = {
 		options,
-		selectedLines: selectedLinesProp ?? null,
+		// Hover-highlight takes precedence over any parent-controlled selection.
+		selectedLines: hoverLines ?? selectedLinesProp ?? null,
 		lineAnnotations,
 		renderAnnotation,
 		renderGutterUtility,
