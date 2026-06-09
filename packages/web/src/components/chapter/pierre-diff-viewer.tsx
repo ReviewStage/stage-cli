@@ -29,6 +29,7 @@ import {
 	findDraftAt,
 	isSameAnchor,
 	readDraftBody,
+	upsertDraft,
 	writeDraftBody,
 } from "@/lib/comment-drafts";
 import { useCommentThreadsContext } from "@/lib/comment-threads-context";
@@ -218,12 +219,10 @@ export function PierreDiffViewer({
 		[fileThreads, drafts],
 	);
 
-	// Open a composer at an anchor. A row holds at most one composer, so a repeat open
-	// on the same (side, endLine) is a no-op rather than a duplicate.
+	// Open a composer at an anchor. A row holds at most one composer, so re-opening the
+	// same (side, endLine) adopts the new range's startLine rather than duplicating it.
 	const openDraft = useCallback((anchor: CommentDraft) => {
-		setDrafts((prev) =>
-			findDraftAt(prev, anchor.side, anchor.endLine) ? prev : [...prev, { ...anchor, error: null }],
-		);
+		setDrafts((prev) => upsertDraft(prev, anchor));
 	}, []);
 
 	const closeDraft = useCallback((draft: CommentDraft) => {

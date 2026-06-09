@@ -61,6 +61,23 @@ export function findDraftAt(
 }
 
 /**
+ * Opens a composer for the anchor. Since a row holds at most one composer, re-opening
+ * the same `(side, endLine)` doesn't duplicate it — instead it adopts the new range's
+ * `startLine` (a re-drag that shares the end line but widens/narrows the span) and
+ * clears any stale submit error.
+ */
+export function upsertDraft(drafts: readonly DraftState[], anchor: CommentDraft): DraftState[] {
+	if (!findDraftAt(drafts, anchor.side, anchor.endLine)) {
+		return [...drafts, { ...anchor, error: null }];
+	}
+	return drafts.map((draft) =>
+		isSameAnchor(draft, anchor.side, anchor.endLine)
+			? { ...draft, startLine: anchor.startLine, error: null }
+			: draft,
+	);
+}
+
+/**
  * Groups threads and open drafts into one annotation row per `(side, endLine)`, so
  * Pierre renders a row (existing comments and/or a composer) directly below the line.
  */

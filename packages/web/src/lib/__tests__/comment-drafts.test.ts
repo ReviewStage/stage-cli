@@ -8,6 +8,7 @@ import {
 	findDraftAt,
 	isSameAnchor,
 	readDraftBody,
+	upsertDraft,
 	writeDraftBody,
 } from "../comment-drafts";
 import type { CommentThread } from "../use-comment-threads";
@@ -90,6 +91,38 @@ describe("draft anchor helpers", () => {
 	it("finds the draft occupying a given row, or undefined", () => {
 		expect(findDraftAt(drafts, "deletions", 10)?.error).toBe("boom");
 		expect(findDraftAt(drafts, "additions", 99)).toBeUndefined();
+	});
+});
+
+describe("upsertDraft", () => {
+	it("appends a new draft when no composer occupies the row", () => {
+		const result = upsertDraft([draftState("additions", 5, 5)], draftState("deletions", 8, 10));
+		expect(result).toHaveLength(2);
+		expect(findDraftAt(result, "deletions", 10)?.startLine).toBe(8);
+	});
+
+	it("adopts the new startLine when re-opening the same (side, endLine) row", () => {
+		const existing = { ...draftState("additions", 3, 10), error: "boom" as string | null };
+		const result = upsertDraft([existing], draftState("additions", 7, 10));
+		expect(result).toHaveLength(1);
+		expect(result[0]?.startLine).toBe(7);
+		// A re-drag clears any stale submit error.
+		expect(result[0]?.error).toBeNull();
+	});
+
+	it("leaves other open drafts untouched when updating one", () => {
+		const other = draftState("deletions", 1, 4);
+		const result = upsertDraft(
+			[other, draftState("additions", 3, 10)],
+			draftState("additions", 7, 10),
+		);
+		expect(result).toContain(other);
+		expect(findDraftAt(result, "additions", 10)?.startLine).toBe(7);
+	});
+
+	it("opens a separate composer for a different endLine", () => {
+		const result = upsertDraft([draftState("additions", 3, 10)], draftState("additions", 3, 15));
+		expect(result).toHaveLength(2);
 	});
 });
 
