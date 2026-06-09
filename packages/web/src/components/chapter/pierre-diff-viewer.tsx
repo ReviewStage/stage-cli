@@ -20,12 +20,22 @@ import {
 } from "react";
 import { CommentForm } from "@/components/comments/comment-form";
 import { CommentThreadView } from "@/components/comments/comment-thread";
+import {
+	buildCommentAnnotations,
+	type CommentDraft,
+	clearDraftBody,
+	type DraftBodies,
+	type DraftState,
+	findDraftAt,
+	isSameAnchor,
+	readDraftBody,
+	writeDraftBody,
+} from "@/lib/comment-drafts";
 import { useCommentThreadsContext } from "@/lib/comment-threads-context";
 import {
 	type AnnotatedLineRef,
 	COMMENT_SIDE,
 	DIFF_SIDE,
-	type DiffSide,
 	type LineRef,
 	SIDE_TO_DIFF,
 } from "@/lib/diff-types";
@@ -97,41 +107,6 @@ export function getVisibleLineRange(
 		first: firstHunk.additionStart,
 		last: lastHunk.additionStart + lastHunk.additionCount - 1,
 	};
-}
-
-interface CommentDraft {
-	side: DiffSide;
-	startLine: number;
-	endLine: number;
-}
-
-// Groups threads (plus any in-progress draft) by their anchor line so Pierre
-// renders one annotation row per (side, line) directly below the diff line.
-function buildCommentAnnotations(
-	threads: CommentThread[],
-	draft: CommentDraft | null,
-): DiffLineAnnotation<CommentThread[]>[] {
-	const bySideLine = new Map<DiffSide, Map<number, DiffLineAnnotation<CommentThread[]>>>();
-	const ensure = (side: DiffSide, line: number): DiffLineAnnotation<CommentThread[]> => {
-		let byLine = bySideLine.get(side);
-		if (!byLine) {
-			byLine = new Map();
-			bySideLine.set(side, byLine);
-		}
-		let entry = byLine.get(line);
-		if (!entry) {
-			entry = { side, lineNumber: line, metadata: [] };
-			byLine.set(line, entry);
-		}
-		return entry;
-	};
-	for (const thread of threads) ensure(thread.side, thread.endLine).metadata.push(thread);
-	if (draft) ensure(draft.side, draft.endLine);
-	const out: DiffLineAnnotation<CommentThread[]>[] = [];
-	for (const byLine of bySideLine.values()) {
-		for (const entry of byLine.values()) out.push(entry);
-	}
-	return out;
 }
 
 type PierreDiffViewerProps = {
@@ -224,14 +199,12 @@ export function PierreDiffViewer({
 		() => (filePath ? (comments.threadsByFile.get(filePath) ?? []) : []),
 		[comments.threadsByFile, filePath],
 	);
-	// The line range the user is composing a new comment on (null when idle).
-	const [draft, setDraft] = useState<CommentDraft | null>(null);
-	// Mirror the draft into a ref so the Pierre callbacks below can check "is a
-	// composer already open?" without taking `draft` as a dep — that would change
-	// their identity and re-init the diff. Read in handlers only, never in render.
-	const draftRef = useRef(draft);
-	draftRef.current = draft;
-	const [draftError, setDraftError] = useState<string | null>(null);
+	// In-progress comment composers, one per anchor row — several can be open at once.
+	const [drafts, setDrafts] = useState<DraftState[]>([]);
+	// Composer text indexed by anchor, kept in a ref so typing never rebuilds the
+	// annotation list and a composer's text survives the remount that opening or
+	// closing another draft can trigger.
+	const draftBodiesRef = useRef<DraftBodies>(new Map());
 	const { selectionInfo, clearSelection } = useTextSelection(diffContainerRef);
 
 	// Hovering a thread highlights its anchored lines. Highlighting sets Pierre's
@@ -241,19 +214,31 @@ export function PierreDiffViewer({
 	const isHoveringRef = useRef(false);
 
 	const lineAnnotations = useMemo(
-		() => buildCommentAnnotations(fileThreads, draft),
-		[fileThreads, draft],
+		() => buildCommentAnnotations(fileThreads, drafts),
+		[fileThreads, drafts],
 	);
 
-	const cancelDraft = useCallback(() => {
-		setDraft(null);
-		setDraftError(null);
+	// Open a composer at an anchor. A row holds at most one composer, so a repeat open
+	// on the same (side, endLine) is a no-op rather than a duplicate.
+	const openDraft = useCallback((anchor: CommentDraft) => {
+		setDrafts((prev) =>
+			findDraftAt(prev, anchor.side, anchor.endLine) ? prev : [...prev, { ...anchor, error: null }],
+		);
+	}, []);
+
+	const closeDraft = useCallback((draft: CommentDraft) => {
+		clearDraftBody(draftBodiesRef.current, draft.side, draft.endLine);
+		setDrafts((prev) => prev.filter((d) => !isSameAnchor(d, draft.side, draft.endLine)));
 	}, []);
 
 	const handleCreateComment = useCallback(
-		async (body: string) => {
-			if (!draft || !filePath) return;
-			setDraftError(null);
+		async (draft: CommentDraft, body: string) => {
+			if (!filePath) return;
+			const setError = (error: string | null) =>
+				setDrafts((prev) =>
+					prev.map((d) => (isSameAnchor(d, draft.side, draft.endLine) ? { ...d, error } : d)),
+				);
+			setError(null);
 			try {
 				await createThread({
 					filePath,
@@ -262,13 +247,13 @@ export function PierreDiffViewer({
 					endLine: draft.endLine,
 					body,
 				});
-				setDraft(null);
+				closeDraft(draft);
 			} catch (err) {
-				setDraftError(err instanceof Error ? err.message : "Failed to add comment");
+				setError(err instanceof Error ? err.message : "Failed to add comment");
 				throw err; // keep the composer open with the body intact
 			}
 		},
-		[draft, filePath, createThread],
+		[filePath, createThread, closeDraft],
 	);
 
 	const handleThreadMouseEnter = useCallback((thread: CommentThread) => {
@@ -289,9 +274,8 @@ export function PierreDiffViewer({
 	const renderAnnotation = useCallback(
 		(annotation: DiffLineAnnotation<CommentThread[]>): ReactNode => {
 			const threads = annotation.metadata ?? [];
-			const showComposer =
-				draft !== null && annotation.side === draft.side && annotation.lineNumber === draft.endLine;
-			if (threads.length === 0 && !showComposer) return null;
+			const draft = findDraftAt(drafts, annotation.side, annotation.lineNumber);
+			if (threads.length === 0 && !draft) return null;
 			return (
 				<div
 					className="space-y-2 px-3 py-2 font-sans"
@@ -307,26 +291,28 @@ export function PierreDiffViewer({
 							<CommentThreadView thread={thread} />
 						</div>
 					))}
-					{showComposer && (
+					{draft && (
+						// Pierre keys annotation rows by array index, so a row can be reused
+						// for a different anchor when a draft is added/removed. Key the composer
+						// by its anchor to force a clean remount (re-reading its own draft text)
+						// instead of inheriting another composer's in-progress state.
 						<CommentForm
+							key={`draft-${draft.side}-${draft.endLine}`}
 							label="Comment"
 							placeholder="Leave a comment…"
-							error={draftError}
-							onSubmit={handleCreateComment}
-							onCancel={cancelDraft}
+							error={draft.error}
+							initialBody={readDraftBody(draftBodiesRef.current, draft.side, draft.endLine)}
+							onBodyChange={(body) =>
+								writeDraftBody(draftBodiesRef.current, draft.side, draft.endLine, body)
+							}
+							onSubmit={(body) => handleCreateComment(draft, body)}
+							onCancel={() => closeDraft(draft)}
 						/>
 					)}
 				</div>
 			);
 		},
-		[
-			draft,
-			draftError,
-			handleCreateComment,
-			cancelDraft,
-			handleThreadMouseEnter,
-			handleThreadMouseLeave,
-		],
+		[drafts, handleCreateComment, closeDraft, handleThreadMouseEnter, handleThreadMouseLeave],
 	);
 
 	const renderGutterUtility = useCallback(
@@ -342,12 +328,9 @@ export function PierreDiffViewer({
 					aria-label="Add comment"
 					style={GUTTER_BUTTON_STYLE}
 					onClick={() => {
-						// Don't replace an open composer's anchor — it would drop typed text.
-						if (draftRef.current !== null) return;
 						const hovered = getHoveredLine();
 						if (!hovered) return;
-						setDraftError(null);
-						setDraft({
+						openDraft({
 							side: hovered.side,
 							startLine: hovered.lineNumber,
 							endLine: hovered.lineNumber,
@@ -358,35 +341,35 @@ export function PierreDiffViewer({
 				</button>
 			</div>
 		),
-		[],
+		[openDraft],
 	);
 
 	const handleCommentFromSelection = useCallback(
 		(range: SelectedLineRange) => {
-			setDraftError(null);
-			setDraft({
+			openDraft({
 				side: range.side ?? DIFF_SIDE.ADDITIONS,
 				startLine: range.start,
 				endLine: range.end,
 			});
 			clearSelection();
 		},
-		[clearSelection],
+		[openDraft, clearSelection],
 	);
 
-	// Dragging across the line-number gutter selects a range and opens the composer
-	// for the whole span.
-	const handleLineSelected = useCallback((range: SelectedLineRange | null) => {
-		// Bail while hovering a thread (its highlight also fires onLineSelected) or while
-		// a composer is open, so a stray drag can't discard in-progress text — the
-		// text-selection path is guarded the same way (`draft === null`).
-		if (isHoveringRef.current || !range || draftRef.current !== null) return;
-		// A thread anchors to one side, so cross-side gutter drags are ignored.
-		const selection = toSingleSideSelection(range);
-		if (!selection) return;
-		setDraftError(null);
-		setDraft(selection);
-	}, []);
+	// Dragging across the line-number gutter selects a range and opens a composer for the
+	// whole span. Several composers can be open at once, so this adds one rather than
+	// replacing any already-open draft.
+	const handleLineSelected = useCallback(
+		(range: SelectedLineRange | null) => {
+			// Bail only while hovering a thread, whose highlight also fires onLineSelected.
+			if (isHoveringRef.current || !range) return;
+			// A thread anchors to one side, so cross-side gutter drags are ignored.
+			const selection = toSingleSideSelection(range);
+			if (!selection) return;
+			openDraft(selection);
+		},
+		[openDraft],
+	);
 
 	const options = useMemo(
 		() => ({
@@ -446,15 +429,15 @@ export function PierreDiffViewer({
 		/>
 	) : null;
 
-	// Only show the popup when text is selected and no composer is already open.
-	const textSelectionPopup =
-		selectionInfo && draft === null ? (
-			<TextSelectionPopup
-				selectionRect={selectionInfo.rect}
-				lineRange={selectionInfo.lineRange}
-				onComment={handleCommentFromSelection}
-			/>
-		) : null;
+	// Show the popup whenever text is selected — several composers can be open at once,
+	// so a text-selection comment is always available.
+	const textSelectionPopup = selectionInfo ? (
+		<TextSelectionPopup
+			selectionRect={selectionInfo.rect}
+			lineRange={selectionInfo.lineRange}
+			onComment={handleCommentFromSelection}
+		/>
+	) : null;
 
 	if (fileDiff) {
 		return (

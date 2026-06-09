@@ -1,0 +1,111 @@
+import { describe, expect, it } from "vitest";
+import {
+	buildCommentAnnotations,
+	type CommentDraft,
+	clearDraftBody,
+	type DraftBodies,
+	type DraftState,
+	findDraftAt,
+	isSameAnchor,
+	readDraftBody,
+	writeDraftBody,
+} from "../comment-drafts";
+import type { CommentThread } from "../use-comment-threads";
+
+function makeThread(
+	over: Partial<CommentThread> & Pick<CommentThread, "side" | "endLine">,
+): CommentThread {
+	return {
+		id: `t-${over.side}-${over.endLine}`,
+		filePath: "a.ts",
+		startLine: over.endLine,
+		resolvedAt: null,
+		createdAt: "2026-06-08T00:00:00.000Z",
+		updatedAt: "2026-06-08T00:00:00.000Z",
+		comments: [],
+		...over,
+	};
+}
+
+function draftState(side: CommentDraft["side"], startLine: number, endLine: number): DraftState {
+	return { side, startLine, endLine, error: null };
+}
+
+function rowFor(
+	annotations: ReturnType<typeof buildCommentAnnotations>,
+	side: CommentDraft["side"],
+	lineNumber: number,
+) {
+	return annotations.find((a) => a.side === side && a.lineNumber === lineNumber);
+}
+
+describe("buildCommentAnnotations", () => {
+	it("returns no annotations for no threads and no drafts", () => {
+		expect(buildCommentAnnotations([], [])).toEqual([]);
+	});
+
+	it("groups multiple threads on the same row into one annotation", () => {
+		const annotations = buildCommentAnnotations(
+			[
+				makeThread({ id: "t1", side: "additions", endLine: 5 }),
+				makeThread({ id: "t2", side: "additions", endLine: 5 }),
+			],
+			[],
+		);
+		expect(annotations).toHaveLength(1);
+		expect(rowFor(annotations, "additions", 5)?.metadata).toHaveLength(2);
+	});
+
+	it("creates a thread-less row per open draft", () => {
+		const annotations = buildCommentAnnotations(
+			[],
+			[draftState("additions", 5, 5), draftState("deletions", 8, 10)],
+		);
+		expect(annotations).toHaveLength(2);
+		expect(rowFor(annotations, "additions", 5)?.metadata).toEqual([]);
+		expect(rowFor(annotations, "deletions", 10)?.metadata).toEqual([]);
+	});
+
+	it("shares one row when a draft and a thread anchor to the same (side, endLine)", () => {
+		const annotations = buildCommentAnnotations(
+			[makeThread({ side: "additions", endLine: 5 })],
+			[draftState("additions", 3, 5)],
+		);
+		expect(annotations).toHaveLength(1);
+		expect(rowFor(annotations, "additions", 5)?.metadata).toHaveLength(1);
+	});
+});
+
+describe("draft anchor helpers", () => {
+	const additionsDraft = draftState("additions", 5, 5);
+	const deletionsDraft = { ...draftState("deletions", 8, 10), error: "boom" as string | null };
+	const drafts = [additionsDraft, deletionsDraft];
+
+	it("matches a draft by side and endLine only", () => {
+		expect(isSameAnchor(additionsDraft, "additions", 5)).toBe(true);
+		expect(isSameAnchor(additionsDraft, "deletions", 5)).toBe(false);
+		expect(isSameAnchor(deletionsDraft, "deletions", 10)).toBe(true);
+	});
+
+	it("finds the draft occupying a given row, or undefined", () => {
+		expect(findDraftAt(drafts, "deletions", 10)?.error).toBe("boom");
+		expect(findDraftAt(drafts, "additions", 99)).toBeUndefined();
+	});
+});
+
+describe("draft body store", () => {
+	it("reads, writes, and clears text keyed by (side, endLine)", () => {
+		const bodies: DraftBodies = new Map();
+		expect(readDraftBody(bodies, "additions", 5)).toBe("");
+
+		writeDraftBody(bodies, "additions", 5, "hello");
+		writeDraftBody(bodies, "deletions", 5, "other side");
+		expect(readDraftBody(bodies, "additions", 5)).toBe("hello");
+		// Same line number on the other side is a distinct entry.
+		expect(readDraftBody(bodies, "deletions", 5)).toBe("other side");
+
+		clearDraftBody(bodies, "additions", 5);
+		expect(readDraftBody(bodies, "additions", 5)).toBe("");
+		expect(readDraftBody(bodies, "deletions", 5)).toBe("other side");
+	});
+});

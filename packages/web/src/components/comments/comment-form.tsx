@@ -11,6 +11,8 @@ interface CommentFormProps {
 	error?: string | null;
 	/** Pre-fill the textarea when editing an existing comment. */
 	initialBody?: string;
+	/** Reports each edit so a parent can persist an in-progress draft across remounts. */
+	onBodyChange?: (body: string) => void;
 	autoFocus?: boolean;
 }
 
@@ -21,6 +23,7 @@ export function CommentForm({
 	placeholder = "Leave a comment",
 	error,
 	initialBody,
+	onBodyChange,
 	autoFocus = true,
 }: CommentFormProps) {
 	const [body, setBody] = useState(initialBody ?? "");
@@ -69,7 +72,10 @@ export function CommentForm({
 		<div className="animate-in fade-in-0 slide-in-from-bottom-1 duration-150">
 			<CommentMarkdownEditor
 				value={body}
-				onChange={setBody}
+				onChange={(value) => {
+					setBody(value);
+					onBodyChange?.(value);
+				}}
 				textareaRef={textareaRef}
 				disabled={isSubmitting}
 				placeholder={placeholder}
