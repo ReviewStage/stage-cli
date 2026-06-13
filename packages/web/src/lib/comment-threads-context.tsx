@@ -4,6 +4,8 @@ import { type UseCommentThreadsResult, useCommentThreads } from "./use-comment-t
 
 const CommentThreadsContext = createContext<UseCommentThreadsResult | null>(null);
 
+const LOAD_ERROR_TOAST_ID = "comment-threads-error";
+
 /**
  * Provides the run's comment threads + mutations to the diff tree without
  * prop-drilling through FileDiffList. Mounted once at the run layout.
@@ -19,13 +21,17 @@ export function CommentThreadsProvider({
 
 	// A failed threads fetch is otherwise indistinguishable from "no comments" —
 	// the diff still renders, but the overlay is silently empty. Surface it as a
-	// toast (React Query only sets `error` once its retries are exhausted).
+	// toast (React Query only sets `error` once its retries are exhausted), and
+	// dismiss it once a later fetch recovers so a stale message doesn't linger.
 	useEffect(() => {
-		if (!value.error) return;
+		if (!value.error) {
+			toast.dismiss(LOAD_ERROR_TOAST_ID);
+			return;
+		}
 		// Stable id so a re-fire (StrictMode double-mount, remount with a cached error,
 		// refetch failing with a new error reference) updates one toast instead of stacking.
 		toast.error("Couldn't load comments", {
-			id: "comment-threads-error",
+			id: LOAD_ERROR_TOAST_ID,
 			description: value.error instanceof Error ? value.error.message : undefined,
 		});
 	}, [value.error]);
