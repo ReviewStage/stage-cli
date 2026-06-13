@@ -168,6 +168,7 @@ export function CommentThreadView({ thread }: { thread: CommentThread }) {
 								<ReplyItem
 									key={reply.id}
 									reply={reply}
+									idle={idle}
 									isEditing={editingId === reply.id}
 									error={editingId === reply.id ? error : null}
 									onEdit={() => {
@@ -251,6 +252,7 @@ function CommentByline({ createdAt }: { createdAt: string }) {
 
 function ReplyItem({
 	reply,
+	idle,
 	isEditing,
 	error,
 	onEdit,
@@ -259,6 +261,7 @@ function ReplyItem({
 	onDelete,
 }: {
 	reply: Comment;
+	idle: boolean;
 	isEditing: boolean;
 	error: string | null;
 	onEdit: () => void;
@@ -270,7 +273,9 @@ function ReplyItem({
 		<div className="space-y-1.5">
 			<div className="flex items-center gap-2">
 				<CommentByline createdAt={reply.createdAt} />
-				{!isEditing && <CommentActions onEdit={onEdit} onDelete={onDelete} />}
+				{/* Only when the whole thread is idle, so opening this reply's editor can't
+				    discard another in-progress edit or reply (matches the root comment). */}
+				{idle && <CommentActions onEdit={onEdit} onDelete={onDelete} />}
 			</div>
 			{isEditing ? (
 				<CommentForm
