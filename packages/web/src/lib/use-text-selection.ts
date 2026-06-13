@@ -115,6 +115,18 @@ function getLineNumber(el: HTMLElement): number {
 }
 
 /**
+ * The rendered line element immediately before `lineEl` within `scope`, in document
+ * order, or null if it is the first. Resolved from the DOM rather than `lineNumber - 1`
+ * so a selection that overshoots to the start of a trailing row clamps correctly even
+ * across a collapsed hunk gap, where the previous rendered line isn't `lineNumber - 1`.
+ */
+export function previousRenderedLine(scope: ParentNode, lineEl: HTMLElement): HTMLElement | null {
+	const lines = Array.from(scope.querySelectorAll<HTMLElement>("[data-line]"));
+	const index = lines.indexOf(lineEl);
+	return index > 0 ? (lines[index - 1] ?? null) : null;
+}
+
+/**
  * Detects native text selection inside a Pierre diff container and converts it to
  * a {@link TextSelectionInfo} (line range + bounding rect). Returns null when
  * there's no active selection in the diff.
@@ -209,28 +221,21 @@ export function useTextSelection(containerRef: React.RefObject<HTMLDivElement | 
 				const startSide = getLineSide(startLineEl);
 				let endSide = getLineSide(endLineEl);
 
-				// A triple-click selects a full line, but the browser extends the range to
-				// offset 0 of the row *after* it, which shouldn't be included. Detect that
-				// trailing row by element identity, not line number: in unified view it can
-				// be the replacement line sharing the clicked line's number on the other side.
+				// A triple-click (or a drag ending at offset 0) extends the range to the start
+				// of the row *after* the selection, which shouldn't be included. Clamp to the
+				// previous rendered line, resolved from the DOM: across a collapsed hunk gap it
+				// isn't `endLine - 1`, and in unified view it may be the deletion row sharing
+				// the addition's number — both of which arithmetic would get wrong.
 				const isTripleClick = range.endOffset === 0 && endLineEl !== startLineEl;
 				if (isTripleClick) {
-					if (endLine > startLine) {
-						// Drop the trailing offset-0 row and re-resolve the now-last line's side.
-						endLine--;
-						if (endLine === startLine) {
-							endSide = startSide;
-						} else {
-							const sideContainer =
-								endLineEl.closest("[data-additions], [data-deletions]") ?? shadowRoot ?? container;
-							const adjustedEl = sideContainer.querySelector<HTMLElement>(
-								`[data-line="${endLine}"]`,
-							);
-							if (adjustedEl) endSide = getLineSide(adjustedEl);
-						}
+					const scope =
+						endLineEl.closest("[data-additions], [data-deletions]") ?? shadowRoot ?? container;
+					const prev = previousRenderedLine(scope, endLineEl);
+					if (prev) {
+						endLine = getLineNumber(prev);
+						endSide = getLineSide(prev);
 					} else {
-						// Trailing row shares the clicked line's number (unified replacement):
-						// clamp to the clicked line's side so the range stays single-sided.
+						endLine = startLine;
 						endSide = startSide;
 					}
 				}

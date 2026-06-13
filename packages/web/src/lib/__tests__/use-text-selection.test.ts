@@ -4,6 +4,7 @@ import {
 	buildSelectedLineRange,
 	getLineSide,
 	normalizeSelectedLineRange,
+	previousRenderedLine,
 	toSingleSideSelection,
 } from "../use-text-selection";
 
@@ -113,5 +114,27 @@ describe("getLineSide", () => {
 	it("treats unified change-addition and context rows as the addition side", () => {
 		expect(getLineSide(unifiedLine("change-addition"))).toBe("additions");
 		expect(getLineSide(unifiedLine("context"))).toBe("additions");
+	});
+});
+
+describe("previousRenderedLine", () => {
+	function appendLine(scope: HTMLElement, line: number): HTMLElement {
+		const el = document.createElement("div");
+		el.setAttribute("data-line", String(line));
+		scope.appendChild(el);
+		return el;
+	}
+
+	it("returns the DOM-previous rendered line across a collapsed gap, not lineNumber - 1", () => {
+		const scope = document.createElement("div");
+		const before = appendLine(scope, 50);
+		const after = appendLine(scope, 200); // lines 51–199 are collapsed: no DOM rows
+		expect(previousRenderedLine(scope, after)).toBe(before);
+	});
+
+	it("returns null for the first rendered line", () => {
+		const scope = document.createElement("div");
+		const first = appendLine(scope, 50);
+		expect(previousRenderedLine(scope, first)).toBeNull();
 	});
 });
