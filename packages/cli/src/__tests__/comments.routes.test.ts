@@ -52,6 +52,7 @@ function send(
 	method: string,
 	requestPath: string,
 	body?: unknown,
+	extraHeaders?: Record<string, string>,
 ): Promise<JsonResponse> {
 	const payload = body === undefined ? "" : JSON.stringify(body);
 	return new Promise((resolve, reject) => {
@@ -65,6 +66,7 @@ function send(
 				headers: {
 					"Content-Type": "application/json",
 					"Content-Length": Buffer.byteLength(payload).toString(),
+					...extraHeaders,
 				},
 			},
 			(res) => {
@@ -109,6 +111,16 @@ async function createThread(
 }
 
 describe("comment threads API", () => {
+	it("rejects a cross-origin write with 403 before any mutation", async () => {
+		const { port } = await startWithRoutes();
+		// A page on another origin can fire a no-preflight POST at the loopback server;
+		// the same-origin guard must reject it up front, even without a valid run.
+		const res = await send(port, "POST", "/api/runs/any/comment-threads", makeThreadBody(), {
+			Origin: "http://evil.example",
+		});
+		expect(res.status).toBe(403);
+	});
+
 	it("POST creates a thread with its root comment and the anchor", async () => {
 		const runId = seedRun();
 		const { port } = await startWithRoutes();

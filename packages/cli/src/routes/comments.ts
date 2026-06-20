@@ -18,6 +18,7 @@ import {
 import { deriveScopeKey } from "../runs/scope-key.js";
 import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
+import { enforceSameOrigin } from "./pull-request-shared.js";
 
 export function commentRoutes(db: StageDb): Route[] {
 	return [
@@ -39,6 +40,7 @@ export function commentRoutes(db: StageDb): Route[] {
 			method: "POST",
 			pattern: "/api/runs/:runId/comment-threads",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const scopeKey = resolveRunScopeKey(db, params.runId);
 				if (scopeKey === null) {
 					writeJson(res, 404, { error: `Run ${params.runId} not found` });
@@ -75,6 +77,7 @@ export function commentRoutes(db: StageDb): Route[] {
 			method: "POST",
 			pattern: "/api/comment-threads/:threadId/replies",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const threadId = params.threadId;
 				if (!threadId || !threadExists(db, threadId)) {
 					writeJson(res, 404, { error: `Thread ${params.threadId} not found` });
@@ -104,6 +107,7 @@ export function commentRoutes(db: StageDb): Route[] {
 			method: "PATCH",
 			pattern: "/api/comment-threads/:threadId",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const threadId = params.threadId;
 				if (!threadId) {
 					writeJson(res, 400, { error: "Missing threadId" });
@@ -128,7 +132,8 @@ export function commentRoutes(db: StageDb): Route[] {
 		{
 			method: "DELETE",
 			pattern: "/api/comment-threads/:threadId",
-			handler: (_req, res, params) => {
+			handler: (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const threadId = params.threadId;
 				if (!threadId) {
 					writeJson(res, 400, { error: "Missing threadId" });
@@ -144,6 +149,7 @@ export function commentRoutes(db: StageDb): Route[] {
 			method: "PATCH",
 			pattern: "/api/comments/:commentId",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const commentId = params.commentId;
 				if (!commentId) {
 					writeJson(res, 400, { error: "Missing commentId" });
@@ -168,7 +174,8 @@ export function commentRoutes(db: StageDb): Route[] {
 		{
 			method: "DELETE",
 			pattern: "/api/comments/:commentId",
-			handler: (_req, res, params) => {
+			handler: (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const commentId = params.commentId;
 				if (!commentId) {
 					writeJson(res, 400, { error: "Missing commentId" });
