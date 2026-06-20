@@ -49,7 +49,11 @@ export function CommentThreadView({ thread }: { thread: CommentThread }) {
 
 	function handleResolveToggle() {
 		const next = !isResolved;
-		setIsOpen(!next); // collapse on resolve, expand on reopen
+		// Collapse on resolve / expand on reopen — but never collapse out from under an
+		// active reply/edit/delete form (it would unmount CommentForm and drop unsaved
+		// text), mirroring the handleOpenChange guard.
+		const hasActiveForm = isReplying || editingId !== null || deleteTarget !== null;
+		if (!next || !hasActiveForm) setIsOpen(!next);
 		void setThreadResolved({ threadId: thread.id, resolved: next });
 	}
 
