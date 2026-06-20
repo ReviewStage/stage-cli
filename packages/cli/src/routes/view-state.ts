@@ -12,7 +12,7 @@ import {
 	keyChangeView,
 } from "../db/schema/index.js";
 import type { Route } from "../server.js";
-import { readJsonBody, writeJson } from "./json.js";
+import { parseJsonBody, writeJson } from "./json.js";
 
 type Tx = Parameters<Parameters<StageDb["transaction"]>[0]>[0];
 
@@ -148,7 +148,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 					return;
 				}
 
-				const parsed = await parseFileViewBody(req, res);
+				const parsed = await parseJsonBody(req, res, FileViewBodySchema);
 				if (!parsed) return;
 
 				// Direct file mark deliberately doesn't backfill chapter_file_view — the
@@ -174,7 +174,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 					return;
 				}
 
-				const parsed = await parseFileViewBody(req, res);
+				const parsed = await parseJsonBody(req, res, FileViewBodySchema);
 				if (!parsed) return;
 
 				// Cascade to chapter state too, matching hosted's file-unview behavior.
@@ -436,23 +436,4 @@ function runExists(db: StageDb, runId: string): boolean {
 		.limit(1)
 		.all();
 	return rows.length > 0;
-}
-
-async function parseFileViewBody(
-	req: Parameters<Route["handler"]>[0],
-	res: Parameters<Route["handler"]>[1],
-): Promise<{ path: string } | null> {
-	let raw: unknown;
-	try {
-		raw = await readJsonBody(req);
-	} catch (err) {
-		writeJson(res, 400, { error: err instanceof Error ? err.message : "Invalid JSON body" });
-		return null;
-	}
-	const parsed = FileViewBodySchema.safeParse(raw);
-	if (!parsed.success) {
-		writeJson(res, 400, { error: "Invalid file-view body: missing or empty `path`" });
-		return null;
-	}
-	return parsed.data;
 }

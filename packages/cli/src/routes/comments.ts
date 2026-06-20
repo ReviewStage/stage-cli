@@ -6,7 +6,6 @@ import {
 	ResolveThreadBodySchema,
 } from "@stagereview/types/comments";
 import { asc, eq, inArray } from "drizzle-orm";
-import type { z } from "zod";
 import type { StageDb } from "../db/client.js";
 import { LOCAL_USER_ID } from "../db/local-user.js";
 import {
@@ -18,7 +17,7 @@ import {
 } from "../db/schema/index.js";
 import { deriveScopeKey } from "../runs/scope-key.js";
 import type { Route } from "../server.js";
-import { readJsonBody, writeJson } from "./json.js";
+import { parseJsonBody, writeJson } from "./json.js";
 
 export function commentRoutes(db: StageDb): Route[] {
 	return [
@@ -45,7 +44,7 @@ export function commentRoutes(db: StageDb): Route[] {
 					writeJson(res, 404, { error: `Run ${params.runId} not found` });
 					return;
 				}
-				const body = await parseBody(req, res, CreateCommentThreadBodySchema);
+				const body = await parseJsonBody(req, res, CreateCommentThreadBodySchema);
 				if (!body) return;
 
 				const created = db.transaction((tx) => {
@@ -81,7 +80,7 @@ export function commentRoutes(db: StageDb): Route[] {
 					writeJson(res, 404, { error: `Thread ${params.threadId} not found` });
 					return;
 				}
-				const body = await parseBody(req, res, CommentBodySchema);
+				const body = await parseJsonBody(req, res, CommentBodySchema);
 				if (!body) return;
 
 				const created = db.transaction((tx) => {
@@ -110,7 +109,7 @@ export function commentRoutes(db: StageDb): Route[] {
 					writeJson(res, 400, { error: "Missing threadId" });
 					return;
 				}
-				const body = await parseBody(req, res, ResolveThreadBodySchema);
+				const body = await parseJsonBody(req, res, ResolveThreadBodySchema);
 				if (!body) return;
 
 				const [updated] = db
@@ -150,7 +149,7 @@ export function commentRoutes(db: StageDb): Route[] {
 					writeJson(res, 400, { error: "Missing commentId" });
 					return;
 				}
-				const body = await parseBody(req, res, CommentBodySchema);
+				const body = await parseJsonBody(req, res, CommentBodySchema);
 				if (!body) return;
 
 				const [updated] = db
@@ -292,24 +291,4 @@ function toCommentDto(row: CommentRow): CommentDto {
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};
-}
-
-async function parseBody<T>(
-	req: Parameters<Route["handler"]>[0],
-	res: Parameters<Route["handler"]>[1],
-	schema: z.ZodType<T>,
-): Promise<T | null> {
-	let raw: unknown;
-	try {
-		raw = await readJsonBody(req);
-	} catch (err) {
-		writeJson(res, 400, { error: err instanceof Error ? err.message : "Invalid JSON body" });
-		return null;
-	}
-	const parsed = schema.safeParse(raw);
-	if (!parsed.success) {
-		writeJson(res, 400, { error: parsed.error.issues[0]?.message ?? "Invalid request body" });
-		return null;
-	}
-	return parsed.data;
 }

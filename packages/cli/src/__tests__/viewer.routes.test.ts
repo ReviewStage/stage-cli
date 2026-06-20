@@ -91,4 +91,35 @@ else exit 1; fi`,
 		expect(viewer.name.length).toBeGreaterThan(0);
 		expect(viewer.avatarUrl).toBeNull();
 	});
+
+	it("synthesizes the github avatar URL when gh omits avatar_url", async () => {
+		await writeFakeGh(
+			`if [ "$1" = "api" ] && [ "$2" = "user" ]; then
+  echo '{"login":"octocat"}'
+else exit 1; fi`,
+		);
+		const port = await start();
+
+		const res = await get(port, "/api/viewer");
+		expect(res.status).toBe(200);
+		expect(JSON.parse(res.body)).toEqual({
+			name: "octocat",
+			avatarUrl: "https://github.com/octocat.png",
+		});
+	});
+
+	it("degrades to the generic label when run outside a git repo", async () => {
+		// tmpDir is under the OS temp dir, not a git repo, so readRepoRoot() throws and
+		// resolveViewer() returns the FALLBACK_VIEWER before gh is ever consulted.
+		const originalCwd = process.cwd();
+		process.chdir(tmpDir);
+		try {
+			const port = await start();
+			const res = await get(port, "/api/viewer");
+			expect(res.status).toBe(200);
+			expect(JSON.parse(res.body)).toEqual({ name: "You", avatarUrl: null });
+		} finally {
+			process.chdir(originalCwd);
+		}
+	});
 });
