@@ -84,8 +84,8 @@ export function useReview(runId: string): UseReviewResult {
 	// stale query keys. Refresh those too so the PR header doesn't go stale until reload.
 	const invalidateGitHub = () => {
 		invalidate();
-		queryClient.invalidateQueries({ queryKey: ["pull-request-reviews"] });
-		queryClient.invalidateQueries({ queryKey: ["pull-request-merge-status"] });
+		queryClient.invalidateQueries({ queryKey: ["pull-request-reviews", runId] });
+		queryClient.invalidateQueries({ queryKey: ["pull-request-merge-status", runId] });
 	};
 
 	const runPath = (suffix: string) => `/api/runs/${encodeURIComponent(runId)}${suffix}`;

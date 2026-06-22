@@ -362,11 +362,14 @@ export async function replyToGitHubThread(
 	body: string,
 	pending: boolean,
 ): Promise<void> {
+	const { review } = await loadTarget(run);
+	// Same guard as the comment paths: don't act on the PR from a run whose diff
+	// isn't the PR's current diff (the thread on screen may not be what's live).
+	assertPushable(run, review);
 	if (!pending) {
 		await addReviewReply(run.repoRoot, threadNodeId, body, null);
 		return;
 	}
-	const { review } = await loadTarget(run);
 	await withPendingReview(run, review, (reviewNodeId) =>
 		addReviewReply(run.repoRoot, threadNodeId, body, reviewNodeId),
 	);
@@ -379,6 +382,9 @@ export async function submitRunReview(
 	body: string,
 ): Promise<void> {
 	const { review } = await loadTarget(run);
+	// A review approves/comments on the PR's current diff; block submitting from a run
+	// whose diff isn't that, even via the API (the UI already hides the tray then).
+	assertPushable(run, review);
 	await withPendingReview(run, review, (reviewNodeId) =>
 		submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
 	);
