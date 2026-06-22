@@ -211,6 +211,23 @@ export function hasUncommittedChanges(): boolean {
 	return out.length > 0;
 }
 
+/** Current `HEAD` commit SHA of a specific worktree (used by the PR push guardrails). */
+export function readHeadSha(repoRoot: string): string {
+	return execFileSync("git", ["-C", repoRoot, "rev-parse", "HEAD"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	}).trim();
+}
+
+/** True when a specific worktree has no staged, unstaged, or untracked changes. */
+export function isWorkingTreeClean(repoRoot: string): boolean {
+	const out = execFileSync("git", ["-C", repoRoot, "status", "--porcelain"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	}).trim();
+	return out.length === 0;
+}
+
 export interface ResolvedScope {
 	scope: Scope;
 	mergeBaseSha: string;

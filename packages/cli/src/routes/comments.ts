@@ -9,12 +9,14 @@ import { asc, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { LOCAL_USER_ID } from "../db/local-user.js";
 import {
+	type ChapterRunRow,
 	type CommentRow,
 	type CommentThreadRow,
 	chapterRun,
 	comment,
 	commentThread,
 } from "../db/schema/index.js";
+import { CommentSyncError, pullComments, pushComments } from "../runs/comment-sync.js";
 import { deriveScopeKey } from "../runs/scope-key.js";
 import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
@@ -205,7 +207,54 @@ export function commentRoutes(db: StageDb): Route[] {
 				writeJson(res, 200, {});
 			},
 		},
+		{
+			method: "POST",
+			pattern: "/api/runs/:runId/comment-sync/pull",
+			handler: (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
+				return runSync(db, params.runId, res, pullComments);
+			},
+		},
+		{
+			method: "POST",
+			pattern: "/api/runs/:runId/comment-sync/push",
+			handler: (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
+				return runSync(db, params.runId, res, pushComments);
+			},
+		},
 	];
+}
+
+type Res = Parameters<Route["handler"]>[1];
+
+/** Run a pull/push sync for a run, mapping CommentSyncError to its status and unexpected errors to 500. */
+async function runSync(
+	db: StageDb,
+	runId: string | undefined,
+	res: Res,
+	sync: (db: StageDb, run: ChapterRunRow) => Promise<unknown>,
+): Promise<void> {
+	if (!runId) {
+		writeJson(res, 400, { error: "Missing runId" });
+		return;
+	}
+	const [run] = db.select().from(chapterRun).where(eq(chapterRun.id, runId)).limit(1).all();
+	if (!run) {
+		writeJson(res, 404, { error: `Run ${runId} not found` });
+		return;
+	}
+	try {
+		writeJson(res, 200, await sync(db, run));
+	} catch (err) {
+		if (err instanceof CommentSyncError) {
+			writeJson(res, err.status, { error: err.message });
+			return;
+		}
+		writeJson(res, 500, {
+			error: err instanceof Error ? err.message : "Failed to sync comments with GitHub",
+		});
+	}
 }
 
 function resolveRunScopeKey(db: StageDb, runId: string | undefined): string | null {
@@ -291,10 +340,15 @@ function toThreadDto(thread: CommentThreadRow, comments: CommentRow[]): CommentT
 }
 
 function toCommentDto(row: CommentRow): CommentDto {
+	// `local` comments render as the local reviewer ("You"); others carry the
+	// GitHub author pulled from the PR.
+	const author =
+		row.authorId === LOCAL_USER_ID ? null : { login: row.authorId, avatarUrl: row.authorAvatarUrl };
 	return {
 		id: row.id,
 		body: row.body,
-		authorId: row.authorId,
+		author,
+		githubCommentId: row.githubCommentId,
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};
