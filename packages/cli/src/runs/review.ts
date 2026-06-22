@@ -252,6 +252,12 @@ async function withPendingReview<T>(
 	}
 }
 
+// Local thread ids currently mid-promotion. The server is a single process, so this
+// in-memory set serializes concurrent /review/add calls for the same thread (e.g. a
+// double-click): the second request is rejected instead of racing to create a
+// duplicate pending GitHub thread before the first deletes the local row.
+const promotingThreads = new Set<string>();
+
 /**
  * Promote a local comment thread to the viewer's pending GitHub review: the root
  * becomes a new review thread, replies become pending replies, and the local thread
@@ -259,6 +265,22 @@ async function withPendingReview<T>(
  * PR's current diff, so a line not in that diff is rejected and surfaced as an error.
  */
 export async function addLocalThreadToReview(
+	db: StageDb,
+	run: ChapterRunRow,
+	localThreadId: string,
+): Promise<void> {
+	if (promotingThreads.has(localThreadId)) {
+		throw new ReviewError("This comment is already being added to the review.", 409);
+	}
+	promotingThreads.add(localThreadId);
+	try {
+		await promoteLocalThread(db, run, localThreadId);
+	} finally {
+		promotingThreads.delete(localThreadId);
+	}
+}
+
+async function promoteLocalThread(
 	db: StageDb,
 	run: ChapterRunRow,
 	localThreadId: string,

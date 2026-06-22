@@ -166,19 +166,22 @@ export async function getReview(
 	let cursor: string | null = null;
 
 	do {
+		// `-f` keeps string GraphQL variables as strings; `-F` does typed coercion, which
+		// would mangle a repo/owner literally named `123`, `true`, or `null` into the wrong
+		// GraphQL type. Only `number` (Int!) uses `-F`.
 		const args = [
 			"api",
 			"graphql",
 			"-f",
 			`query=${REVIEW_QUERY}`,
-			"-F",
+			"-f",
 			`owner=${repo.owner}`,
-			"-F",
+			"-f",
 			`repo=${repo.repo}`,
 			"-F",
 			`number=${prNumber}`,
 		];
-		if (cursor !== null) args.push("-F", `cursor=${cursor}`);
+		if (cursor !== null) args.push("-f", `cursor=${cursor}`);
 		const parsed = ReviewQuerySchema.safeParse(JSON.parse(await ghOrThrow(args, repoRoot)));
 		if (!parsed.success) throw new Error("Unexpected response shape from GitHub review query");
 		const pr = parsed.data.data.repository?.pullRequest;
