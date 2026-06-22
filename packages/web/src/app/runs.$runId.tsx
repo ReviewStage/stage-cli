@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Topbar } from "@/components/layout/topbar";
+import { CommentThreadsProvider } from "@/lib/comment-threads-context";
 import { PullRequestLayout } from "@/routes/pull-request-layout";
 
 export const Route = createFileRoute("/runs/$runId")({
@@ -9,9 +10,9 @@ export const Route = createFileRoute("/runs/$runId")({
 function RunLayout() {
 	const { runId } = Route.useParams();
 	return (
-		<>
+		<CommentThreadsProvider runId={runId}>
 			<Topbar runId={runId} />
 			<PullRequestLayout runId={runId} />
-		</>
+		</CommentThreadsProvider>
 	);
 }

@@ -4,7 +4,8 @@ import path from "node:path";
 import { getDb, type StageDb } from "../db/client.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
 import { type RepoContext, readRepoContext } from "../git.js";
-import { type ChaptersFile, ChaptersFileSchema, SCOPE_KIND, type Scope } from "../schema.js";
+import { type ChaptersFile, ChaptersFileSchema, SCOPE_KIND } from "../schema.js";
+import { deriveScopeKey } from "./scope-key.js";
 
 export interface ImportChaptersResult {
 	runId: string;
@@ -27,26 +28,25 @@ export function insertChaptersFile(
 	prNumber: number | null = null,
 ): ImportChaptersResult {
 	return db.transaction((tx) => {
-		const [runRow] = tx
-			.insert(chapterRun)
-			.values({
-				repoRoot: repo.root,
-				originUrl: repo.originUrl,
-				prNumber,
-				scopeKind: file.scope.kind,
-				workingTreeRef: file.scope.kind === SCOPE_KIND.WORKING_TREE ? file.scope.ref : null,
-				baseSha: file.scope.baseSha,
-				headSha: file.scope.headSha,
-				mergeBaseSha: file.scope.mergeBaseSha,
-				generatedAt: new Date(file.generatedAt),
-				prologue: file.prologue ?? null,
-			})
-			.returning({ id: chapterRun.id })
-			.all();
+		const runValues = {
+			repoRoot: repo.root,
+			originUrl: repo.originUrl,
+			prNumber,
+			scopeKind: file.scope.kind,
+			workingTreeRef: file.scope.kind === SCOPE_KIND.WORKING_TREE ? file.scope.ref : null,
+			baseSha: file.scope.baseSha,
+			headSha: file.scope.headSha,
+			mergeBaseSha: file.scope.mergeBaseSha,
+			generatedAt: new Date(file.generatedAt),
+			prologue: file.prologue ?? null,
+		};
+		const [runRow] = tx.insert(chapterRun).values(runValues).returning({ id: chapterRun.id }).all();
 		if (!runRow) throw new Error("chapter_run insert returned no row");
 		const runId = runRow.id;
 
-		const scopeKey = deriveScopeKey(file.scope);
+		// Shares the run's flattened scope fields so the key matches what the
+		// comment routes derive from a chapter_run row.
+		const scopeKey = deriveScopeKey(runValues);
 
 		let keyChangeCount = 0;
 		for (const c of file.chapters) {
@@ -81,13 +81,6 @@ export function insertChaptersFile(
 
 		return { runId, chapterCount: file.chapters.length, keyChangeCount };
 	});
-}
-
-function deriveScopeKey(scope: Scope): string {
-	if (scope.kind === SCOPE_KIND.COMMITTED) {
-		return `committed:${scope.baseSha}:${scope.headSha}:${scope.mergeBaseSha}`;
-	}
-	return `workingTree:${scope.ref}:${scope.baseSha}:${scope.headSha}:${scope.mergeBaseSha}`;
 }
 
 function deriveChapterExternalId(scopeKey: string, agentId: string): string {

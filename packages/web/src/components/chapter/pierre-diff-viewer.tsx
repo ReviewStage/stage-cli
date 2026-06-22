@@ -1,11 +1,38 @@
 import {
+	type DiffLineAnnotation,
 	type FileDiffMetadata,
+	type GetHoveredLineResult,
 	getSingularPatch,
 	type Hunk,
 	type SelectedLineRange,
 } from "@pierre/diffs";
 import { FileDiff, PatchDiff } from "@pierre/diffs/react";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { Plus } from "lucide-react";
+import {
+	type CSSProperties,
+	type ReactNode,
+	useCallback,
+	useDeferredValue,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { CommentForm } from "@/components/comments/comment-form";
+import { CommentThreadView } from "@/components/comments/comment-thread";
+import {
+	buildCommentAnnotations,
+	type CommentDraft,
+	clearDraftBody,
+	type DraftBodies,
+	type DraftState,
+	findDraftAt,
+	isSameAnchor,
+	readDraftBody,
+	upsertDraft,
+	writeDraftBody,
+} from "@/lib/comment-drafts";
+import { useCommentThreadsContext } from "@/lib/comment-threads-context";
 import {
 	type AnnotatedLineRef,
 	COMMENT_SIDE,
@@ -14,8 +41,11 @@ import {
 	SIDE_TO_DIFF,
 } from "@/lib/diff-types";
 import { resolveSyntaxTheme } from "@/lib/syntax-themes";
+import type { CommentThread } from "@/lib/use-comment-threads";
 import { useDiffSettings } from "@/lib/use-diff-settings";
+import { toSingleSideSelection, useTextSelection } from "@/lib/use-text-selection";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
+import { TextSelectionPopup } from "./text-selection-popup";
 
 type AppTheme = "light" | "dark";
 
@@ -100,6 +130,27 @@ type PierreDiffViewerProps = {
 const noop = () => {};
 const noopChecked = () => false;
 
+// Literal styles for the hover "+" — see renderGutterUtility for why Tailwind
+// utilities can't be used here. `backgroundColor` is Tailwind blue-500's value.
+const GUTTER_SLOT_STYLE: CSSProperties = {
+	display: "flex",
+	height: "100%",
+	alignItems: "flex-start",
+	justifyContent: "center",
+	paddingTop: "2px",
+};
+const GUTTER_BUTTON_STYLE: CSSProperties = {
+	display: "flex",
+	alignItems: "center",
+	justifyContent: "center",
+	width: "16px",
+	height: "16px",
+	borderRadius: "4px",
+	backgroundColor: "oklch(62.3% 0.214 259.815)",
+	color: "#fff",
+	cursor: "pointer",
+};
+
 export function PierreDiffViewer({
 	patch,
 	fileDiff,
@@ -142,6 +193,183 @@ export function PierreDiffViewer({
 		return allLineRefsByFile.get(filePath);
 	}, [allLineRefsByFile, filePath]);
 
+	// ---- Line-anchored comments ----
+	const comments = useCommentThreadsContext();
+	const { createThread } = comments;
+	const fileThreads = useMemo(
+		() => (filePath ? (comments.threadsByFile.get(filePath) ?? []) : []),
+		[comments.threadsByFile, filePath],
+	);
+	// In-progress comment composers, one per anchor row — several can be open at once.
+	const [drafts, setDrafts] = useState<DraftState[]>([]);
+	// Composer text indexed by anchor, kept in a ref so typing never rebuilds the
+	// annotation list and a composer's text survives the remount that opening or
+	// closing another draft can trigger.
+	const draftBodiesRef = useRef<DraftBodies>(new Map());
+	const { selectionInfo, clearSelection } = useTextSelection(diffContainerRef);
+
+	// Hovering a thread highlights its anchored lines. Highlighting sets Pierre's
+	// `selectedLines`, which makes Pierre fire `onLineSelected` — the ref lets us
+	// tell that apart from a genuine drag so a hover doesn't open the composer.
+	const [hoverLines, setHoverLines] = useState<SelectedLineRange | null>(null);
+	const isHoveringRef = useRef(false);
+
+	const lineAnnotations = useMemo(
+		() => buildCommentAnnotations(fileThreads, drafts),
+		[fileThreads, drafts],
+	);
+
+	// Open a composer at an anchor. A row holds at most one composer, so re-opening the
+	// same (side, endLine) adopts the new range's startLine rather than duplicating it.
+	const openDraft = useCallback((anchor: CommentDraft) => {
+		setDrafts((prev) => upsertDraft(prev, anchor));
+	}, []);
+
+	const closeDraft = useCallback((draft: CommentDraft) => {
+		clearDraftBody(draftBodiesRef.current, draft.side, draft.endLine);
+		setDrafts((prev) => prev.filter((d) => !isSameAnchor(d, draft.side, draft.endLine)));
+	}, []);
+
+	const handleCreateComment = useCallback(
+		async (draft: CommentDraft, body: string) => {
+			if (!filePath) return;
+			const setError = (error: string | null) =>
+				setDrafts((prev) =>
+					prev.map((d) => (isSameAnchor(d, draft.side, draft.endLine) ? { ...d, error } : d)),
+				);
+			setError(null);
+			try {
+				await createThread({
+					filePath,
+					side: draft.side,
+					startLine: draft.startLine,
+					endLine: draft.endLine,
+					body,
+				});
+				closeDraft(draft);
+			} catch (err) {
+				setError(err instanceof Error ? err.message : "Failed to add comment");
+				throw err; // keep the composer open with the body intact
+			}
+		},
+		[filePath, createThread, closeDraft],
+	);
+
+	const handleThreadMouseEnter = useCallback((thread: CommentThread) => {
+		isHoveringRef.current = true;
+		setHoverLines({
+			start: thread.startLine,
+			side: thread.side,
+			end: thread.endLine,
+			endSide: thread.side,
+		});
+	}, []);
+
+	const handleThreadMouseLeave = useCallback(() => {
+		isHoveringRef.current = false;
+		setHoverLines(null);
+	}, []);
+
+	const renderAnnotation = useCallback(
+		(annotation: DiffLineAnnotation<CommentThread[]>): ReactNode => {
+			const threads = annotation.metadata ?? [];
+			const draft = findDraftAt(drafts, annotation.side, annotation.lineNumber);
+			if (threads.length === 0 && !draft) return null;
+			return (
+				<div
+					className="space-y-2 px-3 py-2 font-sans"
+					style={{ maxWidth: "min(48rem, 90cqw)", whiteSpace: "normal" }}
+				>
+					{threads.map((thread) => (
+						// biome-ignore lint/a11y/noStaticElementInteractions: hover only highlights the anchored lines, it's not an interactive control
+						<div
+							key={thread.id}
+							onMouseEnter={() => handleThreadMouseEnter(thread)}
+							onMouseLeave={handleThreadMouseLeave}
+						>
+							<CommentThreadView thread={thread} />
+						</div>
+					))}
+					{draft && (
+						// Pierre keys annotation rows by array index, so a row can be reused
+						// for a different anchor when a draft is added/removed. Key the composer
+						// by its anchor to force a clean remount (re-reading its own draft text)
+						// instead of inheriting another composer's in-progress state.
+						<CommentForm
+							key={`draft-${draft.side}-${draft.endLine}`}
+							label="Comment"
+							placeholder="Leave a comment…"
+							error={draft.error}
+							initialBody={readDraftBody(draftBodiesRef.current, draft.side, draft.endLine)}
+							onBodyChange={(body) =>
+								writeDraftBody(draftBodiesRef.current, draft.side, draft.endLine, body)
+							}
+							onSubmit={(body) => handleCreateComment(draft, body)}
+							onCancel={() => closeDraft(draft)}
+						/>
+					)}
+				</div>
+			);
+		},
+		[drafts, handleCreateComment, closeDraft, handleThreadMouseEnter, handleThreadMouseLeave],
+	);
+
+	const renderGutterUtility = useCallback(
+		(getHoveredLine: () => GetHoveredLineResult<"diff"> | undefined): ReactNode => (
+			// Pierre projects this into its shadow DOM via a <slot>, and slotted content
+			// inherits custom properties from the shadow tree, not the light-DOM :root.
+			// Tailwind v4 utilities resolve through `--color-*`/`--spacing`/`--radius`
+			// vars that aren't defined there, so they'd compute to transparent/zero.
+			// Style with literal values (blue-500 = the resolved `--color-blue-500`).
+			<div style={GUTTER_SLOT_STYLE}>
+				<button
+					type="button"
+					aria-label="Add comment"
+					style={GUTTER_BUTTON_STYLE}
+					onClick={() => {
+						const hovered = getHoveredLine();
+						if (!hovered) return;
+						openDraft({
+							side: hovered.side,
+							startLine: hovered.lineNumber,
+							endLine: hovered.lineNumber,
+						});
+					}}
+				>
+					<Plus size={12} strokeWidth={3} />
+				</button>
+			</div>
+		),
+		[openDraft],
+	);
+
+	const handleCommentFromSelection = useCallback(
+		(range: SelectedLineRange) => {
+			openDraft({
+				side: range.side ?? DIFF_SIDE.ADDITIONS,
+				startLine: range.start,
+				endLine: range.end,
+			});
+			clearSelection();
+		},
+		[openDraft, clearSelection],
+	);
+
+	// Dragging across the line-number gutter selects a range and opens a composer for the
+	// whole span. Several composers can be open at once, so this adds one rather than
+	// replacing any already-open draft.
+	const handleLineSelected = useCallback(
+		(range: SelectedLineRange | null) => {
+			// Bail only while hovering a thread, whose highlight also fires onLineSelected.
+			if (isHoveringRef.current || !range) return;
+			// A thread anchors to one side, so cross-side gutter drags are ignored.
+			const selection = toSingleSideSelection(range);
+			if (!selection) return;
+			openDraft(selection);
+		},
+		[openDraft],
+	);
+
 	const options = useMemo(
 		() => ({
 			theme: resolveSyntaxTheme(deferredSyntaxTheme, appTheme),
@@ -156,7 +384,8 @@ export function PierreDiffViewer({
 			expansionLineCount: 20,
 			overflow: deferredWrap ? ("wrap" as const) : ("scroll" as const),
 			enableLineSelection: true,
-			enableHoverUtility: false,
+			enableGutterUtility: true,
+			onLineSelected: handleLineSelected,
 		}),
 		[
 			appTheme,
@@ -168,12 +397,17 @@ export function PierreDiffViewer({
 			deferredWrap,
 			deferredLineNumbers,
 			deferredExpandUnchanged,
+			handleLineSelected,
 		],
 	);
 
 	const sharedProps = {
 		options,
-		selectedLines: selectedLinesProp ?? null,
+		// Hover-highlight takes precedence over any parent-controlled selection.
+		selectedLines: hoverLines ?? selectedLinesProp ?? null,
+		lineAnnotations,
+		renderAnnotation,
+		renderGutterUtility,
 	};
 
 	// Only mount the overlay when this file actually has refs to highlight.
@@ -194,14 +428,25 @@ export function PierreDiffViewer({
 		/>
 	) : null;
 
+	// Show the popup whenever text is selected — several composers can be open at once,
+	// so a text-selection comment is always available.
+	const textSelectionPopup = selectionInfo ? (
+		<TextSelectionPopup
+			selectionRect={selectionInfo.rect}
+			lineRange={selectionInfo.lineRange}
+			onComment={handleCommentFromSelection}
+		/>
+	) : null;
+
 	if (fileDiff) {
 		return (
 			<div
 				className="@container/diff relative isolate overflow-hidden rounded-b-lg border-x border-b border-border"
 				ref={diffContainerRef}
 			>
-				<FileDiff fileDiff={fileDiff} {...sharedProps} />
+				<FileDiff<CommentThread[]> fileDiff={fileDiff} {...sharedProps} />
 				{overlay}
+				{textSelectionPopup}
 			</div>
 		);
 	}
@@ -211,8 +456,9 @@ export function PierreDiffViewer({
 			className="@container/diff relative isolate overflow-hidden rounded-b-lg border-x border-b border-border"
 			ref={diffContainerRef}
 		>
-			<PatchDiff patch={patch} {...sharedProps} />
+			<PatchDiff<CommentThread[]> patch={patch} {...sharedProps} />
 			{overlay}
+			{textSelectionPopup}
 		</div>
 	);
 }
