@@ -10,7 +10,6 @@ import {
 import { asc, eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { type ChapterRunRow, comment, commentThread } from "../db/schema/index.js";
-import { isWorkingTreeClean, readHeadSha } from "../git.js";
 import { type GitHubRepo, getPullRequest, parseGitHubRepo } from "../github/index.js";
 import {
 	addReviewReply,
@@ -51,43 +50,25 @@ function fromGitHubSide(side: GitHubDiffSide): DiffSide {
 }
 
 /**
- * Why a comment can't be added to the PR review right now, or null when it can.
- * Comments anchor to the PR's head-commit diff, so the local checkout must be a
- * committed diff (working-tree line numbers aren't the PR's), with a clean tree
- * whose HEAD matches the PR head — otherwise the comment lands mis-anchored. This
- * is the push guardrail PRO-547 requires; addition-side anchors are canonical,
- * deletion-side from a chapter view remain a known limitation (GitHub rejects
- * lines that aren't in its diff).
+ * Whether the run's diff IS the PR's current diff. GitHub anchors review comments to
+ * the PR head-commit's diff, and a run's comment anchors are line numbers from its
+ * own `base..head`. So the two align only when the run is a committed diff (working-
+ * tree line numbers aren't the PR's) whose head is the PR head. This is the load-
+ * bearing invariant for both showing live PR threads and adding comments to the PR;
+ * the live worktree state is irrelevant — a committed run's anchors are fixed by its
+ * recorded SHAs.
  */
-function pushBlockReason(run: ChapterRunRow, headRefOid: string): string | null {
-	if (run.scopeKind !== SCOPE_KIND.COMMITTED) {
-		return "Only comments on a committed diff can be added to the PR — working-tree comments aren't anchored to the PR's commits.";
-	}
-	if (!isWorkingTreeClean(run.repoRoot)) {
-		return "Your working tree has uncommitted changes. Commit or stash them so comments anchor to the PR's commit.";
-	}
-	if (readHeadSha(run.repoRoot) !== headRefOid) {
-		return "Your local HEAD doesn't match the PR head. Push or pull your commits so they line up before commenting on the PR.";
-	}
-	return null;
+function runMatchesPrDiff(run: ChapterRunRow, headRefOid: string): boolean {
+	return run.scopeKind === SCOPE_KIND.COMMITTED && run.headSha === headRefOid;
 }
 
 function assertPushable(run: ChapterRunRow, review: GitHubReview): void {
-	const reason = pushBlockReason(run, review.headRefOid);
-	if (reason !== null) throw new ReviewError(reason, 409);
-}
-
-/**
- * Whether comments can be pushed, for the read path. `pushBlockReason` shells out to
- * git, which can throw (no repo, git missing); the read must never blank the review,
- * so a git failure degrades to "not pushable" rather than propagating.
- */
-function canPushToReview(run: ChapterRunRow, headRefOid: string): boolean {
-	try {
-		return pushBlockReason(run, headRefOid) === null;
-	} catch {
-		return false;
-	}
+	if (runMatchesPrDiff(run, review.headRefOid)) return;
+	const reason =
+		run.scopeKind !== SCOPE_KIND.COMMITTED
+			? "Only comments on a committed diff can be added to the PR — working-tree comments aren't anchored to the PR's commits."
+			: "This run's diff doesn't match the current PR head. Re-run against the latest PR commit to comment on it.";
+	throw new ReviewError(reason, 409);
 }
 
 // ─── Read: merged local + GitHub review ─────────────────────────────────────────
@@ -191,6 +172,13 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		return { ...base, github: GITHUB_REVIEW_STATUS.OFFLINE };
 	}
 
+	// The PR's live threads anchor to its head-commit diff. If this run isn't that
+	// exact diff, overlaying them would mis-anchor comments on unrelated lines, so we
+	// surface only local comments — the GitHub review isn't meaningful for this diff.
+	if (!runMatchesPrDiff(run, review.headRefOid)) {
+		return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
+	}
+
 	const githubThreads = review.threads.map(toGitHubThreadDto);
 	const pendingCommentCount = review.threads.reduce(
 		(n, t) => n + t.comments.filter((c) => c.isPending).length,
@@ -202,7 +190,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		pendingCommentCount,
 		hasPendingReview: review.pendingReviewNodeId !== null,
 		isOwnPullRequest: review.viewerDidAuthor,
-		canPushToReview: canPushToReview(run, review.headRefOid),
+		canPushToReview: true,
 	};
 }
 

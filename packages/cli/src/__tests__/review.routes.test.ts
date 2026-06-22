@@ -153,14 +153,6 @@ beforeEach(async () => {
 	await fs.writeFile(path.join(webDist, "index.html"), "<html></html>");
 	await fs.mkdir(repoRoot);
 	await fs.mkdir(binDir);
-	// Clean working tree whose HEAD matches the PR head, so the push guardrail passes.
-	const gitShim = `#!/usr/bin/env node
-const args = process.argv.slice(2);
-if (args.includes("rev-parse")) process.stdout.write(${JSON.stringify(HEAD)});
-else if (args.includes("status")) process.stdout.write("");
-`;
-	await fs.writeFile(path.join(binDir, "git"), gitShim);
-	await fs.chmod(path.join(binDir, "git"), 0o755);
 	originalPath = process.env.PATH;
 	process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
 	closeDb();
@@ -176,7 +168,7 @@ afterEach(async () => {
 	await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
-function insertRun(originUrl: string | null, committed = true): string {
+function insertRun(originUrl: string | null, committed = true, headSha: string = HEAD): string {
 	const db = getDb({ dbPath });
 	const [row] = db
 		.insert(chapterRun)
@@ -187,7 +179,7 @@ function insertRun(originUrl: string | null, committed = true): string {
 			scopeKind: committed ? SCOPE_KIND.COMMITTED : SCOPE_KIND.WORKING_TREE,
 			workingTreeRef: committed ? null : WORKING_TREE_REF.WORK,
 			baseSha: BASE,
-			headSha: HEAD,
+			headSha,
 			mergeBaseSha: MERGE_BASE,
 			generatedAt: new Date(),
 		})
@@ -335,17 +327,17 @@ describe("review API — read", () => {
 		expect(review.canPushToReview).toBe(false);
 	});
 
-	it("stays available with canPushToReview=false when the git push-check throws", async () => {
-		// gh works (review loads) but git fails — the read must degrade, not 500.
+	it("shows local-only (github:none) when the run's diff doesn't match the PR head", async () => {
+		// The run is committed but its head differs from the PR head, so the PR's live
+		// thread anchors wouldn't align with this run's diff — surface local only.
 		await writeGhShim(REVIEW_QUERY_RESULT);
-		await fs.writeFile(path.join(binDir, "git"), "#!/bin/sh\nexit 1\n");
-		await fs.chmod(path.join(binDir, "git"), 0o755);
-		const runId = insertRun(GITHUB_ORIGIN);
+		const runId = insertRun(GITHUB_ORIGIN, true, "d".repeat(40));
 		const res = await request(await start(), "GET", `/api/runs/${runId}/review`);
-		expect(res.status).toBe(200);
 		const review = JSON.parse(res.body) as ReviewResponse;
-		expect(review.github).toBe("available");
+		expect(review.github).toBe("none");
 		expect(review.canPushToReview).toBe(false);
+		// No GitHub threads overlaid — their anchors are from the PR head, not this diff.
+		expect(review.threads.every((t) => t.source === "local")).toBe(true);
 	});
 });
 

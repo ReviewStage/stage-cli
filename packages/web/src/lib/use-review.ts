@@ -79,6 +79,14 @@ export function useReview(runId: string): UseReviewResult {
 	const threads = useMemo(() => data?.threads ?? [], [data]);
 	const threadsByFile = useMemo(() => groupByFile(threads), [threads]);
 	const invalidate = () => queryClient.invalidateQueries({ queryKey });
+	// GitHub-affecting actions (submit/resolve/reply/promote) change PR-level state —
+	// reviewer decisions, the merge button — that lives behind separate, infinitely-
+	// stale query keys. Refresh those too so the PR header doesn't go stale until reload.
+	const invalidateGitHub = () => {
+		invalidate();
+		queryClient.invalidateQueries({ queryKey: ["pull-request-reviews"] });
+		queryClient.invalidateQueries({ queryKey: ["pull-request-merge-status"] });
+	};
 
 	const runPath = (suffix: string) => `/api/runs/${encodeURIComponent(runId)}${suffix}`;
 
@@ -91,7 +99,7 @@ export function useReview(runId: string): UseReviewResult {
 		createPendingComment: useMutation({
 			mutationFn: (input: CreateCommentThreadBody) =>
 				jsonFetch(runPath("/review/comment"), jsonRequest("POST", input)),
-			onSuccess: invalidate,
+			onSuccess: invalidateGitHub,
 		}),
 		replyLocal: useMutation({
 			mutationFn: ({ threadId, body }: { threadId: string; body: string }) =>
@@ -127,36 +135,36 @@ export function useReview(runId: string): UseReviewResult {
 		addToReview: useMutation({
 			mutationFn: (localThreadId: string) =>
 				jsonFetch(runPath("/review/add"), jsonRequest("POST", { localThreadId })),
-			onSuccess: invalidate,
+			onSuccess: invalidateGitHub,
 		}),
 		submitReview: useMutation({
 			mutationFn: (input: { event: ReviewEvent; body: string }) =>
 				jsonFetch(runPath("/review/submit"), jsonRequest("POST", input)),
-			onSuccess: invalidate,
+			onSuccess: invalidateGitHub,
 		}),
 		discardReview: useMutation({
 			mutationFn: () => jsonFetch(runPath("/review/discard"), jsonRequest("POST")),
-			onSuccess: invalidate,
+			onSuccess: invalidateGitHub,
 		}),
 		replyGitHub: useMutation({
 			mutationFn: (input: { threadNodeId: string; body: string; pending: boolean }) =>
 				jsonFetch(runPath("/review/reply"), jsonRequest("POST", input)),
-			onSuccess: invalidate,
+			onSuccess: invalidateGitHub,
 		}),
 		editGitHubComment: useMutation({
 			mutationFn: (input: { nodeId: string; body: string }) =>
 				jsonFetch(runPath("/review/comment/edit"), jsonRequest("POST", input)),
-			onSuccess: invalidate,
+			onSuccess: invalidateGitHub,
 		}),
 		deleteGitHubComment: useMutation({
 			mutationFn: (nodeId: string) =>
 				jsonFetch(runPath("/review/comment/delete"), jsonRequest("POST", { nodeId })),
-			onSuccess: invalidate,
+			onSuccess: invalidateGitHub,
 		}),
 		resolveGitHub: useMutation({
 			mutationFn: (input: { threadNodeId: string; resolved: boolean }) =>
 				jsonFetch(runPath("/review/resolve"), jsonRequest("POST", input)),
-			onSuccess: invalidate,
+			onSuccess: invalidateGitHub,
 		}),
 	};
 
