@@ -26,13 +26,20 @@ export function viewStateQueryKey(runId: string): readonly unknown[] {
 
 export async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(url, init);
-	if (!res.ok) {
-		throw new Error(`${init?.method ?? "GET"} ${url} failed: ${res.status}`);
-	}
-	// POST/DELETE handlers can return an empty body — read as text first so
-	// JSON.parse doesn't throw SyntaxError on `""`.
+	// POST/DELETE handlers (and error responses) can return an empty body — read as
+	// text first so JSON.parse doesn't throw SyntaxError on `""`.
 	const text = await res.text();
-	return (text ? JSON.parse(text) : {}) as T;
+	const parsed: unknown = text ? JSON.parse(text) : {};
+	if (!res.ok) {
+		// Surface the server's `{ error }` message verbatim (sync guardrails and the
+		// GitHub-write paths carry actionable reasons); fall back to the status code.
+		const message =
+			typeof parsed === "object" && parsed !== null && "error" in parsed
+				? String((parsed as { error: unknown }).error)
+				: `${init?.method ?? "GET"} ${url} failed: ${res.status}`;
+		throw new Error(message);
+	}
+	return parsed as T;
 }
 
 async function fetchViewState(runId: string): Promise<ViewState> {

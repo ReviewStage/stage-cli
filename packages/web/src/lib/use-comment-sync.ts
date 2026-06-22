@@ -6,28 +6,9 @@ import {
 } from "@stagereview/types/comments";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { commentThreadsQueryKey } from "./use-comment-threads";
+import { jsonFetch } from "./use-view-state";
 
 export type { PullCommentsResult, PushCommentsResult };
-
-/**
- * POST a sync endpoint, surfacing the server's `{ error }` message verbatim on a
- * non-2xx response (guardrail failures and the missing-PR case all carry one).
- * The generic `jsonFetch` only reports the status code, which would hide the
- * actionable reason a sync was refused.
- */
-async function syncFetch<T>(url: string): Promise<T> {
-	const res = await fetch(url, { method: "POST" });
-	const text = await res.text();
-	const parsed: unknown = text ? JSON.parse(text) : {};
-	if (!res.ok) {
-		const message =
-			typeof parsed === "object" && parsed !== null && "error" in parsed
-				? String((parsed as { error: unknown }).error)
-				: `Sync failed (${res.status})`;
-		throw new Error(message);
-	}
-	return parsed as T;
-}
 
 export interface UseCommentSyncResult {
 	pull: () => Promise<PullCommentsResult>;
@@ -48,17 +29,17 @@ export function useCommentSync(runId: string): UseCommentSyncResult {
 
 	const pullMutation = useMutation({
 		mutationFn: () =>
-			syncFetch(`/api/runs/${encodeURIComponent(runId)}/comment-sync/pull`).then((raw) =>
-				PullCommentsResultSchema.parse(raw),
-			),
+			jsonFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}/comment-sync/pull`, {
+				method: "POST",
+			}).then((raw) => PullCommentsResultSchema.parse(raw)),
 		onSuccess: invalidate,
 	});
 
 	const pushMutation = useMutation({
 		mutationFn: () =>
-			syncFetch(`/api/runs/${encodeURIComponent(runId)}/comment-sync/push`).then((raw) =>
-				PushCommentsResultSchema.parse(raw),
-			),
+			jsonFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}/comment-sync/push`, {
+				method: "POST",
+			}).then((raw) => PushCommentsResultSchema.parse(raw)),
 		onSuccess: invalidate,
 	});
 

@@ -85,8 +85,9 @@ export function useCommentThreads(runId: string): UseCommentThreadsResult {
 
 	const resolveMutation = useMutation({
 		mutationFn: async ({ threadId, resolved }: { threadId: string; resolved: boolean }) => {
+			// Run-scoped: the server mirrors the toggle to GitHub for PR-originated threads.
 			await jsonFetch(
-				`/api/comment-threads/${encodeURIComponent(threadId)}`,
+				`/api/runs/${encodeURIComponent(runId)}/comment-threads/${encodeURIComponent(threadId)}`,
 				jsonRequest("PATCH", { resolved }),
 			);
 		},

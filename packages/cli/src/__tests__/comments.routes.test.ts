@@ -165,12 +165,12 @@ describe("comment threads API", () => {
 		const { port } = await startWithRoutes();
 		const thread = await createThread(port, runId);
 
-		const resolved = await send(port, "PATCH", `/api/comment-threads/${thread.id}`, {
+		const resolved = await send(port, "PATCH", `/api/runs/${runId}/comment-threads/${thread.id}`, {
 			resolved: true,
 		});
 		expect((resolved.body as CommentThread).resolvedAt).not.toBeNull();
 
-		const reopened = await send(port, "PATCH", `/api/comment-threads/${thread.id}`, {
+		const reopened = await send(port, "PATCH", `/api/runs/${runId}/comment-threads/${thread.id}`, {
 			resolved: false,
 		});
 		expect((reopened.body as CommentThread).resolvedAt).toBeNull();

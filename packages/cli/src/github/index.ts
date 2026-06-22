@@ -22,9 +22,11 @@ export {
 	createReviewComment,
 	GITHUB_DIFF_SIDE,
 	type GitHubDiffSide,
-	listResolvedRootCommentIds,
 	listReviewComments,
+	listReviewThreads,
 	type ReviewComment,
+	type ReviewThreadInfo,
 	replyToReviewComment,
+	setReviewThreadResolved,
 } from "./review-comments.js";
 export { type GitHubViewer, getGitHubViewer } from "./viewer.js";

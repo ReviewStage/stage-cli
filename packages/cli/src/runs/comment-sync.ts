@@ -2,17 +2,24 @@ import type { PullCommentsResult, PushCommentsResult } from "@stagereview/types/
 import { asc, eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { LOCAL_USER_ID } from "../db/local-user.js";
-import { type ChapterRunRow, type CommentRow, comment, commentThread } from "../db/schema/index.js";
+import {
+	type ChapterRunRow,
+	type CommentRow,
+	type CommentThreadRow,
+	comment,
+	commentThread,
+} from "../db/schema/index.js";
 import { isWorkingTreeClean, readHeadSha } from "../git.js";
 import {
 	createReviewComment,
 	type GitHubRepo,
 	getPullRequest,
-	listResolvedRootCommentIds,
 	listReviewComments,
+	listReviewThreads,
 	parseGitHubRepo,
 	type ReviewComment,
 	replyToReviewComment,
+	setReviewThreadResolved,
 } from "../github/index.js";
 import { SCOPE_KIND } from "../schema.js";
 import { groupReviewComments, toGitHubSide } from "./review-comment-mapping.js";
@@ -71,9 +78,9 @@ async function resolveSyncTarget(run: ChapterRunRow): Promise<SyncTarget> {
 export async function pullComments(db: StageDb, run: ChapterRunRow): Promise<PullCommentsResult> {
 	const { repo, prNumber } = await resolveSyncTarget(run);
 	const scopeKey = deriveScopeKey(run);
-	const [comments, resolvedRootIds] = await Promise.all([
+	const [comments, reviewThreads] = await Promise.all([
 		listReviewComments(run.repoRoot, repo, prNumber),
-		listResolvedRootCommentIds(run.repoRoot, repo, prNumber),
+		listReviewThreads(run.repoRoot, repo, prNumber),
 	]);
 	const threads = groupReviewComments(comments);
 
@@ -102,7 +109,7 @@ export async function pullComments(db: StageDb, run: ChapterRunRow): Promise<Pul
 		};
 
 		for (const thread of threads) {
-			const resolvedOnGitHub = resolvedRootIds.has(thread.root.id);
+			const resolvedOnGitHub = reviewThreads.get(thread.root.id)?.isResolved ?? false;
 			// Reuse the local thread that already owns the root comment; otherwise create one.
 			const [existing] = tx
 				.select({ id: commentThread.id, resolvedAt: commentThread.resolvedAt })
@@ -301,4 +308,61 @@ export async function pushComments(db: StageDb, run: ChapterRunRow): Promise<Pus
 	}
 
 	return result;
+}
+
+// ─── Resolution (bidirectional) ───────────────────────────────────────────────────
+
+/**
+ * Resolve or reopen a thread, keeping GitHub in sync. A thread that originated on
+ * the PR (its root comment carries a GitHub id) resolves the corresponding GitHub
+ * review thread first, then mirrors locally only on success — so the local state
+ * never diverges from the PR (a later pull would otherwise revert it). A local-only
+ * thread (never pushed, absent from GitHub) just toggles locally.
+ *
+ * The GitHub thread's node id isn't stored: it's looked up live from the root
+ * comment id we already hold, so nothing GitHub-owned is mirrored into our schema.
+ */
+export async function syncThreadResolution(
+	db: StageDb,
+	run: ChapterRunRow,
+	threadId: string,
+	resolved: boolean,
+): Promise<CommentThreadRow> {
+	const [thread] = db
+		.select()
+		.from(commentThread)
+		.where(eq(commentThread.id, threadId))
+		.limit(1)
+		.all();
+	if (!thread) throw new CommentSyncError(`Thread ${threadId} not found`, 404);
+
+	const [root] = db
+		.select({ githubCommentId: comment.githubCommentId })
+		.from(comment)
+		.where(eq(comment.threadId, threadId))
+		.orderBy(asc(comment.createdAt))
+		.limit(1)
+		.all();
+
+	if (root?.githubCommentId != null) {
+		const target = await resolveSyncTarget(run);
+		const reviewThreads = await listReviewThreads(run.repoRoot, target.repo, target.prNumber);
+		const nodeId = reviewThreads.get(root.githubCommentId)?.nodeId;
+		if (nodeId === undefined) {
+			throw new CommentSyncError(
+				"This thread is no longer on the pull request, so its resolved state can't be synced.",
+				404,
+			);
+		}
+		await setReviewThreadResolved(run.repoRoot, nodeId, resolved);
+	}
+
+	const [updated] = db
+		.update(commentThread)
+		.set({ resolvedAt: resolved ? new Date() : null })
+		.where(eq(commentThread.id, threadId))
+		.returning()
+		.all();
+	if (!updated) throw new Error("comment_thread resolve update returned no row");
+	return updated;
 }

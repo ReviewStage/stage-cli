@@ -51,14 +51,15 @@ export async function listReviewComments(
 	return parsed.data.flat();
 }
 
-// ─── Resolved-thread metadata (GraphQL) ─────────────────────────────────────────
+// ─── Review-thread metadata (GraphQL) ───────────────────────────────────────────
 
-const RESOLVED_THREADS_QUERY = `query GetResolvedThreads($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+const REVIEW_THREADS_QUERY = `query GetReviewThreads($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       reviewThreads(first: 100, after: $cursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
+          id
           isResolved
           comments(first: 1) { nodes { databaseId } }
         }
@@ -67,7 +68,7 @@ const RESOLVED_THREADS_QUERY = `query GetResolvedThreads($owner: String!, $repo:
   }
 }`;
 
-const ResolvedThreadsSchema = z.object({
+const ReviewThreadsSchema = z.object({
 	data: z.object({
 		repository: z
 			.object({
@@ -77,6 +78,7 @@ const ResolvedThreadsSchema = z.object({
 							pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() }),
 							nodes: z.array(
 								z.object({
+									id: z.string(),
 									isResolved: z.boolean(),
 									comments: z.object({
 										nodes: z.array(z.object({ databaseId: z.number().nullable() })),
@@ -91,24 +93,32 @@ const ResolvedThreadsSchema = z.object({
 	}),
 });
 
+/** A PR review thread's GraphQL node id and resolution state. */
+export interface ReviewThreadInfo {
+	nodeId: string;
+	isResolved: boolean;
+}
+
 /**
- * Set of root review-comment ids whose thread is resolved on GitHub, keyed by the
- * root comment's database id (the same id the REST list reports for the thread's
- * first comment). Used to mirror resolution state on pull.
+ * Review threads keyed by their root comment's database id (the same id the REST
+ * list reports for the thread's first comment). The node id is needed to resolve
+ * or reopen a thread; the resolution state mirrors GitHub onto the local review.
+ * We key off the root comment id we already store, so nothing GitHub-owned needs
+ * persisting — the node id is looked up live when a thread is resolved.
  */
-export async function listResolvedRootCommentIds(
+export async function listReviewThreads(
 	repoRoot: string,
 	repo: GitHubRepo,
 	prNumber: number,
-): Promise<Set<number>> {
-	const resolved = new Set<number>();
+): Promise<Map<number, ReviewThreadInfo>> {
+	const byRootCommentId = new Map<number, ReviewThreadInfo>();
 	let cursor: string | null = null;
 	do {
 		const args = [
 			"api",
 			"graphql",
 			"-f",
-			`query=${RESOLVED_THREADS_QUERY}`,
+			`query=${REVIEW_THREADS_QUERY}`,
 			"-F",
 			`owner=${repo.owner}`,
 			"-F",
@@ -118,17 +128,46 @@ export async function listResolvedRootCommentIds(
 		];
 		if (cursor !== null) args.push("-F", `cursor=${cursor}`);
 		const stdout = await ghOrThrow(args, repoRoot);
-		const parsed = ResolvedThreadsSchema.safeParse(JSON.parse(stdout));
+		const parsed = ReviewThreadsSchema.safeParse(JSON.parse(stdout));
 		if (!parsed.success) throw new Error("Unexpected response shape from GitHub review threads");
 		const threads = parsed.data.data.repository?.pullRequest?.reviewThreads;
 		if (!threads) break;
 		for (const thread of threads.nodes) {
 			const rootId = thread.comments.nodes[0]?.databaseId;
-			if (thread.isResolved && rootId != null) resolved.add(rootId);
+			if (rootId != null) {
+				byRootCommentId.set(rootId, { nodeId: thread.id, isResolved: thread.isResolved });
+			}
 		}
 		cursor = threads.pageInfo.hasNextPage ? threads.pageInfo.endCursor : null;
 	} while (cursor !== null);
-	return resolved;
+	return byRootCommentId;
+}
+
+const RESOLVE_THREAD_MUTATION = `mutation ResolveThread($threadId: ID!) {
+  resolveReviewThread(input: { threadId: $threadId }) { thread { id } }
+}`;
+
+const UNRESOLVE_THREAD_MUTATION = `mutation UnresolveThread($threadId: ID!) {
+  unresolveReviewThread(input: { threadId: $threadId }) { thread { id } }
+}`;
+
+/** Resolve or reopen a review thread by its GraphQL node id. Throws on failure. */
+export async function setReviewThreadResolved(
+	repoRoot: string,
+	threadNodeId: string,
+	resolved: boolean,
+): Promise<void> {
+	await ghWrite(
+		[
+			"api",
+			"graphql",
+			"-f",
+			`query=${resolved ? RESOLVE_THREAD_MUTATION : UNRESOLVE_THREAD_MUTATION}`,
+			"-F",
+			`threadId=${threadNodeId}`,
+		],
+		repoRoot,
+	);
 }
 
 // ─── Writes ─────────────────────────────────────────────────────────────────────

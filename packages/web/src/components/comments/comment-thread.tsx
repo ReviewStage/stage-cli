@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Markdown } from "@/components/ui/markdown";
+import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCommentThreadsContext } from "@/lib/comment-threads-context";
 import { formatTimeAgo } from "@/lib/format";
@@ -47,14 +48,23 @@ export function CommentThreadView({ thread }: { thread: CommentThread }) {
 	if (!root) return null;
 	const replies = thread.comments.slice(1);
 
-	function handleResolveToggle() {
+	async function handleResolveToggle() {
 		const next = !isResolved;
+		const wasOpen = isOpen;
 		// Collapse on resolve / expand on reopen — but never collapse out from under an
 		// active reply/edit/delete form (it would unmount CommentForm and drop unsaved
 		// text), mirroring the handleOpenChange guard.
 		const hasActiveForm = isReplying || editingId !== null || deleteTarget !== null;
 		if (!next || !hasActiveForm) setIsOpen(!next);
-		void setThreadResolved({ threadId: thread.id, resolved: next });
+		try {
+			// For PR-originated threads this also resolves/reopens the thread on GitHub;
+			// on failure the server leaves local state unchanged, so revert the collapse
+			// and surface the reason.
+			await setThreadResolved({ threadId: thread.id, resolved: next });
+		} catch (err) {
+			setIsOpen(wasOpen);
+			toast.error(errorMessage(err, "Failed to update resolved state"));
+		}
 	}
 
 	function handleOpenChange(open: boolean) {

@@ -81,10 +81,15 @@ async function writeShims(opts: {
 					pullRequest: {
 						reviewThreads: {
 							pageInfo: { hasNextPage: false, endCursor: null },
-							nodes: (opts.resolvedRootIds ?? []).map((id) => ({
-								isResolved: true,
-								comments: { nodes: [{ databaseId: id }] },
-							})),
+							// One thread node per root comment, carrying its node id (for resolve/reopen)
+							// and resolution state (for pull mirroring).
+							nodes: REVIEW_COMMENTS.flat()
+								.filter((c) => c.in_reply_to_id == null)
+								.map((c) => ({
+									id: `THREAD_NODE_${c.id}`,
+									isResolved: (opts.resolvedRootIds ?? []).includes(c.id),
+									comments: { nodes: [{ databaseId: c.id }] },
+								})),
 						},
 					},
 				},
@@ -110,7 +115,16 @@ function nextId() {
 if (args[0] === "pr" && args[1] === "view") {
   process.stdout.write(JSON.stringify(fx.pr));
 } else if (args[0] === "api" && args[1] === "graphql") {
-  process.stdout.write(JSON.stringify(fx.graphql));
+  const joined = args.join(" ");
+  if (joined.includes("unresolveReviewThread")) {
+    fs.appendFileSync(log, "unresolve " + joined + "\\n");
+    process.stdout.write("{}");
+  } else if (joined.includes("resolveReviewThread")) {
+    fs.appendFileSync(log, "resolve " + joined + "\\n");
+    process.stdout.write("{}");
+  } else {
+    process.stdout.write(JSON.stringify(fx.graphql));
+  }
 } else if (args[0] === "api") {
   const endpoint = args[1];
   const isPost = args.includes("POST");
@@ -207,10 +221,26 @@ async function start(): Promise<number> {
 	return handle.port;
 }
 
-function post(port: number, p: string): Promise<{ status: number; body: string }> {
+function request(
+	port: number,
+	method: string,
+	p: string,
+	body?: unknown,
+): Promise<{ status: number; body: string }> {
 	return new Promise((resolve, reject) => {
+		const payload = body === undefined ? undefined : JSON.stringify(body);
 		const req = http.request(
-			{ hostname: LOOPBACK_HOST, port, method: "POST", path: p, agent: false },
+			{
+				hostname: LOOPBACK_HOST,
+				port,
+				method,
+				path: p,
+				agent: false,
+				headers:
+					payload === undefined
+						? {}
+						: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+			},
 			(res) => {
 				const chunks: Buffer[] = [];
 				res.on("data", (c: Buffer) => chunks.push(c));
@@ -220,8 +250,12 @@ function post(port: number, p: string): Promise<{ status: number; body: string }
 			},
 		);
 		req.on("error", reject);
-		req.end();
+		req.end(payload);
 	});
+}
+
+function post(port: number, p: string): Promise<{ status: number; body: string }> {
+	return request(port, "POST", p);
 }
 
 describe("comment sync API — pull", () => {
@@ -314,5 +348,65 @@ describe("comment sync API — push", () => {
 
 		const log = await fs.readFile(path.join(tmpDir, "gh-log.txt"), "utf8");
 		expect(log.split("\n").filter((l) => l.startsWith("create"))).toHaveLength(1);
+	});
+});
+
+describe("comment sync API — resolution", () => {
+	it("mirrors a local resolve/reopen of a PR-originated thread to GitHub", async () => {
+		await writeShims({ gitHead: HEAD_SHA, gitStatus: "" });
+		const runId = insertRun();
+		const port = await start();
+		await post(port, `/api/runs/${runId}/comment-sync/pull`);
+
+		const db = getDb({ dbPath });
+		const [thread] = db.select().from(commentThread).all();
+		if (!thread) throw new Error("expected a pulled thread");
+
+		const resolved = await request(
+			port,
+			"PATCH",
+			`/api/runs/${runId}/comment-threads/${thread.id}`,
+			{
+				resolved: true,
+			},
+		);
+		expect(resolved.status).toBe(200);
+		expect(db.select().from(commentThread).all()[0]?.resolvedAt).not.toBeNull();
+
+		const reopened = await request(
+			port,
+			"PATCH",
+			`/api/runs/${runId}/comment-threads/${thread.id}`,
+			{
+				resolved: false,
+			},
+		);
+		expect(reopened.status).toBe(200);
+		expect(db.select().from(commentThread).all()[0]?.resolvedAt).toBeNull();
+
+		const lines = (await fs.readFile(path.join(tmpDir, "gh-log.txt"), "utf8")).split("\n");
+		expect(lines.filter((l) => l.startsWith("resolve"))).toHaveLength(1);
+		expect(lines.filter((l) => l.startsWith("unresolve"))).toHaveLength(1);
+	});
+
+	it("keeps a local-only thread's resolve off GitHub", async () => {
+		await writeShims({ gitHead: HEAD_SHA, gitStatus: "" });
+		const runId = insertRun();
+		seedLocalThread();
+		const port = await start();
+
+		const db = getDb({ dbPath });
+		const [thread] = db.select().from(commentThread).all();
+		if (!thread) throw new Error("expected a local thread");
+
+		const res = await request(port, "PATCH", `/api/runs/${runId}/comment-threads/${thread.id}`, {
+			resolved: true,
+		});
+		expect(res.status).toBe(200);
+		expect(db.select().from(commentThread).all()[0]?.resolvedAt).not.toBeNull();
+
+		// No GitHub mutation for a thread that never lived on the PR.
+		const log = await fs.readFile(path.join(tmpDir, "gh-log.txt"), "utf8").catch(() => "");
+		expect(log).not.toMatch(/resolve/);
 	});
 });

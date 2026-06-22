@@ -16,7 +16,12 @@ import {
 	comment,
 	commentThread,
 } from "../db/schema/index.js";
-import { CommentSyncError, pullComments, pushComments } from "../runs/comment-sync.js";
+import {
+	CommentSyncError,
+	pullComments,
+	pushComments,
+	syncThreadResolution,
+} from "../runs/comment-sync.js";
 import { deriveScopeKey } from "../runs/scope-key.js";
 import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
@@ -106,8 +111,10 @@ export function commentRoutes(db: StageDb): Route[] {
 			},
 		},
 		{
+			// Run-scoped so resolving a PR-originated thread can mirror the toggle to
+			// GitHub (it needs the run's repo/PR context). Local-only threads stay local.
 			method: "PATCH",
-			pattern: "/api/comment-threads/:threadId",
+			pattern: "/api/runs/:runId/comment-threads/:threadId",
 			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
 				const threadId = params.threadId;
@@ -117,18 +124,28 @@ export function commentRoutes(db: StageDb): Route[] {
 				}
 				const body = await parseJsonBody(req, res, ResolveThreadBodySchema);
 				if (!body) return;
-
-				const [updated] = db
-					.update(commentThread)
-					.set({ resolvedAt: body.resolved ? new Date() : null })
-					.where(eq(commentThread.id, threadId))
-					.returning()
-					.all();
-				if (!updated) {
-					writeJson(res, 404, { error: `Thread ${threadId} not found` });
+				const runId = params.runId;
+				if (!runId) {
+					writeJson(res, 400, { error: "Missing runId" });
 					return;
 				}
-				writeJson(res, 200, toThreadDto(updated, threadComments(db, threadId)));
+				const [run] = db.select().from(chapterRun).where(eq(chapterRun.id, runId)).limit(1).all();
+				if (!run) {
+					writeJson(res, 404, { error: `Run ${runId} not found` });
+					return;
+				}
+				try {
+					const updated = await syncThreadResolution(db, run, threadId, body.resolved);
+					writeJson(res, 200, toThreadDto(updated, threadComments(db, threadId)));
+				} catch (err) {
+					if (err instanceof CommentSyncError) {
+						writeJson(res, err.status, { error: err.message });
+						return;
+					}
+					writeJson(res, 500, {
+						error: err instanceof Error ? err.message : "Failed to update thread",
+					});
+				}
 			},
 		},
 		{
