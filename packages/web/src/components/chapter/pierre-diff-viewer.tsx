@@ -19,7 +19,7 @@ import {
 	useState,
 } from "react";
 import { CommentForm } from "@/components/comments/comment-form";
-import { CommentThreadView } from "@/components/comments/comment-thread";
+import { ReviewThreadView } from "@/components/comments/review-thread";
 import {
 	buildCommentAnnotations,
 	type CommentDraft,
@@ -32,7 +32,6 @@ import {
 	upsertDraft,
 	writeDraftBody,
 } from "@/lib/comment-drafts";
-import { useCommentThreadsContext } from "@/lib/comment-threads-context";
 import {
 	type AnnotatedLineRef,
 	COMMENT_SIDE,
@@ -40,9 +39,10 @@ import {
 	type LineRef,
 	SIDE_TO_DIFF,
 } from "@/lib/diff-types";
+import { useReviewContext } from "@/lib/review-context";
 import { resolveSyntaxTheme } from "@/lib/syntax-themes";
-import type { CommentThread } from "@/lib/use-comment-threads";
 import { useDiffSettings } from "@/lib/use-diff-settings";
+import type { ReviewThread as CommentThread } from "@/lib/use-review";
 import { toSingleSideSelection, useTextSelection } from "@/lib/use-text-selection";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
 import { TextSelectionPopup } from "./text-selection-popup";
@@ -194,8 +194,8 @@ export function PierreDiffViewer({
 	}, [allLineRefsByFile, filePath]);
 
 	// ---- Line-anchored comments ----
-	const comments = useCommentThreadsContext();
-	const { createThread } = comments;
+	const comments = useReviewContext();
+	const { createLocalThread } = comments;
 	const fileThreads = useMemo(
 		() => (filePath ? (comments.threadsByFile.get(filePath) ?? []) : []),
 		[comments.threadsByFile, filePath],
@@ -239,7 +239,7 @@ export function PierreDiffViewer({
 				);
 			setError(null);
 			try {
-				await createThread({
+				await createLocalThread({
 					filePath,
 					side: draft.side,
 					startLine: draft.startLine,
@@ -252,7 +252,7 @@ export function PierreDiffViewer({
 				throw err; // keep the composer open with the body intact
 			}
 		},
-		[filePath, createThread, closeDraft],
+		[filePath, createLocalThread, closeDraft],
 	);
 
 	const handleThreadMouseEnter = useCallback((thread: CommentThread) => {
@@ -287,7 +287,7 @@ export function PierreDiffViewer({
 							onMouseEnter={() => handleThreadMouseEnter(thread)}
 							onMouseLeave={handleThreadMouseLeave}
 						>
-							<CommentThreadView thread={thread} />
+							<ReviewThreadView thread={thread} />
 						</div>
 					))}
 					{draft && (

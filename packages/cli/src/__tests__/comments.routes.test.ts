@@ -133,8 +133,7 @@ describe("comment threads API", () => {
 		expect(thread.resolvedAt).toBeNull();
 		expect(thread.comments).toHaveLength(1);
 		expect(thread.comments[0]?.body).toBe("First!");
-		expect(thread.comments[0]?.author).toBeNull();
-		expect(thread.comments[0]?.githubCommentId).toBeNull();
+		expect(thread.comments[0]?.authorId).toBe("local");
 
 		const db = getDb({ dbPath });
 		expect(db.select().from(commentThread).all()).toHaveLength(1);

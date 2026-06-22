@@ -11,18 +11,18 @@ import {
 	upsertDraft,
 	writeDraftBody,
 } from "../comment-drafts";
-import type { CommentThread } from "../use-comment-threads";
+import type { ReviewThread as CommentThread } from "../use-review";
 
 function makeThread(
 	over: Partial<CommentThread> & Pick<CommentThread, "side" | "endLine">,
 ): CommentThread {
 	return {
 		id: `t-${over.side}-${over.endLine}`,
+		source: "local",
+		threadNodeId: null,
 		filePath: "a.ts",
 		startLine: over.endLine,
-		resolvedAt: null,
-		createdAt: "2026-06-08T00:00:00.000Z",
-		updatedAt: "2026-06-08T00:00:00.000Z",
+		isResolved: false,
 		comments: [],
 		...over,
 	};

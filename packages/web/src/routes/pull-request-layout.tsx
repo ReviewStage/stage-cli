@@ -2,9 +2,9 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { BookOpen, FileText, FoldVertical, Settings2, UnfoldVertical } from "lucide-react";
 import { type CSSProperties, useCallback, useMemo, useRef, useState } from "react";
 import { DiffSettingsForm } from "@/components/diff/diff-settings-form";
-import { CommentSyncMenu } from "@/components/pull-request/comment-sync-menu";
 import { PullRequestHeader } from "@/components/pull-request/pull-request-header";
 import { PullRequestHeaderSkeleton } from "@/components/pull-request/pull-request-header-skeleton";
+import { ReviewPanel } from "@/components/pull-request/review-panel";
 import { SectionLabel } from "@/components/pull-request/section-label";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -280,7 +280,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 					</div>
 					<div className="flex shrink-0 items-center gap-3 text-sm @xl:gap-6">
 						<CollapseExpandAllButton />
-						{pullRequest !== null && <CommentSyncMenu runId={runId} />}
+						<ReviewPanel />
 						<Popover>
 							<Tooltip>
 								<TooltipTrigger asChild>

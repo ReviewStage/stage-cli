@@ -1,4 +1,17 @@
-import { ChevronRight, Circle, CircleCheck, MessageSquare, User } from "lucide-react";
+import {
+	COMMENT_STATE,
+	type ReviewComment,
+	type ReviewThread,
+	THREAD_SOURCE,
+} from "@stagereview/types/review";
+import {
+	ChevronRight,
+	Circle,
+	CircleCheck,
+	GitPullRequestArrow,
+	MessageSquare,
+	User,
+} from "lucide-react";
 import { useState } from "react";
 import {
 	AlertDialog,
@@ -10,106 +23,159 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Markdown } from "@/components/ui/markdown";
 import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useCommentThreadsContext } from "@/lib/comment-threads-context";
 import { formatTimeAgo } from "@/lib/format";
-import type { Comment, CommentThread } from "@/lib/use-comment-threads";
+import { useReviewContext } from "@/lib/review-context";
+import { GITHUB_REVIEW_STATUS } from "@/lib/use-review";
 import { useViewer } from "@/lib/use-viewer";
 import { cn } from "@/lib/utils";
 import { CommentActions } from "./comment-actions";
 import { CommentForm } from "./comment-form";
 
-type DeleteTarget =
-	| { kind: "thread"; hasReplies: boolean }
-	| { kind: "comment"; commentId: string };
-
 function errorMessage(err: unknown, fallback: string): string {
 	return err instanceof Error ? err.message : fallback;
 }
 
-export function CommentThreadView({ thread }: { thread: CommentThread }) {
-	const { replyToThread, setThreadResolved, editComment, deleteThread, deleteComment } =
-		useCommentThreadsContext();
-	const isResolved = thread.resolvedAt !== null;
+const PENDING_BADGE_CN =
+	"border-yellow-500/50 bg-yellow-50 text-yellow-800 dark:bg-yellow-950/20 dark:text-yellow-200";
 
-	const [isOpen, setIsOpen] = useState(!isResolved);
+// A pending comment is editable (it's the viewer's own draft); a local comment is
+// editable too. Submitted comments live on GitHub and are read-only here.
+function canActOn(comment: ReviewComment): boolean {
+	return comment.state !== COMMENT_STATE.SUBMITTED;
+}
+
+function StateBadge({ state }: { state: ReviewComment["state"] }) {
+	if (state === COMMENT_STATE.PENDING) {
+		return (
+			<Badge
+				variant="outline"
+				className={cn("shrink-0 text-[10px] leading-none", PENDING_BADGE_CN)}
+			>
+				Pending
+			</Badge>
+		);
+	}
+	if (state === COMMENT_STATE.LOCAL) {
+		return (
+			<Badge variant="secondary" className="shrink-0 text-[10px] leading-none">
+				Local
+			</Badge>
+		);
+	}
+	return null;
+}
+
+export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
+	const review = useReviewContext();
+	const isGitHub = thread.source === THREAD_SOURCE.GITHUB;
+	const githubAvailable = review.github === GITHUB_REVIEW_STATUS.AVAILABLE;
+
+	const [isOpen, setIsOpen] = useState(!thread.isResolved);
 	const [isReplying, setIsReplying] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
-	const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+	const [deleteTarget, setDeleteTarget] = useState<ReviewComment | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	const root = thread.comments[0];
-	// A thread always has a root comment (deleting the last one removes the thread),
-	// but noUncheckedIndexedAccess types the lookup as possibly-undefined.
 	if (!root) return null;
 	const replies = thread.comments.slice(1);
+	const idle = !isReplying && editingId === null;
+
+	function setOpenError(message: string | null) {
+		setError(message);
+	}
 
 	async function handleResolveToggle() {
-		const next = !isResolved;
+		const next = !thread.isResolved;
 		const wasOpen = isOpen;
-		// Collapse on resolve / expand on reopen — but never collapse out from under an
-		// active reply/edit/delete form (it would unmount CommentForm and drop unsaved
-		// text), mirroring the handleOpenChange guard.
 		const hasActiveForm = isReplying || editingId !== null || deleteTarget !== null;
 		if (!next || !hasActiveForm) setIsOpen(!next);
 		try {
-			// For PR-originated threads this also resolves/reopens the thread on GitHub;
-			// on failure the server leaves local state unchanged, so revert the collapse
-			// and surface the reason.
-			await setThreadResolved({ threadId: thread.id, resolved: next });
+			if (isGitHub && thread.threadNodeId) {
+				await review.resolveGitHub({ threadNodeId: thread.threadNodeId, resolved: next });
+			} else {
+				await review.resolveLocalThread({ threadId: thread.id, resolved: next });
+			}
 		} catch (err) {
 			setIsOpen(wasOpen);
-			toast.error(errorMessage(err, "Failed to update resolved state"));
+			toastError(err, "Failed to update resolved state");
 		}
 	}
 
 	function handleOpenChange(open: boolean) {
-		// Keep the thread expanded while the user is mid-action.
 		if (!open && (isReplying || editingId !== null || deleteTarget !== null)) return;
 		setIsOpen(open);
 	}
 
 	async function submitReply(body: string) {
-		setError(null);
+		setOpenError(null);
 		try {
-			await replyToThread({ threadId: thread.id, body });
+			if (isGitHub && thread.threadNodeId) {
+				await review.replyGitHub({ threadNodeId: thread.threadNodeId, body, pending: true });
+			} else {
+				await review.replyLocal({ threadId: thread.id, body });
+			}
 			setIsReplying(false);
 		} catch (err) {
-			setError(errorMessage(err, "Failed to add reply"));
+			setOpenError(errorMessage(err, "Failed to add reply"));
 			throw err;
 		}
 	}
 
-	async function submitEdit(commentId: string, body: string) {
-		setError(null);
+	async function submitEdit(comment: ReviewComment, body: string) {
+		setOpenError(null);
 		try {
-			await editComment({ commentId, body });
+			if (comment.state === COMMENT_STATE.LOCAL) {
+				await review.editLocalComment({ commentId: comment.id, body });
+			} else if (comment.nodeId) {
+				await review.editGitHubComment({ nodeId: comment.nodeId, body });
+			}
 			setEditingId(null);
 		} catch (err) {
-			setError(errorMessage(err, "Failed to update comment"));
+			setOpenError(errorMessage(err, "Failed to update comment"));
 			throw err;
 		}
 	}
 
-	function confirmDelete() {
-		if (!deleteTarget) return;
-		if (deleteTarget.kind === "thread") void deleteThread(thread.id);
-		else void deleteComment(deleteTarget.commentId);
+	async function confirmDelete() {
+		const comment = deleteTarget;
 		setDeleteTarget(null);
+		if (!comment) return;
+		try {
+			if (comment.state === COMMENT_STATE.LOCAL) {
+				// Deleting a local root removes the whole thread; a reply removes just itself.
+				if (comment.id === root?.id) await review.deleteLocalThread(thread.id);
+				else await review.deleteLocalComment(comment.id);
+			} else if (comment.nodeId) {
+				await review.deleteGitHubComment(comment.nodeId);
+			}
+		} catch (err) {
+			toastError(err, "Failed to delete comment");
+		}
 	}
 
-	const idle = !isReplying && editingId === null;
+	async function handleAddToReview() {
+		try {
+			await review.addToReview(thread.id);
+		} catch (err) {
+			toastError(err, "Failed to add to review");
+		}
+	}
+
+	const rootIsDeletableThread = root.state === COMMENT_STATE.LOCAL && replies.length > 0;
 
 	return (
 		<Collapsible open={isOpen} onOpenChange={handleOpenChange}>
 			<div
 				className={cn(
 					"rounded-xl border bg-card",
-					isResolved ? "border-border/60" : "border-border",
+					thread.isResolved ? "border-border/60" : "border-border",
 				)}
 			>
 				<div className="flex items-center gap-2 p-1.5">
@@ -124,40 +190,56 @@ export function CommentThreadView({ thread }: { thread: CommentThread }) {
 						</TooltipTrigger>
 						<TooltipContent>{isOpen ? "Collapse thread" : "Expand thread"}</TooltipContent>
 					</Tooltip>
-					<ResolveButton isResolved={isResolved} onToggle={handleResolveToggle} />
-					<CommentByline comment={root} />
+					<ResolveButton isResolved={thread.isResolved} onToggle={handleResolveToggle} />
+					<Byline comment={root} />
+					<StateBadge state={root.state} />
 					{idle && (
 						<div className="flex shrink-0 items-center gap-0.5">
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button
-										variant="ghost"
-										size="icon-xs"
-										aria-label="Reply"
-										className="rounded-md text-muted-foreground"
-										onClick={() => {
-											setIsOpen(true);
-											setError(null);
-											setIsReplying(true);
-										}}
-									>
-										<MessageSquare className="size-3.5" />
-									</Button>
-								</TooltipTrigger>
-								<TooltipContent>Reply</TooltipContent>
-							</Tooltip>
-							{/* Pulled GitHub comments are read-only locally; only local comments can be edited/deleted. */}
-							{root.author === null && (
+							{root.state === COMMENT_STATE.LOCAL && githubAvailable && (
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											aria-label="Add to review"
+											className="rounded-md text-muted-foreground"
+											onClick={handleAddToReview}
+										>
+											<GitPullRequestArrow className="size-3.5" />
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent>Add to GitHub review (pending)</TooltipContent>
+								</Tooltip>
+							)}
+							{(!isGitHub || githubAvailable) && (
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											aria-label="Reply"
+											className="rounded-md text-muted-foreground"
+											onClick={() => {
+												setIsOpen(true);
+												setOpenError(null);
+												setIsReplying(true);
+											}}
+										>
+											<MessageSquare className="size-3.5" />
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent>Reply</TooltipContent>
+								</Tooltip>
+							)}
+							{canActOn(root) && (
 								<CommentActions
 									onEdit={() => {
 										setIsOpen(true);
-										setError(null);
+										setOpenError(null);
 										setEditingId(root.id);
 									}}
-									onDelete={() =>
-										setDeleteTarget({ kind: "thread", hasReplies: replies.length > 0 })
-									}
-									deleteLabel={replies.length > 0 ? "Delete thread" : "Delete"}
+									onDelete={() => setDeleteTarget(root)}
+									deleteLabel={rootIsDeletableThread ? "Delete thread" : "Delete"}
 								/>
 							)}
 						</div>
@@ -171,10 +253,10 @@ export function CommentThreadView({ thread }: { thread: CommentThread }) {
 							initialBody={root.body}
 							placeholder="Edit your comment…"
 							error={error}
-							onSubmit={(b) => submitEdit(root.id, b)}
+							onSubmit={(b) => submitEdit(root, b)}
 							onCancel={() => {
 								setEditingId(null);
-								setError(null);
+								setOpenError(null);
 							}}
 						/>
 					) : (
@@ -191,15 +273,15 @@ export function CommentThreadView({ thread }: { thread: CommentThread }) {
 									isEditing={editingId === reply.id}
 									error={editingId === reply.id ? error : null}
 									onEdit={() => {
-										setError(null);
+										setOpenError(null);
 										setEditingId(reply.id);
 									}}
 									onCancelEdit={() => {
 										setEditingId(null);
-										setError(null);
+										setOpenError(null);
 									}}
-									onSubmitEdit={(b) => submitEdit(reply.id, b)}
-									onDelete={() => setDeleteTarget({ kind: "comment", commentId: reply.id })}
+									onSubmitEdit={(b) => submitEdit(reply, b)}
+									onDelete={() => setDeleteTarget(reply)}
 								/>
 							))}
 						</div>
@@ -213,7 +295,7 @@ export function CommentThreadView({ thread }: { thread: CommentThread }) {
 							onSubmit={submitReply}
 							onCancel={() => {
 								setIsReplying(false);
-								setError(null);
+								setOpenError(null);
 							}}
 						/>
 					)}
@@ -222,6 +304,7 @@ export function CommentThreadView({ thread }: { thread: CommentThread }) {
 
 			<DeleteDialog
 				target={deleteTarget}
+				isThread={rootIsDeletableThread && deleteTarget?.id === root.id}
 				onCancel={() => setDeleteTarget(null)}
 				onConfirm={confirmDelete}
 			/>
@@ -251,9 +334,9 @@ function ResolveButton({ isResolved, onToggle }: { isResolved: boolean; onToggle
 	);
 }
 
-// A local comment (`author: null`) renders as the local reviewer; a comment pulled
-// from the PR renders its GitHub author.
-function CommentByline({ comment }: { comment: Comment }) {
+// Local comments (author null) render as the local reviewer; GitHub comments show
+// their author.
+function Byline({ comment }: { comment: ReviewComment }) {
 	const viewer = useViewer();
 	const name = comment.author?.login ?? viewer.name;
 	const avatarUrl = comment.author ? comment.author.avatarUrl : viewer.avatarUrl;
@@ -283,7 +366,7 @@ function ReplyItem({
 	onSubmitEdit,
 	onDelete,
 }: {
-	reply: Comment;
+	reply: ReviewComment;
 	idle: boolean;
 	isEditing: boolean;
 	error: string | null;
@@ -295,11 +378,9 @@ function ReplyItem({
 	return (
 		<div className="space-y-1.5">
 			<div className="flex items-center gap-2">
-				<CommentByline comment={reply} />
-				{/* Only when the whole thread is idle, so opening this reply's editor can't
-				    discard another in-progress edit or reply (matches the root comment).
-				    Pulled GitHub replies are read-only locally. */}
-				{idle && reply.author === null && <CommentActions onEdit={onEdit} onDelete={onDelete} />}
+				<Byline comment={reply} />
+				<StateBadge state={reply.state} />
+				{idle && canActOn(reply) && <CommentActions onEdit={onEdit} onDelete={onDelete} />}
 			</div>
 			{isEditing ? (
 				<CommentForm
@@ -319,14 +400,15 @@ function ReplyItem({
 
 function DeleteDialog({
 	target,
+	isThread,
 	onCancel,
 	onConfirm,
 }: {
-	target: DeleteTarget | null;
+	target: ReviewComment | null;
+	isThread: boolean;
 	onCancel: () => void;
 	onConfirm: () => void;
 }) {
-	const isThreadDelete = target?.kind === "thread" && target.hasReplies;
 	return (
 		<AlertDialog
 			open={target !== null}
@@ -336,9 +418,9 @@ function DeleteDialog({
 		>
 			<AlertDialogContent>
 				<AlertDialogHeader>
-					<AlertDialogTitle>{isThreadDelete ? "Delete thread" : "Delete comment"}</AlertDialogTitle>
+					<AlertDialogTitle>{isThread ? "Delete thread" : "Delete comment"}</AlertDialogTitle>
 					<AlertDialogDescription>
-						{isThreadDelete
+						{isThread
 							? "This deletes the whole conversation, including replies. This can't be undone."
 							: "This deletes the comment. This can't be undone."}
 					</AlertDialogDescription>
@@ -352,4 +434,8 @@ function DeleteDialog({
 			</AlertDialogContent>
 		</AlertDialog>
 	);
+}
+
+function toastError(err: unknown, fallback: string): void {
+	toast.error(errorMessage(err, fallback));
 }
