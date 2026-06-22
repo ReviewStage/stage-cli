@@ -1,6 +1,12 @@
-import { REVIEW_EVENT, type ReviewEvent } from "@stagereview/types/review";
-import { MessageSquarePlus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import {
+	COMMENT_STATE,
+	REVIEW_EVENT,
+	type ReviewEvent,
+	type ReviewThread,
+} from "@stagereview/types/review";
+import { ChevronRight, CornerDownLeft, MessageSquarePlus, Trash2 } from "lucide-react";
+import { type KeyboardEvent, useMemo, useRef, useState } from "react";
+import { CommentMarkdownEditor } from "@/components/comments/comment-markdown-editor";
 import {
 	AlertDialog,
 	AlertDialogCancel,
@@ -12,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -33,30 +40,57 @@ const ACTION_OPTIONS: { event: ReviewEvent; label: string; description: string }
 	},
 ];
 
+interface PendingComment {
+	id: string;
+	filePath: string;
+	line: number;
+	body: string;
+}
+
+// Flatten the viewer's pending comments, grouped by file, for the "what you're
+// about to submit" list.
+function collectPendingByFile(threads: ReviewThread[]): Map<string, PendingComment[]> {
+	const byFile = new Map<string, PendingComment[]>();
+	for (const thread of threads) {
+		for (const c of thread.comments) {
+			if (c.state !== COMMENT_STATE.PENDING) continue;
+			const list = byFile.get(thread.filePath) ?? [];
+			if (!byFile.has(thread.filePath)) byFile.set(thread.filePath, list);
+			list.push({ id: c.id, filePath: thread.filePath, line: thread.endLine, body: c.body });
+		}
+	}
+	return byFile;
+}
+
 function ActionSelector({
 	selected,
 	onSelect,
 	disabled,
+	isOwnPullRequest,
 }: {
 	selected: ReviewEvent;
 	onSelect: (event: ReviewEvent) => void;
 	disabled: boolean;
+	isOwnPullRequest: boolean;
 }) {
 	return (
 		<div className="mt-3 flex flex-col gap-1.5">
 			{ACTION_OPTIONS.map(({ event, label, description }) => {
 				const isSelected = selected === event;
+				// GitHub forbids approving / requesting changes on your own PR.
+				const blockedByOwnership = isOwnPullRequest && event !== REVIEW_EVENT.COMMENT;
+				const isDisabled = disabled || blockedByOwnership;
 				return (
 					<button
 						key={event}
 						type="button"
 						aria-pressed={isSelected}
-						disabled={disabled}
+						disabled={isDisabled}
 						onClick={() => onSelect(event)}
 						className={cn(
 							"flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
 							isSelected ? "border-border bg-primary/5" : "border-border hover:bg-accent/50",
-							disabled && "cursor-not-allowed opacity-50",
+							isDisabled && "cursor-not-allowed opacity-50",
 						)}
 					>
 						<span
@@ -69,7 +103,9 @@ function ActionSelector({
 						</span>
 						<div className="min-w-0">
 							<div className={cn("font-medium", isSelected && "text-primary")}>{label}</div>
-							<div className="text-muted-foreground text-xs">{description}</div>
+							<div className="text-muted-foreground text-xs">
+								{blockedByOwnership ? "Not available on your own pull request" : description}
+							</div>
 						</div>
 					</button>
 				);
@@ -78,10 +114,55 @@ function ActionSelector({
 	);
 }
 
+function PendingCommentsList({
+	byFile,
+	count,
+}: {
+	byFile: Map<string, PendingComment[]>;
+	count: number;
+}) {
+	const [open, setOpen] = useState(false);
+	if (count === 0) return null;
+	return (
+		<Collapsible open={open} onOpenChange={setOpen}>
+			<CollapsibleTrigger className="mt-3 flex items-center gap-1.5 font-medium text-muted-foreground text-xs hover:text-foreground">
+				<ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+				Pending comments
+				<Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] leading-none">
+					{count}
+				</Badge>
+			</CollapsibleTrigger>
+			<CollapsibleContent>
+				<div className="mt-1.5 max-h-[200px] overflow-y-auto rounded-lg border border-border bg-muted/30">
+					<div className="divide-y divide-border/50">
+						{[...byFile.entries()].map(([path, comments]) => (
+							<div key={path} className="px-3 py-2">
+								<p className="min-w-0 truncate font-mono text-foreground text-xs">{path}</p>
+								<div className="mt-1 space-y-1">
+									{comments.map((c) => (
+										<div key={c.id} className="flex items-baseline gap-2 pl-2 text-xs">
+											<span className="inline-block w-10 shrink-0 text-right font-mono text-muted-foreground">
+												L{c.line}
+											</span>
+											<span className="line-clamp-1 text-muted-foreground">{c.body}</span>
+										</div>
+									))}
+								</div>
+							</div>
+						))}
+					</div>
+				</div>
+			</CollapsibleContent>
+		</Collapsible>
+	);
+}
+
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
 /**
  * The review tray: submit the viewer's pending GitHub review (Comment / Approve /
  * Request changes) or discard it. Only shown when the run targets a reachable PR;
- * the pending badge counts the viewer's draft comments.
+ * the badge counts the viewer's draft comments and the list shows what will publish.
  */
 export function ReviewPanel() {
 	const review = useReviewContext();
@@ -90,16 +171,26 @@ export function ReviewPanel() {
 	const [selected, setSelected] = useState<ReviewEvent>(REVIEW_EVENT.COMMENT);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [showDiscard, setShowDiscard] = useState(false);
+	const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+	const { pendingCommentCount, hasPendingReview, isOwnPullRequest } = review;
+	const pendingByFile = useMemo(() => collectPendingByFile(review.threads), [review.threads]);
 
 	if (review.github !== GITHUB_REVIEW_STATUS.AVAILABLE) return null;
 
-	const { pendingCommentCount, hasPendingReview } = review;
 	const hasContent = body.trim().length > 0;
 	// A bare "Comment" submit with neither body nor pending comments is a no-op.
 	const canSubmit =
 		!isSubmitting && (selected !== REVIEW_EVENT.COMMENT || hasContent || pendingCommentCount > 0);
 
+	function selectAction(event: ReviewEvent) {
+		// Guard against keeping a now-forbidden selection if ownership changes.
+		if (isOwnPullRequest && event !== REVIEW_EVENT.COMMENT) return;
+		setSelected(event);
+	}
+
 	async function handleSubmit() {
+		if (!canSubmit) return;
 		setIsSubmitting(true);
 		try {
 			await review.submitReview({ event: selected, body: body.trim() });
@@ -124,6 +215,13 @@ export function ReviewPanel() {
 			toast.error(err instanceof Error ? err.message : "Failed to discard review");
 		} finally {
 			setIsSubmitting(false);
+		}
+	}
+
+	function handleKeyDown(e: KeyboardEvent) {
+		if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+			e.preventDefault();
+			void handleSubmit();
 		}
 	}
 
@@ -153,14 +251,24 @@ export function ReviewPanel() {
 							? `${pendingCommentCount} pending comment${pendingCommentCount === 1 ? "" : "s"} will be published.`
 							: "No pending comments yet — add comments to your review from the diff."}
 					</p>
-					<textarea
+					<CommentMarkdownEditor
 						value={body}
-						onChange={(e) => setBody(e.target.value)}
+						onChange={setBody}
+						textareaRef={textareaRef}
 						disabled={isSubmitting}
 						placeholder="Leave a summary comment (optional)…"
-						className="mt-3 min-h-[5rem] w-full resize-y rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
+						onKeyDown={handleKeyDown}
+						minRows={3}
+						maxRows={10}
+						className="mt-3 rounded-lg border border-border bg-card transition-shadow has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring/20"
 					/>
-					<ActionSelector selected={selected} onSelect={setSelected} disabled={isSubmitting} />
+					<PendingCommentsList byFile={pendingByFile} count={pendingCommentCount} />
+					<ActionSelector
+						selected={selected}
+						onSelect={selectAction}
+						disabled={isSubmitting}
+						isOwnPullRequest={isOwnPullRequest}
+					/>
 					<div className="mt-3 flex items-center justify-between">
 						<Button
 							variant="ghost"
@@ -178,8 +286,12 @@ export function ReviewPanel() {
 								"Cancel"
 							)}
 						</Button>
-						<Button size="sm" onClick={handleSubmit} disabled={!canSubmit}>
+						<Button size="sm" onClick={handleSubmit} disabled={!canSubmit} className="gap-1.5">
 							{isSubmitting ? "Submitting…" : "Submit"}
+							<kbd className="inline-flex items-center gap-0.5 rounded border border-primary-foreground/25 bg-primary-foreground/10 px-1 text-[10px]">
+								{isMac ? "⌘" : "Ctrl"}
+								<CornerDownLeft className="size-3" />
+							</kbd>
 						</Button>
 					</div>
 				</PopoverContent>

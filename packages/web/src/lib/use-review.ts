@@ -37,6 +37,7 @@ export interface UseReviewResult {
 	github: GitHubReviewStatus;
 	pendingCommentCount: number;
 	hasPendingReview: boolean;
+	isOwnPullRequest: boolean;
 	isLoading: boolean;
 	error: unknown;
 	// Local comments (CLI-only, work offline).
@@ -164,6 +165,7 @@ export function useReview(runId: string): UseReviewResult {
 		github: data?.github ?? GITHUB_REVIEW_STATUS.NONE,
 		pendingCommentCount: data?.pendingCommentCount ?? 0,
 		hasPendingReview: data?.hasPendingReview ?? false,
+		isOwnPullRequest: data?.isOwnPullRequest ?? false,
 		isLoading,
 		error,
 		createLocalThread: m.createLocalThread.mutateAsync,

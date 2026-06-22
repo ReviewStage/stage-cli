@@ -261,7 +261,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 							}}
 						/>
 					) : (
-						<Markdown content={root.body} />
+						<CommentBody comment={root} />
 					)}
 
 					{replies.length > 0 && (
@@ -351,10 +351,34 @@ function Byline({ comment }: { comment: ReviewComment }) {
 				</AvatarFallback>
 			</Avatar>
 			<span className="font-medium text-foreground">{name}</span>
-			<time dateTime={comment.createdAt} title={new Date(comment.createdAt).toLocaleString()}>
-				{formatTimeAgo(comment.createdAt)}
-			</time>
+			{comment.htmlUrl ? (
+				<a
+					href={comment.htmlUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="hover:underline"
+					aria-label="View comment on GitHub"
+				>
+					<time dateTime={comment.createdAt} title={new Date(comment.createdAt).toLocaleString()}>
+						{formatTimeAgo(comment.createdAt)}
+					</time>
+				</a>
+			) : (
+				<time dateTime={comment.createdAt} title={new Date(comment.createdAt).toLocaleString()}>
+					{formatTimeAgo(comment.createdAt)}
+				</time>
+			)}
 		</p>
+	);
+}
+
+// GitHub comments render GitHub's own server-rendered HTML (resolves @mentions,
+// #refs, emoji); local comments render their raw markdown.
+function CommentBody({ comment }: { comment: ReviewComment }) {
+	return comment.bodyHtml !== null ? (
+		<Markdown content={comment.bodyHtml} allowHtml />
+	) : (
+		<Markdown content={comment.body} />
 	);
 }
 
@@ -394,7 +418,7 @@ function ReplyItem({
 					onCancel={onCancelEdit}
 				/>
 			) : (
-				<Markdown content={reply.body} />
+				<CommentBody comment={reply} />
 			)}
 		</div>
 	);

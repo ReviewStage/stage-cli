@@ -30,6 +30,7 @@ const REVIEW_QUERY_RESULT = {
 		repository: {
 			pullRequest: {
 				id: "PR_node",
+				viewerDidAuthor: false,
 				reviews: { nodes: [{ id: "REVIEW_pending" }] },
 				reviewThreads: {
 					pageInfo: { hasNextPage: false, endCursor: null },
@@ -42,8 +43,10 @@ const REVIEW_QUERY_RESULT = {
 									{
 										databaseId: 1,
 										id: "COMMENT_sub",
+										url: "https://github.com/owner/repo/pull/5#discussion_r1",
 										path: "src/foo.ts",
 										body: "Submitted comment",
+										bodyHTML: "<p>Submitted comment</p>",
 										createdAt: "2026-01-01T00:00:00Z",
 										line: 10,
 										startLine: null,
@@ -63,8 +66,10 @@ const REVIEW_QUERY_RESULT = {
 									{
 										databaseId: 2,
 										id: "COMMENT_pending",
+										url: "https://github.com/owner/repo/pull/5#discussion_r2",
 										path: "src/bar.ts",
 										body: "Draft comment",
+										bodyHTML: "<p>Draft comment</p>",
 										createdAt: "2026-01-02T00:00:00Z",
 										line: 4,
 										startLine: null,
@@ -269,6 +274,7 @@ describe("review API — actions", () => {
 				repository: {
 					pullRequest: {
 						id: "PR_node",
+						viewerDidAuthor: false,
 						reviews: { nodes: [] },
 						reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
 					},
@@ -295,6 +301,7 @@ describe("review API — actions", () => {
 				repository: {
 					pullRequest: {
 						id: "PR_node",
+						viewerDidAuthor: false,
 						reviews: { nodes: [] },
 						reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
 					},

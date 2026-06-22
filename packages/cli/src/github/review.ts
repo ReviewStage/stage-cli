@@ -31,6 +31,7 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       id
+      viewerDidAuthor
       reviews(states: PENDING, first: 1) { nodes { id } }
       reviewThreads(first: 50, after: $cursor) {
         pageInfo { hasNextPage endCursor }
@@ -41,8 +42,10 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
             nodes {
               databaseId
               id
+              url
               path
               body
+              bodyHTML
               createdAt
               line
               startLine
@@ -63,8 +66,10 @@ const GqlActorSchema = z.object({ login: z.string(), avatarUrl: z.string() }).nu
 const GqlReviewCommentSchema = z.object({
 	databaseId: z.number().nullable(),
 	id: z.string(),
+	url: z.string(),
 	path: z.string(),
 	body: z.string(),
+	bodyHTML: z.string(),
 	createdAt: z.string(),
 	line: z.number().nullable(),
 	startLine: z.number().nullable(),
@@ -81,6 +86,7 @@ const ReviewQuerySchema = z.object({
 				pullRequest: z
 					.object({
 						id: z.string(),
+						viewerDidAuthor: z.boolean(),
 						reviews: z.object({ nodes: z.array(z.object({ id: z.string() })) }),
 						reviewThreads: z.object({
 							pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() }),
@@ -103,7 +109,10 @@ const ReviewQuerySchema = z.object({
 export interface ReviewComment {
 	databaseId: number | null;
 	nodeId: string;
+	htmlUrl: string;
 	body: string;
+	/** GitHub's server-rendered HTML (resolves @mentions, #refs, emoji). */
+	bodyHtml: string;
 	createdAt: string;
 	authorLogin: string;
 	authorAvatarUrl: string;
@@ -126,6 +135,8 @@ export interface ReviewThread {
 export interface GitHubReview {
 	/** GraphQL node id of the PR, required by the write mutations. */
 	pullRequestNodeId: string;
+	/** True when the viewer opened the PR (GitHub forbids approving your own PR). */
+	viewerDidAuthor: boolean;
 	/** The viewer's open pending review, or null when they have none. */
 	pendingReviewNodeId: string | null;
 	threads: ReviewThread[];
@@ -144,6 +155,7 @@ export async function getReview(
 	prNumber: number,
 ): Promise<GitHubReview> {
 	let pullRequestNodeId = "";
+	let viewerDidAuthor = false;
 	let pendingReviewNodeId: string | null = null;
 	const threads: ReviewThread[] = [];
 	let cursor: string | null = null;
@@ -167,6 +179,7 @@ export async function getReview(
 		const pr = parsed.data.data.repository?.pullRequest;
 		if (!pr) break;
 		pullRequestNodeId = pr.id;
+		viewerDidAuthor = pr.viewerDidAuthor;
 		pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
 
 		for (const node of pr.reviewThreads.nodes) {
@@ -186,14 +199,16 @@ export async function getReview(
 		cursor = pr.reviewThreads.pageInfo.hasNextPage ? pr.reviewThreads.pageInfo.endCursor : null;
 	} while (cursor !== null);
 
-	return { pullRequestNodeId, pendingReviewNodeId, threads };
+	return { pullRequestNodeId, viewerDidAuthor, pendingReviewNodeId, threads };
 }
 
 function toReviewComment(c: z.infer<typeof GqlReviewCommentSchema>): ReviewComment {
 	return {
 		databaseId: c.databaseId,
 		nodeId: c.id,
+		htmlUrl: c.url,
 		body: c.body,
+		bodyHtml: c.bodyHTML,
 		createdAt: c.createdAt,
 		authorLogin: c.author?.login ?? "ghost",
 		authorAvatarUrl: c.author?.avatarUrl ?? "",

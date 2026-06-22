@@ -51,8 +51,12 @@ export const ReviewCommentSchema = z.object({
 	id: z.string(),
 	state: z.enum(COMMENT_STATE),
 	body: z.string(),
+	// GitHub's server-rendered HTML (resolves @mentions/#refs/emoji); null for local comments.
+	bodyHtml: z.string().nullable(),
 	author: ReviewCommentAuthorSchema.nullable(),
 	nodeId: z.string().nullable(),
+	// Permalink to the comment on GitHub; null for local comments.
+	htmlUrl: z.string().nullable(),
 	createdAt: z.string(),
 });
 export type ReviewComment = z.infer<typeof ReviewCommentSchema>;
@@ -79,6 +83,8 @@ export const ReviewResponseSchema = z.object({
 	// Count of the viewer's pending (draft) comments, for the review tray badge.
 	pendingCommentCount: z.number().int().nonnegative(),
 	hasPendingReview: z.boolean(),
+	// The viewer opened this PR — GitHub forbids approving/requesting changes on it.
+	isOwnPullRequest: z.boolean(),
 });
 export type ReviewResponse = z.infer<typeof ReviewResponseSchema>;
 

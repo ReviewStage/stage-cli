@@ -79,8 +79,10 @@ function loadLocalThreads(db: StageDb, scopeKey: string): ReviewThreadDto[] {
 					id: c.id,
 					state: COMMENT_STATE.LOCAL,
 					body: c.body,
+					bodyHtml: null,
 					author: null,
 					nodeId: null,
+					htmlUrl: null,
 					createdAt: c.createdAt.toISOString(),
 				}),
 			),
@@ -105,8 +107,10 @@ function toGitHubThreadDto(t: GitHubReviewThread): ReviewThreadDto {
 				id: c.nodeId,
 				state: c.isPending ? COMMENT_STATE.PENDING : COMMENT_STATE.SUBMITTED,
 				body: c.body,
+				bodyHtml: c.bodyHtml,
 				author: { login: c.authorLogin, avatarUrl: c.authorAvatarUrl || null },
 				nodeId: c.nodeId,
+				htmlUrl: c.htmlUrl,
 				createdAt: c.createdAt,
 			}),
 		),
@@ -121,7 +125,12 @@ function toGitHubThreadDto(t: GitHubReviewThread): ReviewThreadDto {
  */
 export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<ReviewResponse> {
 	const localThreads = loadLocalThreads(db, deriveScopeKey(run));
-	const base = { threads: localThreads, pendingCommentCount: 0, hasPendingReview: false };
+	const base = {
+		threads: localThreads,
+		pendingCommentCount: 0,
+		hasPendingReview: false,
+		isOwnPullRequest: false,
+	};
 
 	const repo = parseGitHubRepo(run.originUrl);
 	if (!repo) return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
@@ -150,6 +159,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		threads: [...localThreads, ...githubThreads],
 		pendingCommentCount,
 		hasPendingReview: review.pendingReviewNodeId !== null,
+		isOwnPullRequest: review.viewerDidAuthor,
 	};
 }
 
