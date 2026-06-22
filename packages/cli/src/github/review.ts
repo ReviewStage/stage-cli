@@ -205,6 +205,11 @@ export async function getReview(
 		cursor = pr.reviewThreads.pageInfo.hasNextPage ? pr.reviewThreads.pageInfo.endCursor : null;
 	} while (cursor !== null);
 
+	// No `pullRequest` in the response (stale/unknown PR number, or repo no longer
+	// resolves) — treat as unavailable rather than handing back an empty node id that
+	// later write mutations would post against.
+	if (pullRequestNodeId === "") throw new Error("Pull request not found on GitHub");
+
 	return { pullRequestNodeId, viewerDidAuthor, headRefOid, pendingReviewNodeId, threads };
 }
 

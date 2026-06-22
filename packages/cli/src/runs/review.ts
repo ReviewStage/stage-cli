@@ -217,10 +217,38 @@ async function loadTarget(run: ChapterRunRow): Promise<ReviewTarget> {
 	return { repo, prNumber, review };
 }
 
-/** The viewer's pending review node id, creating an empty pending review if none is open. */
-async function ensurePendingReview(run: ChapterRunRow, review: GitHubReview): Promise<string> {
-	if (review.pendingReviewNodeId !== null) return review.pendingReviewNodeId;
-	return createPendingReview(run.repoRoot, review.pullRequestNodeId);
+/** The viewer's pending review node id, opening an empty pending review if none is open. */
+async function openPendingReview(
+	run: ChapterRunRow,
+	review: GitHubReview,
+): Promise<{ reviewNodeId: string; created: boolean }> {
+	if (review.pendingReviewNodeId !== null) {
+		return { reviewNodeId: review.pendingReviewNodeId, created: false };
+	}
+	return {
+		reviewNodeId: await createPendingReview(run.repoRoot, review.pullRequestNodeId),
+		created: true,
+	};
+}
+
+/**
+ * Run an action against the viewer's pending review, opening one if needed. If we
+ * had to open the review and the action then fails (e.g. an out-of-diff line), the
+ * just-created empty review is discarded so it doesn't linger on the PR as a stray
+ * "review to submit". A pre-existing review is never discarded.
+ */
+async function withPendingReview<T>(
+	run: ChapterRunRow,
+	review: GitHubReview,
+	action: (reviewNodeId: string) => Promise<T>,
+): Promise<T> {
+	const { reviewNodeId, created } = await openPendingReview(run, review);
+	try {
+		return await action(reviewNodeId);
+	} catch (err) {
+		if (created) await discardReview(run.repoRoot, reviewNodeId).catch(() => {});
+		throw err;
+	}
 }
 
 /**
@@ -257,20 +285,27 @@ export async function addLocalThreadToReview(
 
 	const { review } = await loadTarget(run);
 	assertPushable(run, review);
-	const reviewNodeId = await ensurePendingReview(run, review);
+	const { reviewNodeId, created } = await openPendingReview(run, review);
 	const side = toGitHubSide(thread.side);
 	const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
 
-	const threadNodeId = await addReviewThread(run.repoRoot, {
-		pullRequestNodeId: review.pullRequestNodeId,
-		reviewNodeId,
-		path: thread.filePath,
-		body: root.body,
-		line: thread.endLine,
-		side,
-		startLine,
-		startSide: startLine !== null ? side : null,
-	});
+	let threadNodeId: string;
+	try {
+		threadNodeId = await addReviewThread(run.repoRoot, {
+			pullRequestNodeId: review.pullRequestNodeId,
+			reviewNodeId,
+			path: thread.filePath,
+			body: root.body,
+			line: thread.endLine,
+			side,
+			startLine,
+			startSide: startLine !== null ? side : null,
+		});
+	} catch (err) {
+		// Don't leave an empty review behind if the root couldn't be posted.
+		if (created) await discardReview(run.repoRoot, reviewNodeId).catch(() => {});
+		throw err;
+	}
 	// Remove the local copy as soon as the root lands on GitHub, before pushing
 	// replies: a reply failure then can't leave the local thread behind for a retry
 	// to re-promote (which would create a duplicate pending thread).
@@ -300,19 +335,20 @@ export async function addPendingComment(
 ): Promise<void> {
 	const { review } = await loadTarget(run);
 	assertPushable(run, review);
-	const reviewNodeId = await ensurePendingReview(run, review);
 	const side = toGitHubSide(anchor.side);
 	const startLine = anchor.endLine !== anchor.startLine ? anchor.startLine : null;
-	await addReviewThread(run.repoRoot, {
-		pullRequestNodeId: review.pullRequestNodeId,
-		reviewNodeId,
-		path: anchor.filePath,
-		body: anchor.body,
-		line: anchor.endLine,
-		side,
-		startLine,
-		startSide: startLine !== null ? side : null,
-	});
+	await withPendingReview(run, review, (reviewNodeId) =>
+		addReviewThread(run.repoRoot, {
+			pullRequestNodeId: review.pullRequestNodeId,
+			reviewNodeId,
+			path: anchor.filePath,
+			body: anchor.body,
+			line: anchor.endLine,
+			side,
+			startLine,
+			startSide: startLine !== null ? side : null,
+		}),
+	);
 }
 
 /** Reply to a GitHub thread, adding to the viewer's pending review (or as a single comment). */
@@ -327,8 +363,9 @@ export async function replyToGitHubThread(
 		return;
 	}
 	const { review } = await loadTarget(run);
-	const reviewNodeId = await ensurePendingReview(run, review);
-	await addReviewReply(run.repoRoot, threadNodeId, body, reviewNodeId);
+	await withPendingReview(run, review, (reviewNodeId) =>
+		addReviewReply(run.repoRoot, threadNodeId, body, reviewNodeId),
+	);
 }
 
 /** Submit the viewer's pending review with the chosen event, opening one if needed (e.g. a bare approval). */
@@ -338,8 +375,9 @@ export async function submitRunReview(
 	body: string,
 ): Promise<void> {
 	const { review } = await loadTarget(run);
-	const reviewNodeId = await ensurePendingReview(run, review);
-	await submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body);
+	await withPendingReview(run, review, (reviewNodeId) =>
+		submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
+	);
 }
 
 /** Discard the viewer's pending review and all its draft comments. */

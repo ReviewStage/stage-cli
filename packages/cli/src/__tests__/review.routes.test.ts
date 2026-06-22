@@ -89,7 +89,10 @@ const REVIEW_QUERY_RESULT = {
 	},
 };
 
-async function writeGhShim(reviewResult: unknown): Promise<void> {
+async function writeGhShim(
+	reviewResult: unknown,
+	opts: { failAddThread?: boolean } = {},
+): Promise<void> {
 	await fs.writeFile(path.join(tmpDir, "review.json"), JSON.stringify(reviewResult));
 	const shim = `#!/usr/bin/env node
 const fs = require("node:fs");
@@ -106,7 +109,11 @@ if (query.includes("query GetReview")) {
   emit({ data: { addPullRequestReview: { pullRequestReview: { id: "REVIEW_new" } } } });
 } else if (query.includes("mutation AddReviewThread")) {
   fs.appendFileSync(log, "add-thread " + fields + "\\n");
+  if (${opts.failAddThread ? "true" : "false"}) { process.stderr.write("gh: line not in diff\\n"); process.exit(1); }
   emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new" } } } });
+} else if (query.includes("mutation DiscardReview")) {
+  fs.appendFileSync(log, "discard-review\\n");
+  emit({ data: { deletePullRequestReview: { pullRequestReview: { id: "REVIEW_new" } } } });
 } else if (query.includes("mutation AddReviewReply")) {
   fs.appendFileSync(log, "reply\\n");
   emit({ data: { addPullRequestReviewThreadReply: { comment: { id: "C" } } } });
@@ -120,6 +127,20 @@ if (query.includes("query GetReview")) {
 	await fs.writeFile(path.join(binDir, "gh"), shim);
 	await fs.chmod(path.join(binDir, "gh"), 0o755);
 }
+
+const EMPTY_REVIEW = {
+	data: {
+		repository: {
+			pullRequest: {
+				id: "PR_node",
+				viewerDidAuthor: false,
+				headRefOid: HEAD,
+				reviews: { nodes: [] },
+				reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+			},
+		},
+	},
+};
 
 beforeEach(async () => {
 	tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-cli-review-"));
@@ -277,23 +298,22 @@ describe("review API — read", () => {
 		expect(review.github).toBe("offline");
 		expect(review.threads).toHaveLength(1);
 	});
+
+	it("reports github:offline (not available) when the PR can't be resolved", async () => {
+		// A null pullRequest (stale/unknown number) must not yield an available review
+		// with an empty PR node id that write actions would post against.
+		await writeGhShim({ data: { repository: { pullRequest: null } } });
+		const runId = insertRun(GITHUB_ORIGIN);
+		const res = await request(await start(), "GET", `/api/runs/${runId}/review`);
+		const review = JSON.parse(res.body) as ReviewResponse;
+		expect(review.github).toBe("offline");
+		expect(review.canPushToReview).toBe(false);
+	});
 });
 
 describe("review API — actions", () => {
 	it("promotes a local thread to a pending review comment and removes the local copy", async () => {
-		await writeGhShim({
-			data: {
-				repository: {
-					pullRequest: {
-						id: "PR_node",
-						viewerDidAuthor: false,
-						headRefOid: HEAD,
-						reviews: { nodes: [] },
-						reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
-					},
-				},
-			},
-		});
+		await writeGhShim(EMPTY_REVIEW);
 		const runId = insertRun(GITHUB_ORIGIN);
 		const localThreadId = seedLocalThread();
 		const res = await request(await start(), "POST", `/api/runs/${runId}/review/add`, {
@@ -309,19 +329,7 @@ describe("review API — actions", () => {
 	});
 
 	it("creates a pending comment directly on the PR without storing it locally", async () => {
-		await writeGhShim({
-			data: {
-				repository: {
-					pullRequest: {
-						id: "PR_node",
-						viewerDidAuthor: false,
-						headRefOid: HEAD,
-						reviews: { nodes: [] },
-						reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
-					},
-				},
-			},
-		});
+		await writeGhShim(EMPTY_REVIEW);
 		const runId = insertRun(GITHUB_ORIGIN);
 		const res = await request(await start(), "POST", `/api/runs/${runId}/review/comment`, {
 			filePath: "src/foo.ts",
@@ -364,5 +372,23 @@ describe("review API — actions", () => {
 		});
 		expect(res.status).toBe(409);
 		expect(JSON.parse(res.body).error).toMatch(/committed diff/i);
+	});
+
+	it("discards a freshly-opened pending review when the comment fails to post", async () => {
+		// No pending review exists, so the comment path opens one; the add then fails
+		// (line not in diff) and the empty review must be discarded, not left behind.
+		await writeGhShim(EMPTY_REVIEW, { failAddThread: true });
+		const runId = insertRun(GITHUB_ORIGIN);
+		const res = await request(await start(), "POST", `/api/runs/${runId}/review/comment`, {
+			filePath: "src/foo.ts",
+			side: "additions",
+			startLine: 3,
+			endLine: 3,
+			body: "On the PR",
+		});
+		expect(res.status).toBe(500);
+		const lines = (await fs.readFile(path.join(tmpDir, "gh-log.txt"), "utf8")).split("\n");
+		expect(lines.filter((l) => l === "create-review")).toHaveLength(1);
+		expect(lines.filter((l) => l === "discard-review")).toHaveLength(1);
 	});
 });
