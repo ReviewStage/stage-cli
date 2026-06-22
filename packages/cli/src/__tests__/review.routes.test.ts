@@ -91,7 +91,7 @@ const REVIEW_QUERY_RESULT = {
 
 async function writeGhShim(
 	reviewResult: unknown,
-	opts: { failAddThread?: boolean } = {},
+	opts: { failAddThread?: boolean; failAddReply?: boolean } = {},
 ): Promise<void> {
 	await fs.writeFile(path.join(tmpDir, "review.json"), JSON.stringify(reviewResult));
 	const shim = `#!/usr/bin/env node
@@ -116,6 +116,7 @@ if (query.includes("query GetReview")) {
   emit({ data: { deletePullRequestReview: { pullRequestReview: { id: "REVIEW_new" } } } });
 } else if (query.includes("mutation AddReviewReply")) {
   fs.appendFileSync(log, "reply\\n");
+  if (${opts.failAddReply ? "true" : "false"}) { process.stderr.write("gh: reply failed\\n"); process.exit(1); }
   emit({ data: { addPullRequestReviewThreadReply: { comment: { id: "C" } } } });
 } else if (query.includes("mutation SubmitReview")) {
   fs.appendFileSync(log, "submit " + fields + "\\n");
@@ -214,6 +215,30 @@ function seedLocalThread(): string {
 	return thread.id;
 }
 
+// A local thread with a root + one reply, both oldest-first by createdAt.
+function seedLocalThreadWithReply(): string {
+	const db = getDb({ dbPath });
+	const [thread] = db
+		.insert(commentThread)
+		.values({
+			scopeKey: SCOPE_KEY,
+			filePath: "src/foo.ts",
+			side: "additions",
+			startLine: 3,
+			endLine: 3,
+		})
+		.returning({ id: commentThread.id })
+		.all();
+	if (!thread) throw new Error("seed: thread insert returned no row");
+	db.insert(comment)
+		.values({ threadId: thread.id, body: "Root", createdAt: new Date(1) })
+		.run();
+	db.insert(comment)
+		.values({ threadId: thread.id, body: "Reply", createdAt: new Date(2) })
+		.run();
+	return thread.id;
+}
+
 async function start(): Promise<number> {
 	const db = getDb({ dbPath });
 	const handle = await startServer({ webDistPath: webDist, routes: reviewRoutes(db) });
@@ -309,6 +334,19 @@ describe("review API — read", () => {
 		expect(review.github).toBe("offline");
 		expect(review.canPushToReview).toBe(false);
 	});
+
+	it("stays available with canPushToReview=false when the git push-check throws", async () => {
+		// gh works (review loads) but git fails — the read must degrade, not 500.
+		await writeGhShim(REVIEW_QUERY_RESULT);
+		await fs.writeFile(path.join(binDir, "git"), "#!/bin/sh\nexit 1\n");
+		await fs.chmod(path.join(binDir, "git"), 0o755);
+		const runId = insertRun(GITHUB_ORIGIN);
+		const res = await request(await start(), "GET", `/api/runs/${runId}/review`);
+		expect(res.status).toBe(200);
+		const review = JSON.parse(res.body) as ReviewResponse;
+		expect(review.github).toBe("available");
+		expect(review.canPushToReview).toBe(false);
+	});
 });
 
 describe("review API — actions", () => {
@@ -390,5 +428,25 @@ describe("review API — actions", () => {
 		const lines = (await fs.readFile(path.join(tmpDir, "gh-log.txt"), "utf8")).split("\n");
 		expect(lines.filter((l) => l === "create-review")).toHaveLength(1);
 		expect(lines.filter((l) => l === "discard-review")).toHaveLength(1);
+	});
+
+	it("keeps unposted replies local when a reply fails mid-promotion (no silent loss)", async () => {
+		await writeGhShim(EMPTY_REVIEW, { failAddReply: true });
+		const runId = insertRun(GITHUB_ORIGIN);
+		const localThreadId = seedLocalThreadWithReply();
+		const res = await request(await start(), "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+		expect(res.status).toBe(500);
+
+		const db = getDb({ dbPath });
+		// Root was promoted (deleted locally); the failed reply stays local; thread remains.
+		const bodies = db
+			.select()
+			.from(comment)
+			.all()
+			.map((c) => c.body);
+		expect(bodies).toEqual(["Reply"]);
+		expect(db.select().from(commentThread).all()).toHaveLength(1);
 	});
 });

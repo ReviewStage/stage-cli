@@ -77,6 +77,19 @@ function assertPushable(run: ChapterRunRow, review: GitHubReview): void {
 	if (reason !== null) throw new ReviewError(reason, 409);
 }
 
+/**
+ * Whether comments can be pushed, for the read path. `pushBlockReason` shells out to
+ * git, which can throw (no repo, git missing); the read must never blank the review,
+ * so a git failure degrades to "not pushable" rather than propagating.
+ */
+function canPushToReview(run: ChapterRunRow, headRefOid: string): boolean {
+	try {
+		return pushBlockReason(run, headRefOid) === null;
+	} catch {
+		return false;
+	}
+}
+
 // ─── Read: merged local + GitHub review ─────────────────────────────────────────
 
 function loadLocalThreads(db: StageDb, scopeKey: string): ReviewThreadDto[] {
@@ -189,7 +202,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		pendingCommentCount,
 		hasPendingReview: review.pendingReviewNodeId !== null,
 		isOwnPullRequest: review.viewerDidAuthor,
-		canPushToReview: pushBlockReason(run, review.headRefOid) === null,
+		canPushToReview: canPushToReview(run, review.headRefOid),
 	};
 }
 
@@ -306,13 +319,16 @@ export async function addLocalThreadToReview(
 		if (created) await discardReview(run.repoRoot, reviewNodeId).catch(() => {});
 		throw err;
 	}
-	// Remove the local copy as soon as the root lands on GitHub, before pushing
-	// replies: a reply failure then can't leave the local thread behind for a retry
-	// to re-promote (which would create a duplicate pending thread).
-	db.delete(commentThread).where(eq(commentThread.id, localThreadId)).run();
+	// Delete each local comment only once its GitHub counterpart lands, so a failure
+	// part-way never loses an unposted comment (the leftover replies stay local) and
+	// never leaves the already-promoted root behind to be re-promoted as a duplicate.
+	db.delete(comment).where(eq(comment.id, root.id)).run();
 	for (const reply of comments.slice(1)) {
 		await addReviewReply(run.repoRoot, threadNodeId, reply.body, reviewNodeId);
+		db.delete(comment).where(eq(comment.id, reply.id)).run();
 	}
+	// Every comment promoted — drop the now-empty local thread.
+	db.delete(commentThread).where(eq(commentThread.id, localThreadId)).run();
 }
 
 export interface PendingCommentAnchor {
