@@ -12,6 +12,7 @@
     "./parsed-diff": "./src/parsed-diff.ts",
     "./prologue": "./src/prologue.ts",
     "./pull-request": "./src/pull-request.ts",
+    "./review": "./src/review.ts",
     "./view-state": "./src/view-state.ts",
     "./viewer": "./src/viewer.ts"
   },

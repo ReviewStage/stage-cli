@@ -14,6 +14,20 @@ export async function gh(args: string[], cwd: string): Promise<string> {
 }
 
 /**
+ * Run a `gh` command and return stdout, surfacing failures as a clean Error with
+ * gh's stderr message. Use for user-initiated actions (reads and writes alike)
+ * where the failure reason should reach the user, unlike the passive PR-context
+ * adapters that degrade to empty.
+ */
+export async function ghOrThrow(args: string[], cwd: string): Promise<string> {
+	try {
+		return await gh(args, cwd);
+	} catch (err) {
+		throw new Error(ghErrorMessage(err));
+	}
+}
+
+/**
  * Extract the most useful message from a failed `gh`/`git` exec: prefer the
  * command's stderr (where these tools write human-readable failures), falling
  * back to the Error message.
