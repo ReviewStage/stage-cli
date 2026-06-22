@@ -390,6 +390,19 @@ describe("review API — actions", () => {
 		expect(submit).toContain("event=APPROVE");
 	});
 
+	it("rejects an empty Comment review (no body, no pending comments)", async () => {
+		await writeGhShim(EMPTY_REVIEW);
+		const runId = insertRun(GITHUB_ORIGIN);
+		const res = await request(await start(), "POST", `/api/runs/${runId}/review/submit`, {
+			event: "COMMENT",
+			body: "   ",
+		});
+		expect(res.status).toBe(400);
+		// No review was opened or submitted.
+		const log = await fs.readFile(path.join(tmpDir, "gh-log.txt"), "utf8").catch(() => "");
+		expect(log).not.toMatch(/create-review|submit/);
+	});
+
 	it("rejects commenting on the PR from a working-tree scope (push guardrail)", async () => {
 		await writeGhShim(REVIEW_QUERY_RESULT);
 		const runId = insertRun(GITHUB_ORIGIN, false); // working-tree scope

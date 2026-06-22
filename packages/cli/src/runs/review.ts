@@ -1,6 +1,7 @@
 import {
 	COMMENT_STATE,
 	GITHUB_REVIEW_STATUS,
+	REVIEW_EVENT,
 	type ReviewComment as ReviewCommentDto,
 	type ReviewEvent,
 	type ReviewResponse,
@@ -407,6 +408,12 @@ export async function submitRunReview(
 	// A review approves/comments on the PR's current diff; block submitting from a run
 	// whose diff isn't that, even via the API (the UI already hides the tray then).
 	assertPushable(run, review);
+	// Mirror the tray's rule at the API boundary: a Comment review needs a summary or
+	// at least one pending comment, else we'd open and submit an empty review.
+	const hasPending = review.threads.some((t) => t.comments.some((c) => c.isPending));
+	if (event === REVIEW_EVENT.COMMENT && body.trim() === "" && !hasPending) {
+		throw new ReviewError("Add a summary or at least one pending comment to submit a review.", 400);
+	}
 	await withPendingReview(run, review, (reviewNodeId) =>
 		submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
 	);
