@@ -115,7 +115,7 @@ export function CommentThreadView({ thread }: { thread: CommentThread }) {
 						<TooltipContent>{isOpen ? "Collapse thread" : "Expand thread"}</TooltipContent>
 					</Tooltip>
 					<ResolveButton isResolved={isResolved} onToggle={handleResolveToggle} />
-					<CommentByline createdAt={root.createdAt} />
+					<CommentByline comment={root} />
 					{idle && (
 						<div className="flex shrink-0 items-center gap-0.5">
 							<Tooltip>
@@ -136,15 +136,20 @@ export function CommentThreadView({ thread }: { thread: CommentThread }) {
 								</TooltipTrigger>
 								<TooltipContent>Reply</TooltipContent>
 							</Tooltip>
-							<CommentActions
-								onEdit={() => {
-									setIsOpen(true);
-									setError(null);
-									setEditingId(root.id);
-								}}
-								onDelete={() => setDeleteTarget({ kind: "thread", hasReplies: replies.length > 0 })}
-								deleteLabel={replies.length > 0 ? "Delete thread" : "Delete"}
-							/>
+							{/* Pulled GitHub comments are read-only locally; only local comments can be edited/deleted. */}
+							{root.author === null && (
+								<CommentActions
+									onEdit={() => {
+										setIsOpen(true);
+										setError(null);
+										setEditingId(root.id);
+									}}
+									onDelete={() =>
+										setDeleteTarget({ kind: "thread", hasReplies: replies.length > 0 })
+									}
+									deleteLabel={replies.length > 0 ? "Delete thread" : "Delete"}
+								/>
+							)}
 						</div>
 					)}
 				</div>
@@ -236,19 +241,23 @@ function ResolveButton({ isResolved, onToggle }: { isResolved: boolean; onToggle
 	);
 }
 
-function CommentByline({ createdAt }: { createdAt: string }) {
+// A local comment (`author: null`) renders as the local reviewer; a comment pulled
+// from the PR renders its GitHub author.
+function CommentByline({ comment }: { comment: Comment }) {
 	const viewer = useViewer();
+	const name = comment.author?.login ?? viewer.name;
+	const avatarUrl = comment.author ? comment.author.avatarUrl : viewer.avatarUrl;
 	return (
 		<p className="flex min-w-0 flex-1 items-center gap-1.5 text-muted-foreground text-sm">
 			<Avatar className="size-5 shrink-0">
-				{viewer.avatarUrl && <AvatarImage src={viewer.avatarUrl} alt={viewer.name} />}
+				{avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
 				<AvatarFallback className="text-[10px]">
 					<User className="size-3" />
 				</AvatarFallback>
 			</Avatar>
-			<span className="font-medium text-foreground">{viewer.name}</span>
-			<time dateTime={createdAt} title={new Date(createdAt).toLocaleString()}>
-				{formatTimeAgo(createdAt)}
+			<span className="font-medium text-foreground">{name}</span>
+			<time dateTime={comment.createdAt} title={new Date(comment.createdAt).toLocaleString()}>
+				{formatTimeAgo(comment.createdAt)}
 			</time>
 		</p>
 	);
@@ -276,10 +285,11 @@ function ReplyItem({
 	return (
 		<div className="space-y-1.5">
 			<div className="flex items-center gap-2">
-				<CommentByline createdAt={reply.createdAt} />
+				<CommentByline comment={reply} />
 				{/* Only when the whole thread is idle, so opening this reply's editor can't
-				    discard another in-progress edit or reply (matches the root comment). */}
-				{idle && <CommentActions onEdit={onEdit} onDelete={onDelete} />}
+				    discard another in-progress edit or reply (matches the root comment).
+				    Pulled GitHub replies are read-only locally. */}
+				{idle && reply.author === null && <CommentActions onEdit={onEdit} onDelete={onDelete} />}
 			</div>
 			{isEditing ? (
 				<CommentForm

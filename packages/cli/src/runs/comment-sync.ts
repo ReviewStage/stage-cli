@@ -201,6 +201,13 @@ function loadThreads(db: StageDb, scopeKey: string): ThreadWithComments[] {
  * synced are skipped; each new comment records its GitHub id on success so a later
  * push or pull treats it as already-synced. A comment GitHub rejects (e.g. its line
  * isn't in the PR diff) is reported as a per-comment failure without aborting the rest.
+ *
+ * Known limitation: a deletion-side comment authored on a chapter view anchors to
+ * that view's synthetic intermediate-file line numbers, which can differ from the
+ * PR's canonical old-line coordinates. Addition-side anchors are always canonical.
+ * Canonicalizing deletion-side anchors is deferred; GitHub's own "line not in diff"
+ * rejection is the backstop here, surfacing such a comment as a loud failure rather
+ * than letting it land mis-anchored silently.
  */
 export async function pushComments(db: StageDb, run: ChapterRunRow): Promise<PushCommentsResult> {
 	const target = await resolveSyncTarget(run);
