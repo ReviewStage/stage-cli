@@ -75,6 +75,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	const review = useReviewContext();
 	const isGitHub = thread.source === THREAD_SOURCE.GITHUB;
 	const githubAvailable = review.github === GITHUB_REVIEW_STATUS.AVAILABLE;
+	const canPushToReview = review.canPushToReview;
 
 	const [isOpen, setIsOpen] = useState(!thread.isResolved);
 	const [isReplying, setIsReplying] = useState(false);
@@ -196,7 +197,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 					<StateBadge state={root.state} />
 					{idle && (
 						<div className="flex shrink-0 items-center gap-0.5">
-							{root.state === COMMENT_STATE.LOCAL && githubAvailable && (
+							{root.state === COMMENT_STATE.LOCAL && canPushToReview && (
 								<Tooltip>
 									<TooltipTrigger asChild>
 										<Button

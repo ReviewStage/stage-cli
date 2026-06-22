@@ -85,6 +85,9 @@ export const ReviewResponseSchema = z.object({
 	hasPendingReview: z.boolean(),
 	// The viewer opened this PR — GitHub forbids approving/requesting changes on it.
 	isOwnPullRequest: z.boolean(),
+	// Whether comments can be added to the PR right now: committed diff, clean tree,
+	// and local HEAD matching the PR head. When false, only local comments are allowed.
+	canPushToReview: z.boolean(),
 });
 export type ReviewResponse = z.infer<typeof ReviewResponseSchema>;
 

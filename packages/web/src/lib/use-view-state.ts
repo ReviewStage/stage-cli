@@ -29,17 +29,28 @@ export async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> 
 	// POST/DELETE handlers (and error responses) can return an empty body — read as
 	// text first so JSON.parse doesn't throw SyntaxError on `""`.
 	const text = await res.text();
-	const parsed: unknown = text ? JSON.parse(text) : {};
 	if (!res.ok) {
-		// Surface the server's `{ error }` message verbatim (sync guardrails and the
-		// GitHub-write paths carry actionable reasons); fall back to the status code.
-		const message =
-			typeof parsed === "object" && parsed !== null && "error" in parsed
-				? String((parsed as { error: unknown }).error)
-				: `${init?.method ?? "GET"} ${url} failed: ${res.status}`;
-		throw new Error(message);
+		// Surface the server's `{ error }` message verbatim (the review/write paths
+		// carry actionable reasons), but tolerate a non-JSON error body (e.g. an HTML
+		// proxy error) — fall back to the status code rather than throwing SyntaxError.
+		throw new Error(
+			errorBodyMessage(text) ?? `${init?.method ?? "GET"} ${url} failed: ${res.status}`,
+		);
 	}
-	return parsed as T;
+	return (text ? JSON.parse(text) : {}) as T;
+}
+
+function errorBodyMessage(text: string): string | null {
+	if (!text) return null;
+	try {
+		const parsed: unknown = JSON.parse(text);
+		if (typeof parsed === "object" && parsed !== null && "error" in parsed) {
+			return String((parsed as { error: unknown }).error);
+		}
+	} catch {
+		// Non-JSON error body — let the caller fall back to the status code.
+	}
+	return null;
 }
 
 async function fetchViewState(runId: string): Promise<ViewState> {

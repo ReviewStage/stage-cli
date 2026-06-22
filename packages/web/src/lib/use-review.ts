@@ -38,6 +38,7 @@ export interface UseReviewResult {
 	pendingCommentCount: number;
 	hasPendingReview: boolean;
 	isOwnPullRequest: boolean;
+	canPushToReview: boolean;
 	isLoading: boolean;
 	error: unknown;
 	// Local comments (CLI-only, work offline).
@@ -118,7 +119,7 @@ export function useReview(runId: string): UseReviewResult {
 		resolveLocalThread: useMutation({
 			mutationFn: ({ threadId, resolved }: { threadId: string; resolved: boolean }) =>
 				jsonFetch(
-					runPath(`/comment-threads/${encodeURIComponent(threadId)}`),
+					`/api/comment-threads/${encodeURIComponent(threadId)}`,
 					jsonRequest("PATCH", { resolved }),
 				),
 			onSuccess: invalidate,
@@ -166,6 +167,7 @@ export function useReview(runId: string): UseReviewResult {
 		pendingCommentCount: data?.pendingCommentCount ?? 0,
 		hasPendingReview: data?.hasPendingReview ?? false,
 		isOwnPullRequest: data?.isOwnPullRequest ?? false,
+		canPushToReview: data?.canPushToReview ?? false,
 		isLoading,
 		error,
 		createLocalThread: m.createLocalThread.mutateAsync,

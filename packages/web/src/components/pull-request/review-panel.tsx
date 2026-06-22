@@ -179,12 +179,17 @@ export function ReviewPanel() {
 	if (review.github !== GITHUB_REVIEW_STATUS.AVAILABLE) return null;
 
 	const hasContent = body.trim().length > 0;
+	// On your own PR only "Comment" is allowed; coerce the effective event so a stale
+	// Approve/Request-changes selection can never be submitted (the radios are disabled,
+	// but the prior `selected` state would otherwise persist).
+	const effectiveEvent =
+		isOwnPullRequest && selected !== REVIEW_EVENT.COMMENT ? REVIEW_EVENT.COMMENT : selected;
 	// A bare "Comment" submit with neither body nor pending comments is a no-op.
 	const canSubmit =
-		!isSubmitting && (selected !== REVIEW_EVENT.COMMENT || hasContent || pendingCommentCount > 0);
+		!isSubmitting &&
+		(effectiveEvent !== REVIEW_EVENT.COMMENT || hasContent || pendingCommentCount > 0);
 
 	function selectAction(event: ReviewEvent) {
-		// Guard against keeping a now-forbidden selection if ownership changes.
 		if (isOwnPullRequest && event !== REVIEW_EVENT.COMMENT) return;
 		setSelected(event);
 	}
@@ -193,7 +198,7 @@ export function ReviewPanel() {
 		if (!canSubmit) return;
 		setIsSubmitting(true);
 		try {
-			await review.submitReview({ event: selected, body: body.trim() });
+			await review.submitReview({ event: effectiveEvent, body: body.trim() });
 			setBody("");
 			setOpen(false);
 			toast.success("Review submitted");
@@ -264,7 +269,7 @@ export function ReviewPanel() {
 					/>
 					<PendingCommentsList byFile={pendingByFile} count={pendingCommentCount} />
 					<ActionSelector
-						selected={selected}
+						selected={effectiveEvent}
 						onSelect={selectAction}
 						disabled={isSubmitting}
 						isOwnPullRequest={isOwnPullRequest}

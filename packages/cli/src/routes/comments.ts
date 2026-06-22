@@ -104,10 +104,10 @@ export function commentRoutes(db: StageDb): Route[] {
 			},
 		},
 		{
-			// Resolve/reopen a local thread. Run-scoped for symmetry with the review
-			// routes; GitHub threads resolve via the separate review-resolve route.
+			// Resolve/reopen a local thread. GitHub threads resolve via the separate
+			// review-resolve route, so this stays unscoped — it only touches local rows.
 			method: "PATCH",
-			pattern: "/api/runs/:runId/comment-threads/:threadId",
+			pattern: "/api/comment-threads/:threadId",
 			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
 				const threadId = params.threadId;

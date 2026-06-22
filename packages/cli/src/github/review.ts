@@ -32,6 +32,7 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
     pullRequest(number: $number) {
       id
       viewerDidAuthor
+      headRefOid
       reviews(states: PENDING, first: 1) { nodes { id } }
       reviewThreads(first: 50, after: $cursor) {
         pageInfo { hasNextPage endCursor }
@@ -87,6 +88,7 @@ const ReviewQuerySchema = z.object({
 					.object({
 						id: z.string(),
 						viewerDidAuthor: z.boolean(),
+						headRefOid: z.string(),
 						reviews: z.object({ nodes: z.array(z.object({ id: z.string() })) }),
 						reviewThreads: z.object({
 							pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() }),
@@ -137,6 +139,8 @@ export interface GitHubReview {
 	pullRequestNodeId: string;
 	/** True when the viewer opened the PR (GitHub forbids approving your own PR). */
 	viewerDidAuthor: boolean;
+	/** The PR's current head commit — comments anchor to this commit's diff. */
+	headRefOid: string;
 	/** The viewer's open pending review, or null when they have none. */
 	pendingReviewNodeId: string | null;
 	threads: ReviewThread[];
@@ -156,6 +160,7 @@ export async function getReview(
 ): Promise<GitHubReview> {
 	let pullRequestNodeId = "";
 	let viewerDidAuthor = false;
+	let headRefOid = "";
 	let pendingReviewNodeId: string | null = null;
 	const threads: ReviewThread[] = [];
 	let cursor: string | null = null;
@@ -180,6 +185,7 @@ export async function getReview(
 		if (!pr) break;
 		pullRequestNodeId = pr.id;
 		viewerDidAuthor = pr.viewerDidAuthor;
+		headRefOid = pr.headRefOid;
 		pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
 
 		for (const node of pr.reviewThreads.nodes) {
@@ -199,7 +205,7 @@ export async function getReview(
 		cursor = pr.reviewThreads.pageInfo.hasNextPage ? pr.reviewThreads.pageInfo.endCursor : null;
 	} while (cursor !== null);
 
-	return { pullRequestNodeId, viewerDidAuthor, pendingReviewNodeId, threads };
+	return { pullRequestNodeId, viewerDidAuthor, headRefOid, pendingReviewNodeId, threads };
 }
 
 function toReviewComment(c: z.infer<typeof GqlReviewCommentSchema>): ReviewComment {

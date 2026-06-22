@@ -10,6 +10,7 @@ import {
 import { asc, eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { type ChapterRunRow, comment, commentThread } from "../db/schema/index.js";
+import { isWorkingTreeClean, readHeadSha } from "../git.js";
 import { type GitHubRepo, getPullRequest, parseGitHubRepo } from "../github/index.js";
 import {
 	addReviewReply,
@@ -26,7 +27,7 @@ import {
 	submitReview,
 	updateReviewComment,
 } from "../github/review.js";
-import { DIFF_SIDE, type DiffSide } from "../schema.js";
+import { DIFF_SIDE, type DiffSide, SCOPE_KIND } from "../schema.js";
 import { deriveScopeKey } from "./scope-key.js";
 
 /** A review action failure with a user-facing message and the route's HTTP status. */
@@ -47,6 +48,33 @@ function toGitHubSide(side: DiffSide): GitHubDiffSide {
 
 function fromGitHubSide(side: GitHubDiffSide): DiffSide {
 	return side === GITHUB_DIFF_SIDE.LEFT ? DIFF_SIDE.DELETIONS : DIFF_SIDE.ADDITIONS;
+}
+
+/**
+ * Why a comment can't be added to the PR review right now, or null when it can.
+ * Comments anchor to the PR's head-commit diff, so the local checkout must be a
+ * committed diff (working-tree line numbers aren't the PR's), with a clean tree
+ * whose HEAD matches the PR head — otherwise the comment lands mis-anchored. This
+ * is the push guardrail PRO-547 requires; addition-side anchors are canonical,
+ * deletion-side from a chapter view remain a known limitation (GitHub rejects
+ * lines that aren't in its diff).
+ */
+function pushBlockReason(run: ChapterRunRow, headRefOid: string): string | null {
+	if (run.scopeKind !== SCOPE_KIND.COMMITTED) {
+		return "Only comments on a committed diff can be added to the PR — working-tree comments aren't anchored to the PR's commits.";
+	}
+	if (!isWorkingTreeClean(run.repoRoot)) {
+		return "Your working tree has uncommitted changes. Commit or stash them so comments anchor to the PR's commit.";
+	}
+	if (readHeadSha(run.repoRoot) !== headRefOid) {
+		return "Your local HEAD doesn't match the PR head. Push or pull your commits so they line up before commenting on the PR.";
+	}
+	return null;
+}
+
+function assertPushable(run: ChapterRunRow, review: GitHubReview): void {
+	const reason = pushBlockReason(run, review.headRefOid);
+	if (reason !== null) throw new ReviewError(reason, 409);
 }
 
 // ─── Read: merged local + GitHub review ─────────────────────────────────────────
@@ -130,6 +158,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		pendingCommentCount: 0,
 		hasPendingReview: false,
 		isOwnPullRequest: false,
+		canPushToReview: false,
 	};
 
 	const repo = parseGitHubRepo(run.originUrl);
@@ -160,6 +189,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		pendingCommentCount,
 		hasPendingReview: review.pendingReviewNodeId !== null,
 		isOwnPullRequest: review.viewerDidAuthor,
+		canPushToReview: pushBlockReason(run, review.headRefOid) === null,
 	};
 }
 
@@ -211,6 +241,11 @@ export async function addLocalThreadToReview(
 		.limit(1)
 		.all();
 	if (!thread) throw new ReviewError(`Thread ${localThreadId} not found`, 404);
+	// The thread must belong to this run's diff scope; its anchor was computed
+	// against that diff, so promoting one from another scope would mis-anchor.
+	if (thread.scopeKey !== deriveScopeKey(run)) {
+		throw new ReviewError("This comment doesn't belong to this run's diff.", 400);
+	}
 	const comments = db
 		.select()
 		.from(comment)
@@ -221,6 +256,7 @@ export async function addLocalThreadToReview(
 	if (!root) throw new ReviewError("Thread has no comments to add to the review.", 400);
 
 	const { review } = await loadTarget(run);
+	assertPushable(run, review);
 	const reviewNodeId = await ensurePendingReview(run, review);
 	const side = toGitHubSide(thread.side);
 	const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
@@ -235,11 +271,13 @@ export async function addLocalThreadToReview(
 		startLine,
 		startSide: startLine !== null ? side : null,
 	});
+	// Remove the local copy as soon as the root lands on GitHub, before pushing
+	// replies: a reply failure then can't leave the local thread behind for a retry
+	// to re-promote (which would create a duplicate pending thread).
+	db.delete(commentThread).where(eq(commentThread.id, localThreadId)).run();
 	for (const reply of comments.slice(1)) {
 		await addReviewReply(run.repoRoot, threadNodeId, reply.body, reviewNodeId);
 	}
-	// Promoted: remove the local copy so it doesn't double up with the live pending one.
-	db.delete(commentThread).where(eq(commentThread.id, localThreadId)).run();
 }
 
 export interface PendingCommentAnchor {
@@ -261,6 +299,7 @@ export async function addPendingComment(
 	anchor: PendingCommentAnchor,
 ): Promise<void> {
 	const { review } = await loadTarget(run);
+	assertPushable(run, review);
 	const reviewNodeId = await ensurePendingReview(run, review);
 	const side = toGitHubSide(anchor.side);
 	const startLine = anchor.endLine !== anchor.startLine ? anchor.startLine : null;
