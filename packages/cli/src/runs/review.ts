@@ -181,14 +181,11 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 	}
 
 	const githubThreads = review.threads.map(toGitHubThreadDto);
-	const pendingCommentCount = review.threads.reduce(
-		(n, t) => n + t.comments.filter((c) => c.isPending).length,
-		0,
-	);
 	return {
 		github: GITHUB_REVIEW_STATUS.AVAILABLE,
 		threads: [...localThreads, ...githubThreads],
-		pendingCommentCount,
+		// Raw count from getReview includes pending drafts on anchorless threads we don't render.
+		pendingCommentCount: review.pendingCommentCount,
 		hasPendingReview: review.pendingReviewNodeId !== null,
 		isOwnPullRequest: review.viewerDidAuthor,
 		canPushToReview: true,
@@ -409,9 +406,9 @@ export async function submitRunReview(
 	// whose diff isn't that, even via the API (the UI already hides the tray then).
 	assertPushable(run, review);
 	// Mirror the tray's rule at the API boundary: a Comment review needs a summary or
-	// at least one pending comment, else we'd open and submit an empty review.
-	const hasPending = review.threads.some((t) => t.comments.some((c) => c.isPending));
-	if (event === REVIEW_EVENT.COMMENT && body.trim() === "" && !hasPending) {
+	// at least one pending comment, else we'd open and submit an empty review. Uses the
+	// raw pending count (includes anchorless drafts getReview drops) to avoid a false reject.
+	if (event === REVIEW_EVENT.COMMENT && body.trim() === "" && review.pendingCommentCount === 0) {
 		throw new ReviewError("Add a summary or at least one pending comment to submit a review.", 400);
 	}
 	await withPendingReview(run, review, (reviewNodeId) =>

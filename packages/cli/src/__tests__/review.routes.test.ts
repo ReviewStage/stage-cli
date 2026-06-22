@@ -403,6 +403,60 @@ describe("review API — actions", () => {
 		expect(log).not.toMatch(/create-review|submit/);
 	});
 
+	it("counts pending drafts on anchorless threads, so an empty-body Comment submit isn't falsely rejected", async () => {
+		// A pending draft whose root has no current line is dropped from the rendered
+		// threads but must still count, so the empty-review guard doesn't false-reject.
+		const anchorlessPending = {
+			data: {
+				repository: {
+					pullRequest: {
+						id: "PR_node",
+						viewerDidAuthor: false,
+						headRefOid: HEAD,
+						reviews: { nodes: [{ id: "REVIEW_pending" }] },
+						reviewThreads: {
+							pageInfo: { hasNextPage: false, endCursor: null },
+							nodes: [
+								{
+									id: "THREAD_outdated",
+									isResolved: false,
+									comments: {
+										nodes: [
+											{
+												databaseId: 9,
+												id: "COMMENT_outdated",
+												url: "https://github.com/owner/repo/pull/5#d9",
+												path: "src/foo.ts",
+												body: "Outdated draft",
+												bodyHTML: "<p>Outdated draft</p>",
+												createdAt: "2026-01-03T00:00:00Z",
+												line: null,
+												startLine: null,
+												diffSide: "RIGHT",
+												startDiffSide: null,
+												author: { login: "octocat", avatarUrl: "https://x/o.png" },
+												pullRequestReview: { state: "PENDING" },
+											},
+										],
+									},
+								},
+							],
+						},
+					},
+				},
+			},
+		};
+		await writeGhShim(anchorlessPending);
+		const runId = insertRun(GITHUB_ORIGIN);
+		const res = await request(await start(), "POST", `/api/runs/${runId}/review/submit`, {
+			event: "COMMENT",
+			body: "",
+		});
+		expect(res.status).toBe(200);
+		const log = await fs.readFile(path.join(tmpDir, "gh-log.txt"), "utf8");
+		expect(log).toMatch(/submit/);
+	});
+
 	it("rejects commenting on the PR from a working-tree scope (push guardrail)", async () => {
 		await writeGhShim(REVIEW_QUERY_RESULT);
 		const runId = insertRun(GITHUB_ORIGIN, false); // working-tree scope

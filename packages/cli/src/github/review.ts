@@ -143,6 +143,8 @@ export interface GitHubReview {
 	headRefOid: string;
 	/** The viewer's open pending review, or null when they have none. */
 	pendingReviewNodeId: string | null;
+	/** Viewer's pending (draft) comments across all threads, including anchorless ones. */
+	pendingCommentCount: number;
 	threads: ReviewThread[];
 }
 
@@ -162,6 +164,7 @@ export async function getReview(
 	let viewerDidAuthor = false;
 	let headRefOid = "";
 	let pendingReviewNodeId: string | null = null;
+	let pendingCommentCount = 0;
 	const threads: ReviewThread[] = [];
 	let cursor: string | null = null;
 
@@ -192,6 +195,11 @@ export async function getReview(
 		pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
 
 		for (const node of pr.reviewThreads.nodes) {
+			// Count pending (draft) comments across every thread, including outdated/whole-file
+			// ones dropped below — so the tray count and the empty-review check don't undercount.
+			for (const c of node.comments.nodes) {
+				if (c.pullRequestReview?.state === PENDING_STATE) pendingCommentCount++;
+			}
 			const root = node.comments.nodes[0];
 			if (!root || root.line === null) continue;
 			threads.push({
@@ -213,7 +221,14 @@ export async function getReview(
 	// later write mutations would post against.
 	if (pullRequestNodeId === "") throw new Error("Pull request not found on GitHub");
 
-	return { pullRequestNodeId, viewerDidAuthor, headRefOid, pendingReviewNodeId, threads };
+	return {
+		pullRequestNodeId,
+		viewerDidAuthor,
+		headRefOid,
+		pendingReviewNodeId,
+		pendingCommentCount,
+		threads,
+	};
 }
 
 function toReviewComment(c: z.infer<typeof GqlReviewCommentSchema>): ReviewComment {
