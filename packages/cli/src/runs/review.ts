@@ -232,6 +232,40 @@ export async function addLocalThreadToReview(
 	db.delete(commentThread).where(eq(commentThread.id, localThreadId)).run();
 }
 
+export interface PendingCommentAnchor {
+	filePath: string;
+	side: DiffSide;
+	startLine: number;
+	endLine: number;
+	body: string;
+}
+
+/**
+ * Create a comment directly on the PR as a pending (draft) review comment, opening
+ * the viewer's review if needed. This is the "Comment on the PR" path — unlike
+ * `addLocalThreadToReview`, nothing is stored locally; the comment lives only on
+ * GitHub. GitHub anchors it to the PR's current diff, rejecting out-of-diff lines.
+ */
+export async function addPendingComment(
+	run: ChapterRunRow,
+	anchor: PendingCommentAnchor,
+): Promise<void> {
+	const { review } = await loadTarget(run);
+	const reviewNodeId = await ensurePendingReview(run, review);
+	const side = toGitHubSide(anchor.side);
+	const startLine = anchor.endLine !== anchor.startLine ? anchor.startLine : null;
+	await addReviewThread(run.repoRoot, {
+		pullRequestNodeId: review.pullRequestNodeId,
+		reviewNodeId,
+		path: anchor.filePath,
+		body: anchor.body,
+		line: anchor.endLine,
+		side,
+		startLine,
+		startSide: startLine !== null ? side : null,
+	});
+}
+
 /** Reply to a GitHub thread, adding to the viewer's pending review (or as a single comment). */
 export async function replyToGitHubThread(
 	run: ChapterRunRow,

@@ -113,11 +113,12 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 		setIsOpen(open);
 	}
 
-	async function submitReply(body: string) {
+	async function submitReply(body: string, startReview: boolean) {
 		setOpenError(null);
 		try {
 			if (isGitHub && thread.threadNodeId) {
-				await review.replyGitHub({ threadNodeId: thread.threadNodeId, body, pending: true });
+				// "Start a review" → add the reply to the pending review; otherwise post it now.
+				await review.replyGitHub({ threadNodeId: thread.threadNodeId, body, pending: startReview });
 			} else {
 				await review.replyLocal({ threadId: thread.id, body });
 			}
@@ -292,6 +293,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 							label="Reply"
 							placeholder="Write a reply…"
 							error={error}
+							toggleLabel={isGitHub ? "Start a review" : undefined}
 							onSubmit={submitReply}
 							onCancel={() => {
 								setIsReplying(false);

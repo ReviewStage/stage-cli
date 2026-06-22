@@ -42,7 +42,7 @@ import {
 import { useReviewContext } from "@/lib/review-context";
 import { resolveSyntaxTheme } from "@/lib/syntax-themes";
 import { useDiffSettings } from "@/lib/use-diff-settings";
-import type { ReviewThread as CommentThread } from "@/lib/use-review";
+import { type ReviewThread as CommentThread, GITHUB_REVIEW_STATUS } from "@/lib/use-review";
 import { toSingleSideSelection, useTextSelection } from "@/lib/use-text-selection";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
 import { TextSelectionPopup } from "./text-selection-popup";
@@ -195,7 +195,8 @@ export function PierreDiffViewer({
 
 	// ---- Line-anchored comments ----
 	const comments = useReviewContext();
-	const { createLocalThread } = comments;
+	const { createLocalThread, createPendingComment } = comments;
+	const githubAvailable = comments.github === GITHUB_REVIEW_STATUS.AVAILABLE;
 	const fileThreads = useMemo(
 		() => (filePath ? (comments.threadsByFile.get(filePath) ?? []) : []),
 		[comments.threadsByFile, filePath],
@@ -231,28 +232,31 @@ export function PierreDiffViewer({
 	}, []);
 
 	const handleCreateComment = useCallback(
-		async (draft: CommentDraft, body: string) => {
+		async (draft: CommentDraft, body: string, onPr: boolean) => {
 			if (!filePath) return;
 			const setError = (error: string | null) =>
 				setDrafts((prev) =>
 					prev.map((d) => (isSameAnchor(d, draft.side, draft.endLine) ? { ...d, error } : d)),
 				);
 			setError(null);
+			const anchor = {
+				filePath,
+				side: draft.side,
+				startLine: draft.startLine,
+				endLine: draft.endLine,
+				body,
+			};
 			try {
-				await createLocalThread({
-					filePath,
-					side: draft.side,
-					startLine: draft.startLine,
-					endLine: draft.endLine,
-					body,
-				});
+				// "Comment on the PR" creates a pending GitHub comment; otherwise it stays local.
+				if (onPr && githubAvailable) await createPendingComment(anchor);
+				else await createLocalThread(anchor);
 				closeDraft(draft);
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Failed to add comment");
 				throw err; // keep the composer open with the body intact
 			}
 		},
-		[filePath, createLocalThread, closeDraft],
+		[filePath, createLocalThread, createPendingComment, githubAvailable, closeDraft],
 	);
 
 	const handleThreadMouseEnter = useCallback((thread: CommentThread) => {
@@ -304,14 +308,22 @@ export function PierreDiffViewer({
 							onBodyChange={(body) =>
 								writeDraftBody(draftBodiesRef.current, draft.side, draft.endLine, body)
 							}
-							onSubmit={(body) => handleCreateComment(draft, body)}
+							toggleLabel={githubAvailable ? "Comment on the PR" : undefined}
+							onSubmit={(body, onPr) => handleCreateComment(draft, body, onPr)}
 							onCancel={() => closeDraft(draft)}
 						/>
 					)}
 				</div>
 			);
 		},
-		[drafts, handleCreateComment, closeDraft, handleThreadMouseEnter, handleThreadMouseLeave],
+		[
+			drafts,
+			githubAvailable,
+			handleCreateComment,
+			closeDraft,
+			handleThreadMouseEnter,
+			handleThreadMouseLeave,
+		],
 	);
 
 	const renderGutterUtility = useCallback(

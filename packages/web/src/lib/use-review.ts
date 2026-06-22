@@ -41,6 +41,8 @@ export interface UseReviewResult {
 	error: unknown;
 	// Local comments (CLI-only, work offline).
 	createLocalThread: (input: CreateCommentThreadBody) => Promise<unknown>;
+	// Create a comment directly on the PR as a pending review comment.
+	createPendingComment: (input: CreateCommentThreadBody) => Promise<void>;
 	replyLocal: (input: { threadId: string; body: string }) => Promise<void>;
 	editLocalComment: (input: { commentId: string; body: string }) => Promise<void>;
 	deleteLocalThread: (threadId: string) => Promise<void>;
@@ -82,6 +84,11 @@ export function useReview(runId: string): UseReviewResult {
 		createLocalThread: useMutation({
 			mutationFn: (input: CreateCommentThreadBody) =>
 				jsonFetch<unknown>(runPath("/comment-threads"), jsonRequest("POST", input)),
+			onSuccess: invalidate,
+		}),
+		createPendingComment: useMutation({
+			mutationFn: (input: CreateCommentThreadBody) =>
+				jsonFetch(runPath("/review/comment"), jsonRequest("POST", input)),
 			onSuccess: invalidate,
 		}),
 		replyLocal: useMutation({
@@ -160,6 +167,7 @@ export function useReview(runId: string): UseReviewResult {
 		isLoading,
 		error,
 		createLocalThread: m.createLocalThread.mutateAsync,
+		createPendingComment: async (i) => void (await m.createPendingComment.mutateAsync(i)),
 		replyLocal: async (i) => void (await m.replyLocal.mutateAsync(i)),
 		editLocalComment: async (i) => void (await m.editLocalComment.mutateAsync(i)),
 		deleteLocalThread: async (id) => void (await m.deleteLocalThread.mutateAsync(id)),

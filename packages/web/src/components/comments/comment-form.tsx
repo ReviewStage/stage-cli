@@ -1,11 +1,13 @@
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CommentMarkdownEditor } from "./comment-markdown-editor";
 
 interface CommentFormProps {
 	/** Label for the primary submit button (e.g. "Comment", "Reply", "Update"). */
 	label: string;
-	onSubmit: (body: string) => void | Promise<void>;
+	/** `toggleOn` carries the optional checkbox state; it's `true` when no toggle is shown. */
+	onSubmit: (body: string, toggleOn: boolean) => void | Promise<void>;
 	onCancel: () => void;
 	placeholder?: string;
 	error?: string | null;
@@ -14,6 +16,9 @@ interface CommentFormProps {
 	/** Reports each edit so a parent can persist an in-progress draft across remounts. */
 	onBodyChange?: (body: string) => void;
 	autoFocus?: boolean;
+	/** When set, renders a checkbox (e.g. "Comment on the PR") whose state is passed to onSubmit. */
+	toggleLabel?: string;
+	toggleDefault?: boolean;
 }
 
 export function CommentForm({
@@ -25,9 +30,13 @@ export function CommentForm({
 	initialBody,
 	onBodyChange,
 	autoFocus = true,
+	toggleLabel,
+	toggleDefault = true,
 }: CommentFormProps) {
 	const [body, setBody] = useState(initialBody ?? "");
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [toggleOn, setToggleOn] = useState(toggleDefault);
+	const toggleId = useId();
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const submittingRef = useRef(false);
 	const hasContent = body.trim().length > 0;
@@ -47,7 +56,7 @@ export function CommentForm({
 		submittingRef.current = true;
 		setIsSubmitting(true);
 		try {
-			await onSubmit(trimmed);
+			await onSubmit(trimmed, toggleLabel === undefined ? true : toggleOn);
 			setBody("");
 		} catch {
 			// The caller surfaces the error; preserve the body so the user can retry.
@@ -87,18 +96,36 @@ export function CommentForm({
 				previewClassName="max-h-[12rem] overflow-y-auto"
 			>
 				{error && <p className="mt-2 text-destructive text-xs">{error}</p>}
-				<div className="mt-2 flex items-center justify-end gap-2">
-					<Button variant="ghost" size="sm" onClick={onCancel} disabled={isSubmitting}>
-						Cancel
-					</Button>
-					<Button
-						size="sm"
-						variant={hasContent ? "default" : "secondary"}
-						onClick={() => void runSubmit()}
-						disabled={!hasContent || isSubmitting}
-					>
-						{isSubmitting ? "Submitting…" : label}
-					</Button>
+				<div className="mt-2 flex items-center justify-between gap-2">
+					{toggleLabel !== undefined ? (
+						<label
+							htmlFor={toggleId}
+							className="flex cursor-pointer select-none items-center gap-1.5"
+						>
+							<Checkbox
+								id={toggleId}
+								checked={toggleOn}
+								onCheckedChange={(checked) => setToggleOn(checked === true)}
+								disabled={isSubmitting}
+							/>
+							<span className="text-muted-foreground text-xs">{toggleLabel}</span>
+						</label>
+					) : (
+						<div />
+					)}
+					<div className="flex items-center gap-2">
+						<Button variant="ghost" size="sm" onClick={onCancel} disabled={isSubmitting}>
+							Cancel
+						</Button>
+						<Button
+							size="sm"
+							variant={hasContent ? "default" : "secondary"}
+							onClick={() => void runSubmit()}
+							disabled={!hasContent || isSubmitting}
+						>
+							{isSubmitting ? "Submitting…" : label}
+						</Button>
+					</div>
 				</div>
 			</CommentMarkdownEditor>
 		</div>

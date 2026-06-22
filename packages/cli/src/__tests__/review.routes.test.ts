@@ -289,6 +289,35 @@ describe("review API — actions", () => {
 		expect(lines.filter((l) => l.startsWith("add-thread"))).toHaveLength(1);
 	});
 
+	it("creates a pending comment directly on the PR without storing it locally", async () => {
+		await writeGhShim({
+			data: {
+				repository: {
+					pullRequest: {
+						id: "PR_node",
+						reviews: { nodes: [] },
+						reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+					},
+				},
+			},
+		});
+		const runId = insertRun(GITHUB_ORIGIN);
+		const res = await request(await start(), "POST", `/api/runs/${runId}/review/comment`, {
+			filePath: "src/foo.ts",
+			side: "additions",
+			startLine: 3,
+			endLine: 3,
+			body: "On the PR",
+		});
+		expect(res.status).toBe(200);
+
+		const db = getDb({ dbPath });
+		expect(db.select().from(commentThread).all()).toHaveLength(0);
+		const lines = (await fs.readFile(path.join(tmpDir, "gh-log.txt"), "utf8")).split("\n");
+		expect(lines.filter((l) => l === "create-review")).toHaveLength(1);
+		expect(lines.filter((l) => l.startsWith("add-thread"))).toHaveLength(1);
+	});
+
 	it("submits the pending review with the chosen event", async () => {
 		await writeGhShim(REVIEW_QUERY_RESULT);
 		const runId = insertRun(GITHUB_ORIGIN);
