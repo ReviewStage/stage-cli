@@ -64,8 +64,9 @@ async function resolveSyncTarget(run: ChapterRunRow): Promise<SyncTarget> {
 /**
  * Import the PR's review comments into the run's local review. Idempotent: every
  * comment is keyed by its GitHub id, so re-pulling skips comments already present
- * and never duplicates. Resolved threads on GitHub mark their local thread
- * resolved (non-destructive — locally-reopened threads aren't forced back closed).
+ * and never duplicates. A pull mirrors the PR's resolved state onto the threads it
+ * owns — resolving or reopening to match GitHub — while purely-local threads (never
+ * pushed, so absent from GitHub) are left untouched.
  */
 export async function pullComments(db: StageDb, run: ChapterRunRow): Promise<PullCommentsResult> {
 	const { repo, prNumber } = await resolveSyncTarget(run);
@@ -101,20 +102,35 @@ export async function pullComments(db: StageDb, run: ChapterRunRow): Promise<Pul
 		};
 
 		for (const thread of threads) {
+			const resolvedOnGitHub = resolvedRootIds.has(thread.root.id);
 			// Reuse the local thread that already owns the root comment; otherwise create one.
-			const [existingRoot] = tx
-				.select({ threadId: comment.threadId })
+			const [existing] = tx
+				.select({ id: commentThread.id, resolvedAt: commentThread.resolvedAt })
 				.from(comment)
+				.innerJoin(commentThread, eq(comment.threadId, commentThread.id))
 				.where(eq(comment.githubCommentId, thread.root.id))
 				.limit(1)
 				.all();
 
 			let threadId: string;
-			if (existingRoot) {
-				threadId = existingRoot.threadId;
+			if (existing) {
+				threadId = existing.id;
+				// "Pull" means mirror the PR: a thread resolved/reopened on GitHub since the
+				// last pull is reflected locally. Preserve the existing timestamp when already
+				// resolved so a repeat pull doesn't reset "resolved N ago".
+				if (resolvedOnGitHub && existing.resolvedAt === null) {
+					tx.update(commentThread)
+						.set({ resolvedAt: new Date() })
+						.where(eq(commentThread.id, threadId))
+						.run();
+				} else if (!resolvedOnGitHub && existing.resolvedAt !== null) {
+					tx.update(commentThread)
+						.set({ resolvedAt: null })
+						.where(eq(commentThread.id, threadId))
+						.run();
+				}
 				skipped++;
 			} else {
-				const resolvedAt = resolvedRootIds.has(thread.root.id) ? new Date() : null;
 				const [threadRow] = tx
 					.insert(commentThread)
 					.values({
@@ -123,7 +139,7 @@ export async function pullComments(db: StageDb, run: ChapterRunRow): Promise<Pul
 						side: thread.side,
 						startLine: thread.startLine,
 						endLine: thread.endLine,
-						resolvedAt,
+						resolvedAt: resolvedOnGitHub ? new Date() : null,
 					})
 					.returning({ id: commentThread.id })
 					.all();

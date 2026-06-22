@@ -51,7 +51,11 @@ const REVIEW_COMMENTS = [
 
 // `gh`/`git` shims that route on argv and emit canned JSON, so the sync paths run
 // end-to-end without network or a real repo. Infrastructure fakes, not mocks.
-async function writeShims(opts: { gitHead: string; gitStatus: string }): Promise<void> {
+async function writeShims(opts: {
+	gitHead: string;
+	gitStatus: string;
+	resolvedRootIds?: number[];
+}): Promise<void> {
 	const ghFixture = {
 		pr: {
 			number: 5,
@@ -77,7 +81,10 @@ async function writeShims(opts: { gitHead: string; gitStatus: string }): Promise
 					pullRequest: {
 						reviewThreads: {
 							pageInfo: { hasNextPage: false, endCursor: null },
-							nodes: [],
+							nodes: (opts.resolvedRootIds ?? []).map((id) => ({
+								isResolved: true,
+								comments: { nodes: [{ databaseId: id }] },
+							})),
 						},
 					},
 				},
@@ -238,6 +245,22 @@ describe("comment sync API — pull", () => {
 		const second = await post(port, `/api/runs/${runId}/comment-sync/pull`);
 		expect(JSON.parse(second.body) as PullCommentsResult).toEqual({ pulled: 0, skipped: 2 });
 		expect(db.select().from(comment).all()).toHaveLength(2);
+	});
+
+	it("mirrors the PR's resolved state on pull — resolving, then reopening", async () => {
+		// Thread 101 starts resolved on GitHub.
+		await writeShims({ gitHead: HEAD_SHA, gitStatus: "", resolvedRootIds: [101] });
+		const runId = insertRun();
+		const port = await start();
+
+		await post(port, `/api/runs/${runId}/comment-sync/pull`);
+		const db = getDb({ dbPath });
+		expect(db.select().from(commentThread).all()[0]?.resolvedAt).not.toBeNull();
+
+		// Reopened on GitHub since the last pull → the next pull reflects that locally.
+		await writeShims({ gitHead: HEAD_SHA, gitStatus: "", resolvedRootIds: [] });
+		await post(port, `/api/runs/${runId}/comment-sync/pull`);
+		expect(db.select().from(commentThread).all()[0]?.resolvedAt).toBeNull();
 	});
 });
 
