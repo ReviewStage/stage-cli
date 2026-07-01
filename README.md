@@ -25,6 +25,17 @@
   <a href="https://github.com/ReviewStage/stage-cli/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/stagereview.svg" alt="license"></a>
 </p>
 
+## What's a chapter?
+
+Instead of reviewing a pull request as one long, undifferentiated diff, Stage groups related changes into "chapters" — for example, one chapter for a new API integration, another for a schema migration, another for test cleanup. Each chapter comes with a short summary of what changed and what's actually risky, so you know where to focus before reading line by line.
+
+## Prerequisites
+
+- Node.js 18 or later
+- A local git repository with changes to review
+- An AI coding agent that supports the `skills` convention (see [Which agents work with this?](#which-agents-work-with-this))
+- Optional: the [GitHub CLI](https://cli.github.com/) (`gh`), only needed for `--pr` to review a pull request by number or URL
+
 ## Install
 
 ```bash
@@ -99,6 +110,26 @@ dist/**
 ```
 
 Ignored files still appear in the "Other changes" chapter so nothing is silently hidden. Comments (`#`), blank lines, and negation patterns (`!`) are supported — last matching pattern wins.
+
+## Troubleshooting
+
+**`/stage-chapters` isn't recognized in my agent.**
+Re-run `npx skills add ReviewStage/stage-cli` to confirm it installed cleanly, and restart your agent — most agents only pick up newly registered skills after a restart.
+
+**Stage says there's nothing to review.**
+By default it looks for staged, unstaged, and untracked changes. If everything's already committed, use `--ref staged` or diff against a specific commit with `--compare`.
+
+**It picked the wrong base branch.**
+Auto-detection looks for `main` or `master`. If your default branch is named differently, pass it explicitly: `--base your-branch-name`.
+
+**`--pr` isn't working.**
+This requires the [GitHub CLI](https://cli.github.com/) installed and authenticated (`gh auth login`). Confirm `gh` works on its own first — Stage relies on it to fetch PR data.
+
+## Which agents work with this?
+
+Stage runs on the `skills` convention for AI coding agents, so support depends on whether your agent implements that convention. If `npx skills add` doesn't complete, or `/stage-chapters` doesn't show up as a command afterward, check your agent's own docs for skills or plugin support.
+
+*(Note to the Stage team: this is the one thing I couldn't verify from outside the project — worth explicitly listing which agents you've tested against, since "works with any AI agent" is the first thing a new user will want confirmed.)*
 
 <img width="1840" height="1196" alt="Stage CLI" src="https://raw.githubusercontent.com/ReviewStage/stage-cli/main/assets/screenshot.png" />
 
