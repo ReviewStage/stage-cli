@@ -9,28 +9,40 @@ export interface GhExecOptions {
 	timeoutMs?: number;
 }
 
-/** Run a read-only `gh` command in `cwd` and return its stdout. */
+async function execGh(args: string[], cwd: string, options: GhExecOptions): Promise<string> {
+	const { stdout } = await execFileAsync("gh", args, {
+		cwd,
+		encoding: "utf8",
+		maxBuffer: 10 * 1024 * 1024,
+		timeout: options.timeoutMs,
+	});
+	return stdout;
+}
+
+/** Run a passive, read-only `gh` command with a bounded deadline. */
 export async function gh(
 	args: string[],
 	cwd: string,
 	options: GhExecOptions = {},
 ): Promise<string> {
-	const { stdout } = await execFileAsync("gh", args, {
-		cwd,
-		encoding: "utf8",
-		maxBuffer: 10 * 1024 * 1024,
-		timeout: options.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS,
-	});
-	return stdout;
+	return execGh(args, cwd, { timeoutMs: options.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS });
 }
 
 /**
- * Run a `gh` command and return stdout, surfacing failures as a clean Error with
- * gh's stderr message. Use for user-initiated actions (reads and writes alike)
- * where the failure reason should reach the user, unlike the passive PR-context
- * adapters that degrade to empty.
+ * Run a `gh` command without a default deadline and surface failures cleanly.
+ * Non-idempotent mutations must not be timed out: GitHub may have accepted the
+ * write before the local process is killed, making a retry duplicate the action.
  */
-export async function ghOrThrow(
+export async function ghWriteOrThrow(args: string[], cwd: string): Promise<string> {
+	try {
+		return await execGh(args, cwd, {});
+	} catch (err) {
+		throw new Error(ghErrorMessage(err));
+	}
+}
+
+/** Run a read-only `gh` command with a bounded deadline while preserving its failure reason. */
+export async function ghReadOrThrow(
 	args: string[],
 	cwd: string,
 	options: GhExecOptions = {},

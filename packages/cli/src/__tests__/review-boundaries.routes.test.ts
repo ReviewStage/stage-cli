@@ -112,5 +112,6 @@ describe("review API — GitHub boundaries", () => {
 
 		expect(res.status).toBe(400);
 		expect(JSON.parse(res.body).error).toMatch(/pending comment/i);
+		expect(await harness.logLines()).not.toContainEqual(expect.stringMatching(/^edit-comment/));
 	});
 });

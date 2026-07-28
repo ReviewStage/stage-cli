@@ -35,11 +35,11 @@ describe("review API — writes", () => {
 
 		expect(res.status, res.body).toBe(200);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
-		expect(
-			(await harness.logLines()).some((line) =>
-				new RegExp(`^create-review .*commitOID=${HEAD}`).test(line),
-			),
-		).toBe(true);
+		const createReviewLogs = (await harness.logLines()).filter((line) =>
+			line.startsWith("create-review"),
+		);
+		expect(createReviewLogs).toHaveLength(1);
+		expect(createReviewLogs[0]).toContain(`commitOID=${HEAD}`);
 	});
 
 	it("creates a pending PR comment without storing it locally", async () => {

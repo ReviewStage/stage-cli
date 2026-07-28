@@ -1,6 +1,6 @@
 import type { ReviewEvent } from "@stagereview/types/review";
 import { z } from "zod";
-import { ghOrThrow } from "./exec.js";
+import { ghReadOrThrow, ghWriteOrThrow } from "./exec.js";
 import type { GitHubRepo } from "./repo.js";
 
 /**
@@ -249,7 +249,7 @@ export async function getReview(
 			`number=${prNumber}`,
 		];
 		if (cursor !== null) args.push("-f", `cursor=${cursor}`);
-		const parsed = ReviewQuerySchema.safeParse(JSON.parse(await ghOrThrow(args, repoRoot)));
+		const parsed = ReviewQuerySchema.safeParse(JSON.parse(await ghReadOrThrow(args, repoRoot)));
 		if (!parsed.success) throw new Error("Unexpected response shape from GitHub review query");
 		const pr = parsed.data.data.repository?.pullRequest;
 		if (!pr) break;
@@ -323,7 +323,7 @@ async function getPullRequestMergeBase(
 	baseRefOid: string,
 	headRefOid: string,
 ): Promise<string> {
-	const stdout = await ghOrThrow(
+	const stdout = await ghReadOrThrow(
 		["api", `repos/${repo.owner}/${repo.repo}/compare/${baseRefOid}...${headRefOid}`],
 		repoRoot,
 	);
@@ -377,7 +377,7 @@ async function loadReviewThreadComments(
 				`cursor=${cursor}`,
 			];
 			const parsed = ReviewThreadCommentsQuerySchema.safeParse(
-				JSON.parse(await ghOrThrow(args, repoRoot)),
+				JSON.parse(await ghReadOrThrow(args, repoRoot)),
 			);
 			if (!parsed.success || parsed.data.data.node === null) {
 				throw new Error("Unexpected response shape from GitHub review comments query");
@@ -492,7 +492,7 @@ export async function createPendingReview(
 	pullRequestNodeId: string,
 	commitOid: string,
 ): Promise<string> {
-	const stdout = await ghOrThrow(
+	const stdout = await ghWriteOrThrow(
 		gqlArgs(CREATE_PENDING_REVIEW, { pullRequestId: pullRequestNodeId, commitOID: commitOid }),
 		repoRoot,
 	);
@@ -532,7 +532,7 @@ export async function addReviewThread(
 	repoRoot: string,
 	input: AddReviewThreadInput,
 ): Promise<AddedReviewThread> {
-	const stdout = await ghOrThrow(
+	const stdout = await ghWriteOrThrow(
 		gqlArgs(ADD_REVIEW_THREAD, {
 			pullRequestId: input.pullRequestNodeId,
 			reviewId: input.reviewNodeId,
@@ -558,7 +558,7 @@ export async function addReviewReply(
 	body: string,
 	reviewNodeId: string | null,
 ): Promise<void> {
-	await ghOrThrow(
+	await ghWriteOrThrow(
 		gqlArgs(ADD_REVIEW_REPLY, { threadId: threadNodeId, reviewId: reviewNodeId, body }),
 		repoRoot,
 	);
@@ -570,12 +570,15 @@ export async function updateReviewComment(
 	commentNodeId: string,
 	body: string,
 ): Promise<void> {
-	await ghOrThrow(gqlArgs(UPDATE_REVIEW_COMMENT, { commentId: commentNodeId, body }), repoRoot);
+	await ghWriteOrThrow(
+		gqlArgs(UPDATE_REVIEW_COMMENT, { commentId: commentNodeId, body }),
+		repoRoot,
+	);
 }
 
 /** Delete a review comment by node id (used for pending comments). */
 export async function deleteReviewComment(repoRoot: string, commentNodeId: string): Promise<void> {
-	await ghOrThrow(gqlArgs(DELETE_REVIEW_COMMENT, { commentId: commentNodeId }), repoRoot);
+	await ghWriteOrThrow(gqlArgs(DELETE_REVIEW_COMMENT, { commentId: commentNodeId }), repoRoot);
 }
 
 /** Submit the pending review with the chosen event (Comment / Approve / Request changes). */
@@ -586,7 +589,7 @@ export async function submitReview(
 	event: ReviewEvent,
 	body: string,
 ): Promise<void> {
-	await ghOrThrow(
+	await ghWriteOrThrow(
 		gqlArgs(SUBMIT_REVIEW, {
 			pullRequestId: pullRequestNodeId,
 			reviewId: reviewNodeId,
@@ -599,7 +602,7 @@ export async function submitReview(
 
 /** Throw away the pending review and all its draft comments. */
 export async function discardReview(repoRoot: string, reviewNodeId: string): Promise<void> {
-	await ghOrThrow(gqlArgs(DISCARD_REVIEW, { reviewId: reviewNodeId }), repoRoot);
+	await ghWriteOrThrow(gqlArgs(DISCARD_REVIEW, { reviewId: reviewNodeId }), repoRoot);
 }
 
 /** Resolve or reopen a review thread by its node id. */
@@ -608,7 +611,7 @@ export async function setThreadResolved(
 	threadNodeId: string,
 	resolved: boolean,
 ): Promise<void> {
-	await ghOrThrow(
+	await ghWriteOrThrow(
 		gqlArgs(resolved ? RESOLVE_THREAD : UNRESOLVE_THREAD, { threadId: threadNodeId }),
 		repoRoot,
 	);

@@ -16,7 +16,7 @@ import {
 	type ReviewerStatus,
 } from "@stagereview/types/pull-request";
 import { z } from "zod";
-import { gh, ghOrThrow } from "./exec.js";
+import { gh, ghReadOrThrow } from "./exec.js";
 import { type GitHubRepo, parseGitHubRepo } from "./repo.js";
 
 // ─── Pull request ─────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ export async function getPullRequestOrThrow(
 		prNumber === null
 			? ["pr", "view", "--json", PR_FIELDS.join(",")]
 			: ["pr", "view", String(prNumber), "--json", PR_FIELDS.join(",")];
-	const stdout = await ghOrThrow(viewArgs, repoRoot);
+	const stdout = await ghReadOrThrow(viewArgs, repoRoot);
 	const parsed = GhPullRequestSchema.safeParse(JSON.parse(stdout));
 	if (!parsed.success) {
 		throw new Error(`Unexpected response shape from GitHub pull request lookup: ${parsed.error}`);
