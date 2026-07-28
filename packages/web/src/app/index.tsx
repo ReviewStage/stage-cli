@@ -8,7 +8,7 @@ export const Route = createFileRoute("/")({
 function NoRunSelected() {
 	return (
 		<>
-			<Topbar runId={null} />
+			<Topbar />
 			<div className="flex flex-1 items-center justify-center p-6">
 				<div className="max-w-md text-center">
 					<h1 className="font-semibold text-lg">No run selected</h1>

@@ -1,24 +1,14 @@
-import { ExternalLink } from "lucide-react";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
-import { Button } from "@/components/ui/button";
-import { useChapters } from "@/lib/use-chapters";
+import { StageMark } from "@/components/shared/stage-mark";
 
-export function Topbar({ runId }: { runId: string | null }) {
-	const { data } = useChapters(runId);
-	const repoName = data?.run.repoName;
-
+export function Topbar() {
 	return (
 		<header className="sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between border-border border-b bg-background px-6 lg:px-8">
-			<div className="flex min-w-0 items-center gap-2 text-sm">
-				{repoName && <span className="truncate font-medium text-foreground">{repoName}</span>}
+			<div className="flex min-w-0 items-center gap-2.5 text-sm">
+				<StageMark className="shrink-0" size={18} />
+				<span className="font-medium text-foreground">Stage</span>
 			</div>
-			<div className="flex shrink-0 items-center gap-2">
-				<Button asChild variant="outline" size="sm">
-					<a href="https://stagereview.app" target="_blank" rel="noopener noreferrer">
-						Try the full Stage experience
-						<ExternalLink />
-					</a>
-				</Button>
+			<div className="flex shrink-0 items-center">
 				<ThemeToggle />
 			</div>
 		</header>
