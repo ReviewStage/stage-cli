@@ -135,6 +135,7 @@ interface GhShimOptions {
 	addThreadDelayMs?: number;
 	failAddThread?: boolean;
 	failAddReply?: boolean;
+	failDeleteComment?: boolean;
 	failResolve?: boolean;
 	persistCreatedReview?: boolean;
 	reviewQueryDelayMs?: number;
@@ -231,6 +232,7 @@ if (query.includes("query GetReview")) {
   emit({ data: { resolveReviewThread: { thread: { id: "THREAD_new" } } } });
 } else if (query.includes("mutation DeleteReviewComment")) {
   fs.appendFileSync(log, "delete-comment\\n");
+  if (${options.failDeleteComment ? "true" : "false"}) { process.stderr.write("gh: delete failed\\n"); process.exit(1); }
   emit({ data: { deletePullRequestReviewComment: { pullRequestReviewComment: { id: "COMMENT_new" } } } });
 } else if (query.includes("mutation UpdateReviewComment")) {
   fs.appendFileSync(log, "edit-comment " + fields + "\\n");

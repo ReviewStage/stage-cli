@@ -6,7 +6,11 @@ import {
 	THREAD_SOURCE,
 } from "@stagereview/types/review";
 import { describe, expect, it } from "vitest";
-import { canPublishReplyImmediately, threadChevronClassName } from "../review-thread";
+import {
+	canPublishReplyImmediately,
+	deleteRemovesReplies,
+	threadChevronClassName,
+} from "../review-thread";
 
 describe("thread chevron", () => {
 	it("tracks the controlled collapsible state instead of a shared data-state attribute", () => {
@@ -56,6 +60,17 @@ describe("review thread source invariants", () => {
 				threadNodeId: "THREAD_github",
 			}).success,
 		).toBe(false);
+	});
+});
+
+describe("deleteRemovesReplies", () => {
+	it("warns for a pending GitHub root but not its reply", () => {
+		const thread = makeThread([COMMENT_STATE.PENDING, COMMENT_STATE.PENDING]);
+		const [root, reply] = thread.comments;
+		if (!root || !reply) throw new Error("Expected a root and reply");
+
+		expect(deleteRemovesReplies(thread, root)).toBe(true);
+		expect(deleteRemovesReplies(thread, reply)).toBe(false);
 	});
 });
 

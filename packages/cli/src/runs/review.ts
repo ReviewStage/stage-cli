@@ -388,7 +388,10 @@ async function promoteLocalThread(
 			} catch {}
 		}
 		if (created && reviewNodeId !== null) {
-			await discardReview(run.repoRoot, reviewNodeId).catch(() => {});
+			try {
+				await discardReview(run.repoRoot, reviewNodeId);
+				remoteRolledBack = true;
+			} catch {}
 		}
 		if (wasUnassigned && remoteRolledBack) {
 			db.update(commentThread)

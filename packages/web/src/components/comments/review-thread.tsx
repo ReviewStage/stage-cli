@@ -79,6 +79,10 @@ export function canPublishReplyImmediately(thread: ReviewThread): boolean {
 	return thread.comments.some((comment) => comment.state === COMMENT_STATE.SUBMITTED);
 }
 
+export function deleteRemovesReplies(thread: ReviewThread, comment: ReviewComment): boolean {
+	return thread.comments.length > 1 && thread.comments[0]?.id === comment.id;
+}
+
 export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	const review = useReviewContext();
 	const isGitHub = thread.source === THREAD_SOURCE.GITHUB;
@@ -179,7 +183,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 		}
 	}
 
-	const rootIsDeletableThread = root.state === COMMENT_STATE.LOCAL && replies.length > 0;
+	const rootDeleteRemovesReplies = deleteRemovesReplies(thread, root);
 
 	return (
 		<Collapsible open={isOpen} onOpenChange={handleOpenChange}>
@@ -250,7 +254,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 										setEditingId(root.id);
 									}}
 									onDelete={() => setDeleteTarget(root)}
-									deleteLabel={rootIsDeletableThread ? "Delete thread" : "Delete"}
+									deleteLabel={rootDeleteRemovesReplies ? "Delete thread" : "Delete"}
 								/>
 							)}
 						</div>
@@ -343,7 +347,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 
 			<DeleteDialog
 				target={deleteTarget}
-				isThread={rootIsDeletableThread && deleteTarget?.id === root.id}
+				isThread={deleteTarget !== null && deleteRemovesReplies(thread, deleteTarget)}
 				onCancel={() => setDeleteTarget(null)}
 				onConfirm={confirmDelete}
 			/>

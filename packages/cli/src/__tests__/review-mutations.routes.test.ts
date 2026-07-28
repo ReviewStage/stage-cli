@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { REVIEW_QUERY_RESULT, ReviewRouteHarness } from "./review-test-harness.js";
+import { commentThread } from "../db/schema/index.js";
+import { EMPTY_REVIEW, REVIEW_QUERY_RESULT, ReviewRouteHarness } from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
 
@@ -81,5 +82,23 @@ describe("review API — GitHub mutations", () => {
 
 		expect(res.status).toBe(200);
 		expect(await harness.logLines()).toContain("resolve-thread");
+	});
+
+	it("restores a legacy claim when discarding a fresh review completes rollback", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, { failAddReply: true, failDeleteComment: true });
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ repoRoot: "", withReply: true });
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/add`,
+			{ localThreadId },
+		);
+		const [thread] = harness.db.select().from(commentThread).all();
+
+		expect(res.status).toBe(500);
+		expect(await harness.logLines()).toContain("discard-review");
+		expect(thread?.repoRoot).toBe("");
 	});
 });
