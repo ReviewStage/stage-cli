@@ -8,7 +8,7 @@ import {
 	type ReviewThread as ReviewThreadDto,
 	THREAD_SOURCE,
 } from "@stagereview/types/review";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { type ChapterRunRow, comment, commentThread } from "../db/schema/index.js";
 import { type GitHubRepo, getPullRequest, parseGitHubRepo } from "../github/index.js";
@@ -75,11 +75,16 @@ function assertPushable(run: ChapterRunRow, review: GitHubReview): void {
 
 // ─── Read: merged local + GitHub review ─────────────────────────────────────────
 
-function loadLocalThreads(db: StageDb, scopeKey: string): ReviewThreadDto[] {
+function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 	const threads = db
 		.select()
 		.from(commentThread)
-		.where(eq(commentThread.scopeKey, scopeKey))
+		.where(
+			and(
+				eq(commentThread.repoRoot, run.repoRoot),
+				eq(commentThread.scopeKey, deriveScopeKey(run)),
+			),
+		)
 		.orderBy(asc(commentThread.createdAt))
 		.all();
 	return threads.map((thread): ReviewThreadDto => {
@@ -148,7 +153,7 @@ function toGitHubThreadDto(t: GitHubReviewThread): ReviewThreadDto {
  * rendering, so it never blanks the review.
  */
 export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<ReviewResponse> {
-	const localThreads = loadLocalThreads(db, deriveScopeKey(run));
+	const localThreads = loadLocalThreads(db, run);
 	const base = {
 		threads: localThreads,
 		pendingComments: [],
@@ -316,6 +321,9 @@ async function promoteLocalThread(
 		.limit(1)
 		.all();
 	if (!thread) throw new ReviewError(`Thread ${localThreadId} not found`, 404);
+	if (thread.repoRoot !== run.repoRoot) {
+		throw new ReviewError("This comment belongs to another repository.", 400);
+	}
 	// The thread must belong to this run's diff scope; its anchor was computed
 	// against that diff, so promoting one from another scope would mis-anchor.
 	if (thread.scopeKey !== deriveScopeKey(run)) {
@@ -348,26 +356,22 @@ async function promoteLocalThread(
 			startLine,
 			startSide: startLine !== null ? side : null,
 		});
+		for (const reply of comments.slice(1)) {
+			await addReviewReply(run.repoRoot, addedThread.threadNodeId, reply.body, reviewNodeId);
+		}
 		if (thread.resolvedAt !== null) {
 			await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
 		}
 	} catch (err) {
-		// Roll back a newly-created remote root if preserving its resolved state failed.
+		// Deleting the remote root removes the partially-promoted GitHub thread,
+		// including replies, while the complete local thread remains available to retry.
 		if (addedThread !== null) {
 			await deleteReviewComment(run.repoRoot, addedThread.rootCommentNodeId).catch(() => {});
 		}
 		if (created) await discardReview(run.repoRoot, reviewNodeId).catch(() => {});
 		throw err;
 	}
-	// Delete each local comment only once its GitHub counterpart lands, so a failure
-	// part-way never loses an unposted comment (the leftover replies stay local) and
-	// never leaves the already-promoted root behind to be re-promoted as a duplicate.
-	db.delete(comment).where(eq(comment.id, root.id)).run();
-	for (const reply of comments.slice(1)) {
-		await addReviewReply(run.repoRoot, addedThread.threadNodeId, reply.body, reviewNodeId);
-		db.delete(comment).where(eq(comment.id, reply.id)).run();
-	}
-	// Every comment promoted — drop the now-empty local thread.
+	// Every comment landed remotely; the cascade removes all local comment rows.
 	db.delete(commentThread).where(eq(commentThread.id, localThreadId)).run();
 }
 

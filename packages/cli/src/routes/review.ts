@@ -35,8 +35,10 @@ export function reviewRoutes(db: StageDb): Route[] {
 		{
 			method: "GET",
 			pattern: "/api/runs/:runId/review",
-			handler: (_req, res, params) =>
-				withRun(db, params.runId, res, (run) => getReviewForRun(db, run)),
+			handler: (req, res, params) =>
+				withRun(db, params.runId, res, (run) => getReviewForRun(db, run), {
+					sameOrigin: req,
+				}),
 		},
 		{
 			method: "POST",
@@ -131,7 +133,7 @@ async function respond(res: Res, action: () => Promise<unknown>): Promise<void> 
 	}
 }
 
-/** GET-style handler: load the run and run the action. Pass `sameOrigin` to also guard a write. */
+/** Load the run and execute an action, optionally protecting sensitive data or a mutation. */
 async function withRun(
 	db: StageDb,
 	runId: string | undefined,

@@ -14,6 +14,21 @@ afterEach(async () => {
 });
 
 describe("review API — read", () => {
+	it("rejects a cross-origin request for private draft review content", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT);
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"GET",
+			`/api/runs/${runId}/review`,
+			undefined,
+			{ Origin: "https://evil.example" },
+		);
+
+		expect(res.status).toBe(403);
+	});
+
 	it("returns local-only when the run has no GitHub remote", async () => {
 		const runId = harness.insertRun({ originUrl: null });
 		harness.seedLocalThread();

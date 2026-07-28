@@ -5,7 +5,7 @@ import {
 	CreateCommentThreadBodySchema,
 	ResolveThreadBodySchema,
 } from "@stagereview/types/comments";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { LOCAL_USER_ID } from "../db/local-user.js";
 import {
@@ -22,18 +22,18 @@ import { enforceSameOrigin } from "./pull-request-shared.js";
 
 export function commentRoutes(db: StageDb): Route[] {
 	return [
-		// Threads are anchored to a diff scope, not a run, so they survive re-imports
-		// of the same diff. We resolve the run's scope key and key every query off it.
+		// Threads are anchored to a repository + diff scope, not a run, so they
+		// survive re-imports without crossing into a fork that shares the same SHAs.
 		{
 			method: "GET",
 			pattern: "/api/runs/:runId/comment-threads",
 			handler: (_req, res, params) => {
-				const scopeKey = resolveRunScopeKey(db, params.runId);
-				if (scopeKey === null) {
+				const scope = resolveRunScope(db, params.runId);
+				if (scope === null) {
 					writeJson(res, 404, { error: `Run ${params.runId} not found` });
 					return;
 				}
-				writeJson(res, 200, listThreads(db, scopeKey));
+				writeJson(res, 200, listThreads(db, scope));
 			},
 		},
 		{
@@ -41,8 +41,8 @@ export function commentRoutes(db: StageDb): Route[] {
 			pattern: "/api/runs/:runId/comment-threads",
 			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
-				const scopeKey = resolveRunScopeKey(db, params.runId);
-				if (scopeKey === null) {
+				const scope = resolveRunScope(db, params.runId);
+				if (scope === null) {
 					writeJson(res, 404, { error: `Run ${params.runId} not found` });
 					return;
 				}
@@ -53,7 +53,8 @@ export function commentRoutes(db: StageDb): Route[] {
 					const [threadRow] = tx
 						.insert(commentThread)
 						.values({
-							scopeKey,
+							repoRoot: scope.repoRoot,
+							scopeKey: scope.scopeKey,
 							filePath: body.filePath,
 							side: body.side,
 							startLine: body.startLine,
@@ -210,10 +211,16 @@ export function commentRoutes(db: StageDb): Route[] {
 	];
 }
 
-function resolveRunScopeKey(db: StageDb, runId: string | undefined): string | null {
+interface RunScope {
+	repoRoot: string;
+	scopeKey: string;
+}
+
+function resolveRunScope(db: StageDb, runId: string | undefined): RunScope | null {
 	if (!runId) return null;
 	const [run] = db
 		.select({
+			repoRoot: chapterRun.repoRoot,
 			scopeKind: chapterRun.scopeKind,
 			workingTreeRef: chapterRun.workingTreeRef,
 			baseSha: chapterRun.baseSha,
@@ -225,14 +232,16 @@ function resolveRunScopeKey(db: StageDb, runId: string | undefined): string | nu
 		.limit(1)
 		.all();
 	if (!run) return null;
-	return deriveScopeKey(run);
+	return { repoRoot: run.repoRoot, scopeKey: deriveScopeKey(run) };
 }
 
-function listThreads(db: StageDb, scopeKey: string): CommentThreadDto[] {
+function listThreads(db: StageDb, scope: RunScope): CommentThreadDto[] {
 	const threads = db
 		.select()
 		.from(commentThread)
-		.where(eq(commentThread.scopeKey, scopeKey))
+		.where(
+			and(eq(commentThread.repoRoot, scope.repoRoot), eq(commentThread.scopeKey, scope.scopeKey)),
+		)
 		.orderBy(asc(commentThread.createdAt))
 		.all();
 	if (threads.length === 0) return [];

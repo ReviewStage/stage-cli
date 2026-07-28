@@ -109,4 +109,22 @@ describe("review API — writes", () => {
 			error: expect.stringMatching(/committed diff/i),
 		});
 	});
+
+	it("rejects a local thread from another repository with the same diff", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW);
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ repoRoot: "/other/repository" });
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/add`,
+			{ localThreadId },
+		);
+
+		expect(res.status).toBe(400);
+		expect(JSON.parse(res.body)).toEqual({
+			error: expect.stringMatching(/repository/i),
+		});
+	});
 });

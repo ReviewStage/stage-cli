@@ -116,7 +116,7 @@ describe("review API — recovery and concurrency", () => {
 		expect((await harness.logLines()).filter((line) => line === "discard-review")).toHaveLength(1);
 	});
 
-	it("keeps an unposted reply local after promotion fails", async () => {
+	it("rolls back the remote root and keeps the whole local thread when a reply fails", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW, { failAddReply: true });
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ withReply: true });
@@ -131,13 +131,14 @@ describe("review API — recovery and concurrency", () => {
 		);
 
 		expect(res.status).toBe(500);
+		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(1);
 		expect(
 			harness.db
 				.select()
 				.from(comment)
 				.all()
 				.map((row) => row.body),
-		).toEqual(["Reply"]);
+		).toEqual(["Root", "Reply"]);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(1);
 	});
 });

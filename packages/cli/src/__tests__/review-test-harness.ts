@@ -124,11 +124,13 @@ interface InsertRunOptions {
 	originUrl?: string | null;
 	committed?: boolean;
 	headSha?: string;
+	repoRoot?: string;
 }
 
 interface SeedThreadOptions {
 	withReply?: boolean;
 	resolved?: boolean;
+	repoRoot?: string;
 }
 
 export class ReviewRouteHarness {
@@ -209,6 +211,9 @@ if (query.includes("query GetReview")) {
 } else if (query.includes("mutation DeleteReviewComment")) {
   fs.appendFileSync(log, "delete-comment\\n");
   emit({ data: { deletePullRequestReviewComment: { pullRequestReviewComment: { id: "COMMENT_new" } } } });
+} else if (query.includes("mutation UpdateReviewComment")) {
+  fs.appendFileSync(log, "edit-comment " + fields + "\\n");
+  emit({ data: { updatePullRequestReviewComment: { pullRequestReviewComment: { id: "COMMENT_new" } } } });
 } else if (query.includes("mutation DiscardReview")) {
   fs.appendFileSync(log, "discard-review\\n");
   emit({ data: { deletePullRequestReview: { pullRequestReview: { id: "REVIEW_new" } } } });
@@ -238,7 +243,7 @@ if (query.includes("query GetReview")) {
 		const [row] = this.db
 			.insert(chapterRun)
 			.values({
-				repoRoot: this.repoRoot,
+				repoRoot: options.repoRoot ?? this.repoRoot,
 				originUrl,
 				prNumber: 5,
 				scopeKind: committed ? SCOPE_KIND.COMMITTED : SCOPE_KIND.WORKING_TREE,
@@ -258,6 +263,7 @@ if (query.includes("query GetReview")) {
 		const [thread] = this.db
 			.insert(commentThread)
 			.values({
+				repoRoot: options.repoRoot ?? this.repoRoot,
 				scopeKey: SCOPE_KEY,
 				filePath: "src/foo.ts",
 				side: "additions",
@@ -292,6 +298,7 @@ if (query.includes("query GetReview")) {
 		method: string,
 		requestPath: string,
 		body?: unknown,
+		headers: Record<string, string> = {},
 	): Promise<{ status: number; body: string }> {
 		return new Promise((resolve, reject) => {
 			const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -304,8 +311,9 @@ if (query.includes("query GetReview")) {
 					agent: false,
 					headers:
 						payload === undefined
-							? {}
+							? headers
 							: {
+									...headers,
 									"Content-Type": "application/json",
 									"Content-Length": Buffer.byteLength(payload),
 								},
