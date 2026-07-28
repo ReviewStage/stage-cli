@@ -48,3 +48,6 @@ export class ReviewActionQueue {
 		}
 	}
 }
+
+/** Shared queue for every review and local-comment mutation in this process. */
+export const reviewActions = new ReviewActionQueue();

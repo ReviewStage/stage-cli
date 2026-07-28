@@ -96,6 +96,17 @@ const GqlReviewCommentsPageSchema = z.object({
 	nodes: z.array(GqlReviewCommentSchema),
 });
 
+const GqlReviewThreadSchema = z.object({
+	id: z.string(),
+	isResolved: z.boolean(),
+	path: z.string(),
+	line: z.number().nullable(),
+	startLine: z.number().nullable(),
+	diffSide: z.enum(GITHUB_DIFF_SIDE),
+	startDiffSide: z.enum(GITHUB_DIFF_SIDE).nullable(),
+	comments: GqlReviewCommentsPageSchema,
+});
+
 const ReviewQuerySchema = z.object({
 	data: z.object({
 		repository: z
@@ -110,18 +121,7 @@ const ReviewQuerySchema = z.object({
 						}),
 						reviewThreads: z.object({
 							pageInfo: GqlPageInfoSchema,
-							nodes: z.array(
-								z.object({
-									id: z.string(),
-									isResolved: z.boolean(),
-									path: z.string(),
-									line: z.number().nullable(),
-									startLine: z.number().nullable(),
-									diffSide: z.enum(GITHUB_DIFF_SIDE),
-									startDiffSide: z.enum(GITHUB_DIFF_SIDE).nullable(),
-									comments: GqlReviewCommentsPageSchema,
-								}),
-							),
+							nodes: z.array(GqlReviewThreadSchema),
 						}),
 					})
 					.nullable(),
@@ -191,6 +191,7 @@ export interface PendingReviewComment {
 }
 
 const PENDING_STATE = "PENDING";
+const THREAD_COMMENT_LOAD_CONCURRENCY = 5;
 
 /**
  * The PR's review threads (pending + submitted) as the viewer sees them, plus the
@@ -239,12 +240,7 @@ export async function getReview(
 		pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
 		pendingReviewBody = pr.reviews.nodes[0]?.body ?? "";
 
-		const nodesWithComments = await Promise.all(
-			pr.reviewThreads.nodes.map(async (node) => ({
-				node,
-				comments: await loadReviewThreadComments(repoRoot, node.id, node.comments),
-			})),
-		);
+		const nodesWithComments = await loadThreadCommentsInBatches(repoRoot, pr.reviewThreads.nodes);
 		for (const { node, comments } of nodesWithComments) {
 			// Count pending (draft) comments across every thread, including outdated/whole-file
 			// ones dropped below — so the tray count and the empty-review check don't undercount.
@@ -291,6 +287,33 @@ export async function getReview(
 	};
 }
 
+async function loadThreadCommentsInBatches(
+	repoRoot: string,
+	nodes: z.infer<typeof GqlReviewThreadSchema>[],
+): Promise<
+	{
+		node: z.infer<typeof GqlReviewThreadSchema>;
+		comments: z.infer<typeof GqlReviewCommentSchema>[];
+	}[]
+> {
+	const loaded: {
+		node: z.infer<typeof GqlReviewThreadSchema>;
+		comments: z.infer<typeof GqlReviewCommentSchema>[];
+	}[] = [];
+	for (let start = 0; start < nodes.length; start += THREAD_COMMENT_LOAD_CONCURRENCY) {
+		const batch = nodes.slice(start, start + THREAD_COMMENT_LOAD_CONCURRENCY);
+		loaded.push(
+			...(await Promise.all(
+				batch.map(async (node) => ({
+					node,
+					comments: await loadReviewThreadComments(repoRoot, node.id, node.comments),
+				})),
+			)),
+		);
+	}
+	return loaded;
+}
+
 async function loadReviewThreadComments(
 	repoRoot: string,
 	threadNodeId: string,
@@ -299,25 +322,33 @@ async function loadReviewThreadComments(
 	const comments = [...firstPage.nodes];
 	let cursor = nextCursor(firstPage.pageInfo);
 	while (cursor !== null) {
-		const args = [
-			"api",
-			"graphql",
-			"-f",
-			`query=${REVIEW_THREAD_COMMENTS_QUERY}`,
-			"-f",
-			`threadId=${threadNodeId}`,
-			"-f",
-			`cursor=${cursor}`,
-		];
-		const parsed = ReviewThreadCommentsQuerySchema.safeParse(
-			JSON.parse(await ghOrThrow(args, repoRoot)),
-		);
-		if (!parsed.success || parsed.data.data.node === null) {
-			throw new Error("Unexpected response shape from GitHub review comments query");
+		try {
+			const args = [
+				"api",
+				"graphql",
+				"-f",
+				`query=${REVIEW_THREAD_COMMENTS_QUERY}`,
+				"-f",
+				`threadId=${threadNodeId}`,
+				"-f",
+				`cursor=${cursor}`,
+			];
+			const parsed = ReviewThreadCommentsQuerySchema.safeParse(
+				JSON.parse(await ghOrThrow(args, repoRoot)),
+			);
+			if (!parsed.success || parsed.data.data.node === null) {
+				throw new Error("Unexpected response shape from GitHub review comments query");
+			}
+			const page = parsed.data.data.node.comments;
+			comments.push(...page.nodes);
+			cursor = nextCursor(page.pageInfo);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			process.stderr.write(
+				`Failed to load all comments for GitHub review thread ${threadNodeId}: ${message}\n`,
+			);
+			break;
 		}
-		const page = parsed.data.data.node.comments;
-		comments.push(...page.nodes);
-		cursor = nextCursor(page.pageInfo);
 	}
 	return comments;
 }

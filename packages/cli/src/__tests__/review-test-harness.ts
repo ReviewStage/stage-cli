@@ -155,6 +155,7 @@ interface GhShimOptions {
 	failAddReply?: boolean;
 	failDeleteComment?: boolean;
 	failResolve?: boolean;
+	failThreadComments?: boolean;
 	persistCreatedReview?: boolean;
 	reviewQueryDelayMs?: number;
 }
@@ -224,6 +225,7 @@ function emit(o) { process.stdout.write(JSON.stringify(o)); }
 function sleep(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 if (query.includes("query GetReviewThreadComments")) {
   fs.appendFileSync(log, "get-thread-comments\\n");
+  if (${options.failThreadComments ? "true" : "false"}) { process.stderr.write("gh: follow-up page failed\\n"); process.exit(1); }
   emit({ data: { node: { comments: {
     pageInfo: { hasNextPage: false, endCursor: null },
     nodes: [{
@@ -288,7 +290,10 @@ if (query.includes("query GetReviewThreadComments")) {
 	}
 
 	async writeFailingGhShim(): Promise<void> {
-		await fs.writeFile(path.join(this.binDir, "gh"), "#!/bin/sh\nexit 1\n");
+		await fs.writeFile(
+			path.join(this.binDir, "gh"),
+			"#!/bin/sh\nprintf 'gh: authentication required\\n' >&2\nexit 1\n",
+		);
 		await fs.chmod(path.join(this.binDir, "gh"), 0o755);
 	}
 
@@ -342,7 +347,7 @@ if (query.includes("query GetReviewThreadComments")) {
 	async start(): Promise<number> {
 		const handle = await startServer({
 			webDistPath: this.webDist,
-			routes: [...commentRoutes(this.db), ...reviewRoutes(this.db)],
+			routes: [...commentRoutes(this.db, this.repoRoot), ...reviewRoutes(this.db)],
 		});
 		this.handles.push(handle);
 		return handle.port;

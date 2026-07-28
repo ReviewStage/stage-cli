@@ -12,6 +12,8 @@ export interface CommentDraft {
 /** A draft plus the last submit error for its composer (null while clean). */
 export interface DraftState extends CommentDraft {
 	error: string | null;
+	/** Whether this composer offered GitHub as a destination when it opened. */
+	canPushToReview: boolean;
 }
 
 /**
@@ -66,9 +68,13 @@ export function findDraftAt(
  * `startLine` (a re-drag that shares the end line but widens/narrows the span) and
  * clears any stale submit error.
  */
-export function upsertDraft(drafts: readonly DraftState[], anchor: CommentDraft): DraftState[] {
+export function upsertDraft(
+	drafts: readonly DraftState[],
+	anchor: CommentDraft,
+	canPushToReview: boolean,
+): DraftState[] {
 	if (!findDraftAt(drafts, anchor.side, anchor.endLine)) {
-		return [...drafts, { ...anchor, error: null }];
+		return [...drafts, { ...anchor, error: null, canPushToReview }];
 	}
 	return drafts.map((draft) =>
 		isSameAnchor(draft, anchor.side, anchor.endLine)

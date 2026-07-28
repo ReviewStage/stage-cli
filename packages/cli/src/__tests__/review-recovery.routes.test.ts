@@ -1,6 +1,8 @@
 import { ReviewResponseSchema } from "@stagereview/types/review";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { comment, commentThread } from "../db/schema/index.js";
+import { ReviewActionQueue } from "../runs/review-action-queue.js";
 import {
 	EMPTY_REVIEW,
 	makeAnchorlessPendingReview,
@@ -183,5 +185,47 @@ describe("review API — recovery and concurrency", () => {
 
 		expect(reply.status).toBe(409);
 		expect((await promotion).status).toBe(200);
+	});
+
+	it("serializes a local reply with a lock held by another queue instance", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW);
+		const localThreadId = harness.seedLocalThread();
+		const [thread] = harness.db
+			.select({ repoRoot: commentThread.repoRoot })
+			.from(commentThread)
+			.where(eq(commentThread.id, localThreadId))
+			.limit(1)
+			.all();
+		if (!thread) throw new Error("seeded thread was not found");
+
+		let releaseLock: () => void = () => {
+			throw new Error("Local mutation gate was not initialized");
+		};
+		const gate = new Promise<void>((resolve) => {
+			releaseLock = resolve;
+		});
+		let lockHeld = false;
+		const blocker = new ReviewActionQueue().run(thread.repoRoot, async () => {
+			lockHeld = true;
+			await gate;
+		});
+		await expect.poll(() => lockHeld).toBe(true);
+
+		const reply = harness.request(
+			await harness.start(),
+			"POST",
+			`/api/comment-threads/${localThreadId}/replies`,
+			{ body: "Wait for the promotion lock" },
+		);
+		let replySettled = false;
+		void reply.then(() => {
+			replySettled = true;
+		});
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		expect(replySettled).toBe(false);
+
+		releaseLock();
+		expect((await reply).status).toBe(201);
+		await blocker;
 	});
 });

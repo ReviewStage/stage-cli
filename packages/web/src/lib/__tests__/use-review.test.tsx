@@ -146,7 +146,7 @@ describe("useReview", () => {
 	});
 
 	it("keeps a local write visible when the initial review fetch finishes later", async () => {
-		let resolveReview!: (response: Response) => void;
+		let resolveReview: ((response: Response) => void) | undefined;
 		const pendingReview = new Promise<Response>((resolve) => {
 			resolveReview = resolve;
 		});
@@ -179,6 +179,7 @@ describe("useReview", () => {
 			expect(result.current.threads.map((thread) => thread.id)).toEqual(["THREAD_local"]),
 		);
 
+		if (!resolveReview) throw new Error("Review response gate was not initialized");
 		resolveReview(jsonResponse(AVAILABLE_REVIEW));
 		await waitFor(() => expect(result.current.github).toBe("available"));
 		expect(result.current.threads.map((thread) => thread.id)).toEqual([

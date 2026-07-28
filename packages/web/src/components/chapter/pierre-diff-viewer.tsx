@@ -222,9 +222,12 @@ export function PierreDiffViewer({
 
 	// Open a composer at an anchor. A row holds at most one composer, so re-opening the
 	// same (side, endLine) adopts the new range's startLine rather than duplicating it.
-	const openDraft = useCallback((anchor: CommentDraft) => {
-		setDrafts((prev) => upsertDraft(prev, anchor));
-	}, []);
+	const openDraft = useCallback(
+		(anchor: CommentDraft) => {
+			setDrafts((prev) => upsertDraft(prev, anchor, canPushToReview));
+		},
+		[canPushToReview],
+	);
 
 	const closeDraft = useCallback((draft: CommentDraft) => {
 		clearDraftBody(draftBodiesRef.current, draft.side, draft.endLine);
@@ -232,7 +235,7 @@ export function PierreDiffViewer({
 	}, []);
 
 	const handleCreateComment = useCallback(
-		async (draft: CommentDraft, body: string, onPr: boolean) => {
+		async (draft: DraftState, body: string, onPr: boolean) => {
 			if (!filePath) return;
 			const setError = (error: string | null) =>
 				setDrafts((prev) =>
@@ -248,7 +251,7 @@ export function PierreDiffViewer({
 			};
 			try {
 				// "Comment on the PR" creates a pending GitHub comment; otherwise it stays local.
-				if (onPr && canPushToReview) await createPendingComment(anchor);
+				if (onPr && draft.canPushToReview) await createPendingComment(anchor);
 				else await createLocalThread(anchor);
 				closeDraft(draft);
 			} catch (err) {
@@ -256,7 +259,7 @@ export function PierreDiffViewer({
 				throw err; // keep the composer open with the body intact
 			}
 		},
-		[filePath, createLocalThread, createPendingComment, canPushToReview, closeDraft],
+		[filePath, createLocalThread, createPendingComment, closeDraft],
 	);
 
 	const handleThreadMouseEnter = useCallback((thread: CommentThread) => {
@@ -309,7 +312,7 @@ export function PierreDiffViewer({
 								writeDraftBody(draftBodiesRef.current, draft.side, draft.endLine, body)
 							}
 							destination={
-								canPushToReview
+								draft.canPushToReview
 									? {
 											toggleLabel: "Add to GitHub review",
 											on: {
@@ -336,14 +339,7 @@ export function PierreDiffViewer({
 				</div>
 			);
 		},
-		[
-			drafts,
-			canPushToReview,
-			handleCreateComment,
-			closeDraft,
-			handleThreadMouseEnter,
-			handleThreadMouseLeave,
-		],
+		[drafts, handleCreateComment, closeDraft, handleThreadMouseEnter, handleThreadMouseLeave],
 	);
 
 	const renderGutterUtility = useCallback(

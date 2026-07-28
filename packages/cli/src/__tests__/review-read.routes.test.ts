@@ -1,5 +1,5 @@
 import { ReviewResponseSchema } from "@stagereview/types/review";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	HEAD,
 	makePaginatedThreadReview,
@@ -15,6 +15,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	vi.restoreAllMocks();
 	await harness.teardown();
 });
 
@@ -83,7 +84,21 @@ describe("review API — read", () => {
 		expect(await harness.logLines()).toContain("get-thread-comments");
 	});
 
+	it("keeps first-page threads available when a follow-up comment page fails", async () => {
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		await harness.writeGhShim(makePaginatedThreadReview(), { failThreadComments: true });
+		const runId = harness.insertRun();
+
+		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
+		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
+
+		expect(review.github).toBe("available");
+		expect(review.threads[0]?.comments.map((comment) => comment.id)).toEqual(["COMMENT_sub"]);
+		expect(stderr).toHaveBeenCalledWith(expect.stringContaining("gh: follow-up page failed"));
+	});
+
 	it("keeps local threads visible when GitHub is offline", async () => {
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 		await harness.writeFailingGhShim();
 		const runId = harness.insertRun();
 		harness.seedLocalThread();
@@ -93,9 +108,11 @@ describe("review API — read", () => {
 		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
 		expect(review.github).toBe("offline");
 		expect(review.threads).toHaveLength(1);
+		expect(stderr).toHaveBeenCalledWith(expect.stringContaining("gh: authentication required"));
 	});
 
 	it("reports offline when the PR cannot be resolved", async () => {
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 		await harness.writeGhShim({ data: { repository: { pullRequest: null } } });
 		const runId = harness.insertRun();
 
@@ -104,6 +121,9 @@ describe("review API — read", () => {
 		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
 		expect(review.github).toBe("offline");
 		expect(review.canPushToReview).toBe(false);
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringContaining("Pull request not found on GitHub"),
+		);
 	});
 
 	it("hides GitHub threads when the run does not match the PR head", async () => {

@@ -37,7 +37,7 @@ afterEach(async () => {
 
 async function startWithRoutes(): Promise<ServerHandle> {
 	const db = getDb({ dbPath });
-	const handle = await startServer({ webDistPath: webDist, routes: commentRoutes(db) });
+	const handle = await startServer({ webDistPath: webDist, routes: commentRoutes(db, tmpDir) });
 	handles.push(handle);
 	return handle;
 }

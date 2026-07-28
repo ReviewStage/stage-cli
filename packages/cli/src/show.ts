@@ -30,13 +30,14 @@ import { LOOPBACK_HOST, startServer } from "./server.js";
 export async function show(jsonPath: string, options: DiffScopeOptions): Promise<void> {
 	const db = getDb();
 	const { chaptersFile, prNumber } = await buildChaptersFile(jsonPath, options);
-	const { runId } = insertChaptersFile(db, chaptersFile, readRepoContext(), prNumber);
+	const repoContext = readRepoContext();
+	const { runId } = insertChaptersFile(db, chaptersFile, repoContext, prNumber);
 
 	const handle = await startServer({
 		routes: [
 			...runRoutes(db),
 			...viewStateRoutes(db),
-			...commentRoutes(db),
+			...commentRoutes(db, repoContext.root),
 			...reviewRoutes(db),
 			...viewerRoutes(),
 			...diffRoutes(db),

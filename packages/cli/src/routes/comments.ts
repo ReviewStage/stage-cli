@@ -17,12 +17,13 @@ import {
 } from "../db/schema/index.js";
 import { type LocalThreadScope, loadLocalThreadRecords } from "../runs/local-comment-threads.js";
 import { isLocalThreadPromoting } from "../runs/review.js";
+import { reviewActions } from "../runs/review-action-queue.js";
 import { deriveScopeKey } from "../runs/scope-key.js";
 import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
 import { enforceSameOrigin } from "./pull-request-shared.js";
 
-export function commentRoutes(db: StageDb): Route[] {
+export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 	return [
 		// Threads are anchored to a repository + diff scope, not a run, so they
 		// survive re-imports without crossing into a fork that shares the same SHAs.
@@ -93,26 +94,28 @@ export function commentRoutes(db: StageDb): Route[] {
 					writeJson(res, 409, { error: "This comment thread is being added to the review." });
 					return;
 				}
-				if (!threadExists(db, threadId)) {
-					writeJson(res, 404, { error: `Thread ${threadId} not found` });
-					return;
-				}
 
-				const created = db.transaction((tx) => {
-					const [commentRow] = tx
-						.insert(comment)
-						.values({ threadId, authorId: LOCAL_USER_ID, body: body.body })
-						.returning()
-						.all();
-					if (!commentRow) throw new Error("comment insert returned no row");
-					// Bump the thread so its updatedAt reflects the latest activity.
-					tx.update(commentThread)
-						.set({ updatedAt: new Date() })
-						.where(eq(commentThread.id, threadId))
-						.run();
-					return toCommentDto(commentRow);
+				await reviewActions.run(repoRoot, async () => {
+					if (!threadExists(db, threadId)) {
+						writeJson(res, 404, { error: `Thread ${threadId} not found` });
+						return;
+					}
+					const created = db.transaction((tx) => {
+						const [commentRow] = tx
+							.insert(comment)
+							.values({ threadId, authorId: LOCAL_USER_ID, body: body.body })
+							.returning()
+							.all();
+						if (!commentRow) throw new Error("comment insert returned no row");
+						// Bump the thread so its updatedAt reflects the latest activity.
+						tx.update(commentThread)
+							.set({ updatedAt: new Date() })
+							.where(eq(commentThread.id, threadId))
+							.run();
+						return toCommentDto(commentRow);
+					});
+					writeJson(res, 201, created);
 				});
-				writeJson(res, 201, created);
 			},
 		},
 		{
@@ -134,23 +137,25 @@ export function commentRoutes(db: StageDb): Route[] {
 					return;
 				}
 
-				const [updated] = db
-					.update(commentThread)
-					.set({ resolvedAt: body.resolved ? new Date() : null })
-					.where(eq(commentThread.id, threadId))
-					.returning()
-					.all();
-				if (!updated) {
-					writeJson(res, 404, { error: `Thread ${threadId} not found` });
-					return;
-				}
-				writeJson(res, 200, toThreadDto(updated, threadComments(db, threadId)));
+				await reviewActions.run(repoRoot, async () => {
+					const [updated] = db
+						.update(commentThread)
+						.set({ resolvedAt: body.resolved ? new Date() : null })
+						.where(eq(commentThread.id, threadId))
+						.returning()
+						.all();
+					if (!updated) {
+						writeJson(res, 404, { error: `Thread ${threadId} not found` });
+						return;
+					}
+					writeJson(res, 200, toThreadDto(updated, threadComments(db, threadId)));
+				});
 			},
 		},
 		{
 			method: "DELETE",
 			pattern: "/api/comment-threads/:threadId",
-			handler: (req, res, params) => {
+			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
 				const threadId = params.threadId;
 				if (!threadId) {
@@ -161,10 +166,12 @@ export function commentRoutes(db: StageDb): Route[] {
 					writeJson(res, 409, { error: "This comment thread is being added to the review." });
 					return;
 				}
-				// Idempotent: deleting an absent thread is a no-op. The cascade FK
-				// removes the thread's comments.
-				db.delete(commentThread).where(eq(commentThread.id, threadId)).run();
-				writeJson(res, 200, {});
+				await reviewActions.run(repoRoot, async () => {
+					// Idempotent: deleting an absent thread is a no-op. The cascade FK
+					// removes the thread's comments.
+					db.delete(commentThread).where(eq(commentThread.id, threadId)).run();
+					writeJson(res, 200, {});
+				});
 			},
 		},
 		{
@@ -179,76 +186,80 @@ export function commentRoutes(db: StageDb): Route[] {
 				}
 				const body = await parseJsonBody(req, res, CommentBodySchema);
 				if (!body) return;
-				const [existing] = db
-					.select({ threadId: comment.threadId })
-					.from(comment)
-					.where(eq(comment.id, commentId))
-					.limit(1)
-					.all();
-				if (!existing) {
-					writeJson(res, 404, { error: `Comment ${commentId} not found` });
-					return;
-				}
-				if (isLocalThreadPromoting(existing.threadId)) {
-					writeJson(res, 409, { error: "This comment thread is being added to the review." });
-					return;
-				}
 
-				const [updated] = db
-					.update(comment)
-					.set({ body: body.body })
-					.where(eq(comment.id, commentId))
-					.returning()
-					.all();
-				if (!updated) {
-					writeJson(res, 404, { error: `Comment ${commentId} not found` });
-					return;
-				}
-				writeJson(res, 200, toCommentDto(updated));
+				await reviewActions.run(repoRoot, async () => {
+					const [existing] = db
+						.select({ threadId: comment.threadId })
+						.from(comment)
+						.where(eq(comment.id, commentId))
+						.limit(1)
+						.all();
+					if (!existing) {
+						writeJson(res, 404, { error: `Comment ${commentId} not found` });
+						return;
+					}
+					if (isLocalThreadPromoting(existing.threadId)) {
+						writeJson(res, 409, { error: "This comment thread is being added to the review." });
+						return;
+					}
+					const [updated] = db
+						.update(comment)
+						.set({ body: body.body })
+						.where(eq(comment.id, commentId))
+						.returning()
+						.all();
+					if (!updated) {
+						writeJson(res, 404, { error: `Comment ${commentId} not found` });
+						return;
+					}
+					writeJson(res, 200, toCommentDto(updated));
+				});
 			},
 		},
 		{
 			method: "DELETE",
 			pattern: "/api/comments/:commentId",
-			handler: (req, res, params) => {
+			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
 				const commentId = params.commentId;
 				if (!commentId) {
 					writeJson(res, 400, { error: "Missing commentId" });
 					return;
 				}
-				const [existing] = db
-					.select({ threadId: comment.threadId })
-					.from(comment)
-					.where(eq(comment.id, commentId))
-					.limit(1)
-					.all();
-				if (existing && isLocalThreadPromoting(existing.threadId)) {
-					writeJson(res, 409, { error: "This comment thread is being added to the review." });
-					return;
-				}
-				// Deleting the last comment removes its now-empty thread so no
-				// dangling anchors linger. Idempotent for an absent comment.
-				db.transaction((tx) => {
-					const [row] = tx
+				await reviewActions.run(repoRoot, async () => {
+					const [existing] = db
 						.select({ threadId: comment.threadId })
 						.from(comment)
 						.where(eq(comment.id, commentId))
 						.limit(1)
 						.all();
-					if (!row) return;
-					tx.delete(comment).where(eq(comment.id, commentId)).run();
-					const remaining = tx
-						.select({ id: comment.id })
-						.from(comment)
-						.where(eq(comment.threadId, row.threadId))
-						.limit(1)
-						.all();
-					if (remaining.length === 0) {
-						tx.delete(commentThread).where(eq(commentThread.id, row.threadId)).run();
+					if (existing && isLocalThreadPromoting(existing.threadId)) {
+						writeJson(res, 409, { error: "This comment thread is being added to the review." });
+						return;
 					}
+					// Deleting the last comment removes its now-empty thread so no
+					// dangling anchors linger. Idempotent for an absent comment.
+					db.transaction((tx) => {
+						const [row] = tx
+							.select({ threadId: comment.threadId })
+							.from(comment)
+							.where(eq(comment.id, commentId))
+							.limit(1)
+							.all();
+						if (!row) return;
+						tx.delete(comment).where(eq(comment.id, commentId)).run();
+						const remaining = tx
+							.select({ id: comment.id })
+							.from(comment)
+							.where(eq(comment.threadId, row.threadId))
+							.limit(1)
+							.all();
+						if (remaining.length === 0) {
+							tx.delete(commentThread).where(eq(commentThread.id, row.threadId)).run();
+						}
+					});
+					writeJson(res, 200, {});
 				});
-				writeJson(res, 200, {});
 			},
 		},
 	];
