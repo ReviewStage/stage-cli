@@ -34,6 +34,7 @@ describe("review API — GitHub boundaries", () => {
 		expect(review.github).toBe("available");
 		expect(review.threads).toHaveLength(2);
 		expect(review.canPushToReview).toBe(false);
+		expect(review.canWriteToGitHub).toBe(false);
 		expect(edit.status).toBe(409);
 		expect(JSON.parse(edit.body).error).toMatch(/closed/i);
 		expect(await harness.logLines()).not.toContainEqual(expect.stringMatching(/^edit-comment/));
@@ -50,11 +51,23 @@ describe("review API — GitHub boundaries", () => {
 			body: "Nope",
 			pending: true,
 		});
+		const immediateReply = await harness.request(port, "POST", `/api/runs/${runId}/review/reply`, {
+			threadNodeId: "THREAD_sub",
+			body: "Published now",
+			pending: false,
+		});
+		const resolve = await harness.request(port, "POST", `/api/runs/${runId}/review/resolve`, {
+			threadNodeId: "THREAD_sub",
+			resolved: true,
+		});
 
 		expect(JSON.parse(read.body).canPushToReview).toBe(false);
+		expect(JSON.parse(read.body).canWriteToGitHub).toBe(true);
 		expect(reply.status).toBe(409);
 		expect(JSON.parse(reply.body).error).toMatch(/earlier PR version/i);
-		expect(await harness.logLines()).not.toContain("reply");
+		expect(immediateReply.status).toBe(200);
+		expect(resolve.status).toBe(200);
+		expect(await harness.logLines()).toEqual(expect.arrayContaining(["reply", "resolve-thread"]));
 	});
 
 	it.each([

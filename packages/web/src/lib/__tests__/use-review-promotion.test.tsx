@@ -59,6 +59,7 @@ const review = (promoted: boolean): ReviewResponse => ({
 	pendingReviewBody: "",
 	isOwnPullRequest: false,
 	canPushToReview: true,
+	canWriteToGitHub: true,
 });
 
 afterEach(() => vi.unstubAllGlobals());

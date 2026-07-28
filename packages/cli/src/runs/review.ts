@@ -73,15 +73,9 @@ function runMatchesPrDiff(run: ChapterRunRow, review: GitHubReview): boolean {
 	);
 }
 
-function assertPushable(run: ChapterRunRow, review: GitHubReview): void {
+function assertGitHubWritable(run: ChapterRunRow, review: GitHubReview): void {
 	if (review.state !== "OPEN") {
 		throw new ReviewError("This pull request is closed, so its review is read-only.", 409);
-	}
-	if (review.pendingReviewNodeId !== null && review.pendingReviewCommitOid !== review.headRefOid) {
-		throw new ReviewError(
-			"Your pending GitHub review belongs to an earlier PR version. Submit or discard it on GitHub before commenting on this run.",
-			409,
-		);
 	}
 	if (runMatchesPrDiff(run, review)) return;
 	const reason =
@@ -91,10 +85,23 @@ function assertPushable(run: ChapterRunRow, review: GitHubReview): void {
 	throw new ReviewError(reason, 409);
 }
 
+function assertPushable(run: ChapterRunRow, review: GitHubReview): void {
+	assertGitHubWritable(run, review);
+	if (review.pendingReviewNodeId !== null && review.pendingReviewCommitOid !== review.headRefOid) {
+		throw new ReviewError(
+			"Your pending GitHub review belongs to an earlier PR version. Submit or discard it on GitHub before commenting on this run.",
+			409,
+		);
+	}
+}
+
+function canWriteToGitHub(run: ChapterRunRow, review: GitHubReview): boolean {
+	return review.state === "OPEN" && runMatchesPrDiff(run, review);
+}
+
 function canPushToReview(run: ChapterRunRow, review: GitHubReview): boolean {
 	return (
-		review.state === "OPEN" &&
-		runMatchesPrDiff(run, review) &&
+		canWriteToGitHub(run, review) &&
 		(review.pendingReviewNodeId === null || review.pendingReviewCommitOid === review.headRefOid)
 	);
 }
@@ -190,6 +197,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		pendingReviewBody: "",
 		isOwnPullRequest: false,
 		canPushToReview: false,
+		canWriteToGitHub: false,
 	};
 
 	const repo = parseGitHubRepo(run.originUrl);
@@ -227,6 +235,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		pendingReviewBody: review.pendingReviewBody,
 		isOwnPullRequest: review.viewerDidAuthor,
 		canPushToReview: canPushToReview(run, review),
+		canWriteToGitHub: canWriteToGitHub(run, review),
 	};
 }
 
@@ -515,7 +524,8 @@ export async function replyToGitHubThread(
 	pending: boolean,
 ): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
-		assertPushable(run, review);
+		if (pending) assertPushable(run, review);
+		else assertGitHubWritable(run, review);
 		requireReviewThread(review, threadNodeId);
 		if (!pending) {
 			await addReviewReply(run.repoRoot, threadNodeId, body, null);
@@ -589,7 +599,7 @@ export async function resolveGitHubThread(
 	resolved: boolean,
 ): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
-		assertPushable(run, review);
+		assertGitHubWritable(run, review);
 		requireReviewThread(review, threadNodeId);
 		await setThreadResolved(run.repoRoot, threadNodeId, resolved);
 	});

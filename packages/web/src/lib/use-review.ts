@@ -91,6 +91,7 @@ export interface UseReviewResult {
 	pendingReviewBody: string;
 	isOwnPullRequest: boolean;
 	canPushToReview: boolean;
+	canWriteToGitHub: boolean;
 	isLoading: boolean;
 	error: unknown;
 	// Local comments (CLI-only, work offline).
@@ -330,6 +331,7 @@ export function useReview(runId: string): UseReviewResult {
 		pendingReviewBody: data?.pendingReviewBody ?? "",
 		isOwnPullRequest: data?.isOwnPullRequest ?? false,
 		canPushToReview: data?.canPushToReview ?? false,
+		canWriteToGitHub: data?.canWriteToGitHub ?? false,
 		isLoading,
 		error,
 		createLocalThread: m.createLocalThread.mutateAsync,

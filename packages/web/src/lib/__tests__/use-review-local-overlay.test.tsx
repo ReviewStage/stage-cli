@@ -38,6 +38,7 @@ const AVAILABLE_REVIEW: ReviewResponse = {
 	pendingReviewBody: "",
 	isOwnPullRequest: false,
 	canPushToReview: true,
+	canWriteToGitHub: true,
 };
 
 afterEach(() => vi.unstubAllGlobals());

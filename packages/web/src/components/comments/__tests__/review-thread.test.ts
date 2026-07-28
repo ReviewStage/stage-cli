@@ -7,7 +7,9 @@ import {
 } from "@stagereview/types/review";
 import { describe, expect, it } from "vitest";
 import {
+	canEditReviewComment,
 	canPublishReplyImmediately,
+	canReplyToGitHubThread,
 	deleteRemovesReplies,
 	threadChevronClassName,
 } from "../review-thread";
@@ -28,6 +30,25 @@ describe("GitHub reply destination", () => {
 		expect(
 			canPublishReplyImmediately(makeThread([COMMENT_STATE.SUBMITTED, COMMENT_STATE.PENDING])),
 		).toBe(true);
+	});
+
+	it("allows only an immediate reply when an older draft blocks pending writes", () => {
+		expect(canReplyToGitHubThread(makeThread([COMMENT_STATE.SUBMITTED]), true, false)).toBe(true);
+		expect(canReplyToGitHubThread(makeThread([COMMENT_STATE.PENDING]), true, false)).toBe(false);
+	});
+
+	it("disables replies when the pull request is read-only", () => {
+		expect(canReplyToGitHubThread(makeThread([COMMENT_STATE.SUBMITTED]), false, false)).toBe(false);
+	});
+});
+
+describe("GitHub pending comment actions", () => {
+	it("hides edit and delete when the pending review cannot be written", () => {
+		const [comment] = makeThread([COMMENT_STATE.PENDING]).comments;
+		if (!comment) throw new Error("Expected a pending comment");
+
+		expect(canEditReviewComment(comment, false)).toBe(false);
+		expect(canEditReviewComment(comment, true)).toBe(true);
 	});
 });
 

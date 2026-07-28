@@ -165,7 +165,7 @@ export function ReviewPanel() {
 	const [showDiscard, setShowDiscard] = useState(false);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-	const { pendingCommentCount, hasPendingReview, isOwnPullRequest } = review;
+	const { pendingCommentCount, hasPendingReview, isOwnPullRequest, canPushToReview } = review;
 	const pendingByFile = useMemo(
 		() => collectPendingByFile(review.pendingComments),
 		[review.pendingComments],
@@ -179,12 +179,14 @@ export function ReviewPanel() {
 	// but the prior `selected` state would otherwise persist).
 	const effectiveEvent =
 		isOwnPullRequest && selected !== REVIEW_EVENT.COMMENT ? REVIEW_EVENT.COMMENT : selected;
-	const canSubmit = canSubmitReview({
-		event: effectiveEvent,
-		body,
-		pendingCommentCount,
-		isSubmitting,
-	});
+	const canSubmit =
+		canPushToReview &&
+		canSubmitReview({
+			event: effectiveEvent,
+			body,
+			pendingCommentCount,
+			isSubmitting,
+		});
 
 	function selectAction(event: ReviewEvent) {
 		if (isOwnPullRequest && event !== REVIEW_EVENT.COMMENT) return;
@@ -233,7 +235,11 @@ export function ReviewPanel() {
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<PopoverTrigger asChild>
-							<Button size="sm" className="h-7 cursor-pointer px-2">
+							<Button
+								size="sm"
+								className="h-7 cursor-pointer px-2"
+								disabled={!canPushToReview && !hasPendingReview}
+							>
 								<MessageSquarePlus className="size-3.5" />
 								<span className="ml-1 hidden text-xs @7xl:inline">Review</span>
 								{pendingCommentCount > 0 && (
@@ -244,20 +250,24 @@ export function ReviewPanel() {
 							</Button>
 						</PopoverTrigger>
 					</TooltipTrigger>
-					<TooltipContent>Submit your review</TooltipContent>
+					<TooltipContent>
+						{canPushToReview ? "Submit your review" : "This GitHub review is read-only"}
+					</TooltipContent>
 				</Tooltip>
 				<PopoverContent align="end" className="w-96">
 					<p className="font-medium text-sm">Finish your review</p>
 					<p className="mt-0.5 text-muted-foreground text-xs">
-						{pendingCommentCount > 0
-							? `${pendingCommentCount} pending comment${pendingCommentCount === 1 ? "" : "s"} will be published.`
-							: "No pending comments yet — add comments to your review from the diff."}
+						{!canPushToReview
+							? "This GitHub review is read-only. You can still discard an existing pending review."
+							: pendingCommentCount > 0
+								? `${pendingCommentCount} pending comment${pendingCommentCount === 1 ? "" : "s"} will be published.`
+								: "No pending comments yet — add comments to your review from the diff."}
 					</p>
 					<CommentMarkdownEditor
 						value={body}
 						onChange={setBody}
 						textareaRef={textareaRef}
-						disabled={isSubmitting}
+						disabled={isSubmitting || !canPushToReview}
 						placeholder={
 							effectiveEvent === REVIEW_EVENT.REQUEST_CHANGES
 								? "Summarize the requested changes…"
@@ -272,7 +282,7 @@ export function ReviewPanel() {
 					<ActionSelector
 						selected={effectiveEvent}
 						onSelect={selectAction}
-						disabled={isSubmitting}
+						disabled={isSubmitting || !canPushToReview}
 						isOwnPullRequest={isOwnPullRequest}
 					/>
 					<div className="mt-3 flex items-center justify-between">

@@ -71,6 +71,7 @@ const reviewWith = (threads: CommentThread[]): ReviewResponse => ({
 	pendingReviewBody: "",
 	isOwnPullRequest: false,
 	canPushToReview: true,
+	canWriteToGitHub: true,
 });
 
 afterEach(() => vi.unstubAllGlobals());

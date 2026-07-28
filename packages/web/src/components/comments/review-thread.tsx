@@ -44,10 +44,13 @@ function errorMessage(err: unknown, fallback: string): string {
 const PENDING_BADGE_CN =
 	"border-yellow-500/50 bg-yellow-50 text-yellow-800 dark:bg-yellow-950/20 dark:text-yellow-200";
 
-// A pending comment is editable (it's the viewer's own draft); a local comment is
-// editable too. Submitted comments live on GitHub and are read-only here.
-function canActOn(comment: ReviewComment): boolean {
-	return comment.state !== COMMENT_STATE.SUBMITTED;
+// Local comments remain editable offline. A pending GitHub comment is editable
+// only while this run can write to the current pending review.
+export function canEditReviewComment(comment: ReviewComment, canPushToReview: boolean): boolean {
+	return (
+		comment.state === COMMENT_STATE.LOCAL ||
+		(comment.state === COMMENT_STATE.PENDING && canPushToReview)
+	);
 }
 
 function StateBadge({ state }: { state: ReviewComment["state"] }) {
@@ -79,6 +82,14 @@ export function canPublishReplyImmediately(thread: ReviewThread): boolean {
 	return thread.comments.some((comment) => comment.state === COMMENT_STATE.SUBMITTED);
 }
 
+export function canReplyToGitHubThread(
+	thread: ReviewThread,
+	canWriteToGitHub: boolean,
+	canPushToReview: boolean,
+): boolean {
+	return canWriteToGitHub && (canPushToReview || canPublishReplyImmediately(thread));
+}
+
 export function deleteRemovesReplies(thread: ReviewThread, comment: ReviewComment): boolean {
 	return thread.comments.length > 1 && thread.comments[0]?.id === comment.id;
 }
@@ -88,6 +99,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	const isGitHub = thread.source === THREAD_SOURCE.GITHUB;
 	const githubAvailable = review.github === GITHUB_REVIEW_STATUS.AVAILABLE;
 	const canPushToReview = review.canPushToReview;
+	const canWriteToGitHub = review.canWriteToGitHub;
 
 	const [isOpen, setIsOpen] = useState(!thread.isResolved);
 	const [isReplying, setIsReplying] = useState(false);
@@ -99,6 +111,9 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	if (!root) return null;
 	const replies = thread.comments.slice(1);
 	const idle = !isReplying && editingId === null;
+	const canReply = !isGitHub || canReplyToGitHubThread(thread, canWriteToGitHub, canPushToReview);
+	const publishesImmediately = isGitHub && canPublishReplyImmediately(thread);
+	const forceImmediateReply = publishesImmediately && !canPushToReview;
 
 	function setOpenError(message: string | null) {
 		setError(message);
@@ -205,7 +220,11 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 						</TooltipTrigger>
 						<TooltipContent>{isOpen ? "Collapse thread" : "Expand thread"}</TooltipContent>
 					</Tooltip>
-					<ResolveButton isResolved={thread.isResolved} onToggle={handleResolveToggle} />
+					<ResolveButton
+						isResolved={thread.isResolved}
+						onToggle={handleResolveToggle}
+						disabled={isGitHub && !canWriteToGitHub}
+					/>
 					<Byline comment={root} />
 					<StateBadge state={root.state} />
 					{idle && (
@@ -226,7 +245,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 									<TooltipContent>Add to GitHub review (pending)</TooltipContent>
 								</Tooltip>
 							)}
-							{(!isGitHub || githubAvailable) && (
+							{(!isGitHub || githubAvailable) && canReply && (
 								<Tooltip>
 									<TooltipTrigger asChild>
 										<Button
@@ -246,7 +265,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 									<TooltipContent>Reply</TooltipContent>
 								</Tooltip>
 							)}
-							{canActOn(root) && (
+							{canEditReviewComment(root, canPushToReview) && (
 								<CommentActions
 									onEdit={() => {
 										setIsOpen(true);
@@ -262,7 +281,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 				</div>
 
 				<CollapsibleContent className="space-y-3 px-3 pb-3">
-					{editingId === root.id ? (
+					{editingId === root.id && canEditReviewComment(root, canPushToReview) ? (
 						<CommentForm
 							label="Update"
 							initialBody={root.body}
@@ -297,32 +316,40 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 									}}
 									onSubmitEdit={(b) => submitEdit(reply, b)}
 									onDelete={() => setDeleteTarget(reply)}
+									canPushToReview={canPushToReview}
 								/>
 							))}
 						</div>
 					)}
 
-					{isReplying && (
+					{isReplying && canReply && (
 						<CommentForm
 							label="Reply"
 							placeholder="Write a reply…"
 							error={error}
 							destination={
 								isGitHub
-									? canPublishReplyImmediately(thread)
-										? {
-												toggleLabel: "Start a review",
-												on: {
-													label: "Pending on GitHub",
-													description: "Only you can see it until you submit your review.",
-													isGitHub: true,
-												},
-												off: {
+									? publishesImmediately
+										? canPushToReview
+											? {
+													toggleLabel: "Start a review",
+													on: {
+														label: "Pending on GitHub",
+														description: "Only you can see it until you submit your review.",
+														isGitHub: true,
+													},
+													off: {
+														label: "Published on GitHub",
+														description:
+															"Everyone viewing the pull request can see it immediately.",
+														isGitHub: true,
+													},
+												}
+											: {
 													label: "Published on GitHub",
 													description: "Everyone viewing the pull request can see it immediately.",
 													isGitHub: true,
-												},
-											}
+												}
 										: {
 												label: "Pending on GitHub",
 												description:
@@ -335,7 +362,9 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 											isGitHub: false,
 										}
 							}
-							onSubmit={submitReply}
+							onSubmit={(body, startReview) =>
+								submitReply(body, forceImmediateReply ? false : startReview)
+							}
 							onCancel={() => {
 								setIsReplying(false);
 								setOpenError(null);
@@ -355,15 +384,24 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	);
 }
 
-function ResolveButton({ isResolved, onToggle }: { isResolved: boolean; onToggle: () => void }) {
+function ResolveButton({
+	isResolved,
+	onToggle,
+	disabled,
+}: {
+	isResolved: boolean;
+	onToggle: () => void;
+	disabled: boolean;
+}) {
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
 				<button
 					type="button"
 					onClick={onToggle}
+					disabled={disabled}
 					aria-label={isResolved ? "Reopen conversation" : "Mark as resolved"}
-					className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+					className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{isResolved ? (
 						<CircleCheck className="size-3.5 text-green-600 dark:text-green-500" />
@@ -432,6 +470,7 @@ function ReplyItem({
 	onCancelEdit,
 	onSubmitEdit,
 	onDelete,
+	canPushToReview,
 }: {
 	reply: ReviewComment;
 	idle: boolean;
@@ -441,15 +480,18 @@ function ReplyItem({
 	onCancelEdit: () => void;
 	onSubmitEdit: (body: string) => Promise<void>;
 	onDelete: () => void;
+	canPushToReview: boolean;
 }) {
 	return (
 		<div className="space-y-1.5">
 			<div className="flex items-center gap-2">
 				<Byline comment={reply} />
 				<StateBadge state={reply.state} />
-				{idle && canActOn(reply) && <CommentActions onEdit={onEdit} onDelete={onDelete} />}
+				{idle && canEditReviewComment(reply, canPushToReview) && (
+					<CommentActions onEdit={onEdit} onDelete={onDelete} />
+				)}
 			</div>
-			{isEditing ? (
+			{isEditing && canEditReviewComment(reply, canPushToReview) ? (
 				<CommentForm
 					label="Update"
 					initialBody={reply.body}

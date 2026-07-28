@@ -39,6 +39,7 @@ const AVAILABLE_REVIEW: ReviewResponse = {
 	pendingReviewBody: "",
 	isOwnPullRequest: false,
 	canPushToReview: true,
+	canWriteToGitHub: true,
 };
 
 const OFFLINE_REVIEW: ReviewResponse = {
@@ -50,6 +51,7 @@ const OFFLINE_REVIEW: ReviewResponse = {
 	pendingReviewBody: "",
 	isOwnPullRequest: false,
 	canPushToReview: false,
+	canWriteToGitHub: false,
 };
 
 const LOCAL_THREAD: CommentThread = {
