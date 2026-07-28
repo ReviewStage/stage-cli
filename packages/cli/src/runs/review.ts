@@ -339,9 +339,21 @@ async function withPendingReview<T>(
 const queuedPromotions = new Set<string>();
 const promotingThreads = new Set<string>();
 
-/** True while the local thread is frozen for an in-flight GitHub promotion. */
-export function isLocalThreadPromoting(localThreadId: string): boolean {
-	return promotingThreads.has(localThreadId);
+/** True while the local thread is frozen for an in-flight or interrupted promotion. */
+export function isLocalThreadPromoting(db: StageDb, localThreadId: string): boolean {
+	if (promotingThreads.has(localThreadId)) return true;
+	const [thread] = db
+		.select({
+			threadNodeId: commentThread.promotionThreadNodeId,
+			rootCommentNodeId: commentThread.promotionRootCommentNodeId,
+		})
+		.from(commentThread)
+		.where(eq(commentThread.id, localThreadId))
+		.limit(1)
+		.all();
+	return (
+		thread !== undefined && (thread.threadNodeId !== null || thread.rootCommentNodeId !== null)
+	);
 }
 
 /**
@@ -404,6 +416,19 @@ async function promoteLocalThread(
 		.all();
 	const root = comments[0];
 	if (!root) throw new ReviewError("Thread has no comments to add to the review.", 400);
+	const replies = comments.slice(1);
+	if ((thread.promotionThreadNodeId === null) !== (thread.promotionRootCommentNodeId === null)) {
+		throw new ReviewError(
+			"This comment has incomplete promotion state and cannot be resumed.",
+			409,
+		);
+	}
+	if (thread.promotionReplyCount > replies.length) {
+		throw new ReviewError(
+			"This comment's promotion progress is invalid and cannot be resumed.",
+			409,
+		);
+	}
 
 	await withLockedReviewTarget(run, async ({ review }) => {
 		assertPushable(run, review);
@@ -427,25 +452,84 @@ async function promoteLocalThread(
 			}
 		}
 
-		let addedThread: AddedReviewThread | null = null;
+		let addedThread: AddedReviewThread | null =
+			thread.promotionThreadNodeId !== null && thread.promotionRootCommentNodeId !== null
+				? {
+						threadNodeId: thread.promotionThreadNodeId,
+						rootCommentNodeId: thread.promotionRootCommentNodeId,
+					}
+				: null;
+		let promotedReplyCount = thread.promotionReplyCount;
 		let reviewNodeId: string | null = null;
 		let created = false;
 		try {
-			const pendingReview = await openPendingReview(run, review);
-			reviewNodeId = pendingReview.reviewNodeId;
-			created = pendingReview.created;
-			addedThread = await addReviewThread(run.repoRoot, {
-				pullRequestNodeId: review.pullRequestNodeId,
-				reviewNodeId,
-				path: thread.filePath,
-				body: root.body,
-				line: thread.endLine,
-				side,
-				startLine,
-				startSide: startLine !== null ? side : null,
-			});
-			for (const reply of comments.slice(1)) {
+			if (addedThread !== null) {
+				const remoteThread = review.threads.find(
+					(candidate) => candidate.threadNodeId === addedThread?.threadNodeId,
+				);
+				const hasPersistedRoot = remoteThread?.comments.some(
+					(candidate) => candidate.nodeId === addedThread?.rootCommentNodeId,
+				);
+				// If the persisted remote root was removed manually, restart cleanly.
+				if (!remoteThread || !hasPersistedRoot) {
+					clearPromotionProgress(db, localThreadId);
+					addedThread = null;
+					promotedReplyCount = 0;
+				} else {
+					// A crash can land a reply immediately before its local checkpoint.
+					// Reconcile the matching remote prefix before sending anything again.
+					while (
+						promotedReplyCount < replies.length &&
+						remoteThread.comments[promotedReplyCount + 1]?.body ===
+							replies[promotedReplyCount]?.body
+					) {
+						promotedReplyCount++;
+					}
+					db.update(commentThread)
+						.set({ promotionReplyCount: promotedReplyCount })
+						.where(eq(commentThread.id, localThreadId))
+						.run();
+				}
+			}
+
+			if (addedThread === null || promotedReplyCount < replies.length) {
+				const pendingReview = await openPendingReview(run, review);
+				reviewNodeId = pendingReview.reviewNodeId;
+				created = pendingReview.created;
+			}
+			if (addedThread === null) {
+				if (reviewNodeId === null) throw new Error("Pending review was not opened");
+				addedThread = await addReviewThread(run.repoRoot, {
+					pullRequestNodeId: review.pullRequestNodeId,
+					reviewNodeId,
+					path: thread.filePath,
+					body: root.body,
+					line: thread.endLine,
+					side,
+					startLine,
+					startSide: startLine !== null ? side : null,
+				});
+				const persisted = db
+					.update(commentThread)
+					.set({
+						promotionThreadNodeId: addedThread.threadNodeId,
+						promotionRootCommentNodeId: addedThread.rootCommentNodeId,
+						promotionReplyCount: 0,
+					})
+					.where(eq(commentThread.id, localThreadId))
+					.run();
+				if (persisted.changes !== 1) throw new Error("Local promotion checkpoint was not saved");
+			}
+			for (const [index, reply] of replies.entries()) {
+				if (index < promotedReplyCount) continue;
+				if (reviewNodeId === null) throw new Error("Pending review was not opened");
 				await addReviewReply(run.repoRoot, addedThread.threadNodeId, reply.body, reviewNodeId);
+				const persisted = db
+					.update(commentThread)
+					.set({ promotionReplyCount: index + 1 })
+					.where(eq(commentThread.id, localThreadId))
+					.run();
+				if (persisted.changes !== 1) throw new Error("Local promotion checkpoint was not saved");
 			}
 			if (thread.resolvedAt !== null) {
 				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
@@ -466,6 +550,7 @@ async function promoteLocalThread(
 					remoteRolledBack = true;
 				} catch {}
 			}
+			if (remoteRolledBack) clearPromotionProgress(db, localThreadId);
 			if (wasUnassigned && remoteRolledBack) {
 				db.update(commentThread)
 					.set({ repoRoot: UNASSIGNED_REPO_ROOT })
@@ -477,6 +562,17 @@ async function promoteLocalThread(
 		// Every comment landed remotely; the cascade removes all local comment rows.
 		db.delete(commentThread).where(eq(commentThread.id, localThreadId)).run();
 	});
+}
+
+function clearPromotionProgress(db: StageDb, localThreadId: string): void {
+	db.update(commentThread)
+		.set({
+			promotionThreadNodeId: null,
+			promotionRootCommentNodeId: null,
+			promotionReplyCount: 0,
+		})
+		.where(eq(commentThread.id, localThreadId))
+		.run();
 }
 
 export interface PendingCommentAnchor {
@@ -545,6 +641,9 @@ export async function submitRunReview(
 ): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
 		assertPushable(run, review);
+		if (review.viewerDidAuthor && event !== REVIEW_EVENT.COMMENT) {
+			throw new ReviewError("You can't approve or request changes on your own pull request.", 400);
+		}
 		if (event === REVIEW_EVENT.REQUEST_CHANGES && body.trim() === "") {
 			throw new ReviewError("Add a summary to request changes.", 400);
 		}

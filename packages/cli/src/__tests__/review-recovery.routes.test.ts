@@ -4,6 +4,7 @@ import { comment, commentThread } from "../db/schema/index.js";
 import {
 	EMPTY_REVIEW,
 	makeAnchorlessPendingReview,
+	makeInterruptedPromotionReview,
 	makeSummaryOnlyPendingReview,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -134,5 +135,62 @@ describe("review API — recovery", () => {
 				.map((row) => row.body),
 		).toEqual(["Root", "Reply"]);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(1);
+	});
+
+	it("resumes an interrupted promotion without duplicating its remote root", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReview());
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true });
+		harness.db
+			.update(commentThread)
+			.set({
+				promotionThreadNodeId: "THREAD_new",
+				promotionRootCommentNodeId: "COMMENT_new",
+				promotionReplyCount: 0,
+			})
+			.run();
+		const port = await harness.start();
+
+		const blockedReply = await harness.request(
+			port,
+			"POST",
+			`/api/comment-threads/${localThreadId}/replies`,
+			{ body: "Must wait" },
+		);
+		const promotion = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+		const log = await harness.logLines();
+
+		expect(blockedReply.status).toBe(409);
+		expect(promotion.status, promotion.body).toBe(200);
+		expect(log.filter((line) => line.startsWith("add-thread"))).toHaveLength(0);
+		expect(log.filter((line) => line === "reply")).toHaveLength(1);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("reconciles a reply that landed immediately before the process exited", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReview("Reply"));
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true });
+		harness.db
+			.update(commentThread)
+			.set({
+				promotionThreadNodeId: "THREAD_new",
+				promotionRootCommentNodeId: "COMMENT_new",
+			})
+			.run();
+
+		const promotion = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/add`,
+			{ localThreadId },
+		);
+		const log = await harness.logLines();
+
+		expect(promotion.status, promotion.body).toBe(200);
+		expect(log.filter((line) => line === "reply")).toHaveLength(0);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 });

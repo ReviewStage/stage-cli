@@ -83,7 +83,7 @@ describe("review API — concurrency", () => {
 		const edit = reviewActions.run(
 			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot },
 			async () => {
-				if (isLocalThreadPromoting(localThreadId)) {
+				if (isLocalThreadPromoting(harness.db, localThreadId)) {
 					throw new Error("Winning edit was incorrectly rejected as mid-promotion");
 				}
 				harness.db

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	EMPTY_REVIEW,
+	makeOwnPullRequestReview,
 	makeSummaryOnlyPendingReview,
 	REVIEW_QUERY_RESULT,
 	ReviewRouteHarness,
@@ -66,6 +67,22 @@ describe("review API — submission", () => {
 			error: expect.stringMatching(/summary.*request changes/i),
 		});
 		expect((await harness.logLines()).join("\n")).not.toMatch(/submit/);
+	});
+
+	it("rejects a review decision on the viewer's own pull request", async () => {
+		await harness.writeGhShim(makeOwnPullRequestReview());
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/submit`,
+			{ event: "APPROVE", body: "LGTM" },
+		);
+
+		expect(res.status).toBe(400);
+		expect(JSON.parse(res.body).error).toMatch(/own pull request/i);
+		expect((await harness.logLines()).join("\n")).not.toMatch(/create-review|submit/);
 	});
 
 	it("allows an existing pending summary to be cleared", async () => {

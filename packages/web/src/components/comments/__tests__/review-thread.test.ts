@@ -50,6 +50,13 @@ describe("GitHub pending comment actions", () => {
 		expect(canEditReviewComment(comment, false)).toBe(false);
 		expect(canEditReviewComment(comment, true)).toBe(true);
 	});
+
+	it("closes the editor after a pending comment is submitted", () => {
+		const [comment] = makeThread([COMMENT_STATE.SUBMITTED]).comments;
+		if (!comment) throw new Error("Expected a submitted comment");
+
+		expect(canEditReviewComment(comment, true)).toBe(false);
+	});
 });
 
 describe("review thread source invariants", () => {

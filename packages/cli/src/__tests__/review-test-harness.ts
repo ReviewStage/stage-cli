@@ -78,6 +78,7 @@ function makeReview(
 	options: {
 		state?: "OPEN" | "CLOSED" | "MERGED";
 		pendingReviewCommitOid?: string;
+		viewerDidAuthor?: boolean;
 	} = {},
 ): unknown {
 	return {
@@ -86,7 +87,7 @@ function makeReview(
 				pullRequest: {
 					id: "PR_node",
 					state: options.state ?? "OPEN",
-					viewerDidAuthor: false,
+					viewerDidAuthor: options.viewerDidAuthor ?? false,
 					headRefOid: HEAD,
 					baseRefOid: BASE,
 					reviews: {
@@ -128,6 +129,48 @@ export function makeStalePendingReview(): unknown {
 	return makeReview([submittedThread, pendingThread], "REVIEW_pending", "", {
 		pendingReviewCommitOid: "d".repeat(40),
 	});
+}
+
+export function makeOwnPullRequestReview(): unknown {
+	return makeReview([pendingThread], "REVIEW_pending", "", {
+		viewerDidAuthor: true,
+	});
+}
+
+export function makeInterruptedPromotionReview(promotedReplyBody?: string): unknown {
+	const root = {
+		...pendingThread.comments.nodes[0],
+		id: "COMMENT_new",
+		body: "Root",
+		bodyHTML: "<p>Root</p>",
+	};
+	return makeReview(
+		[
+			{
+				...pendingThread,
+				id: "THREAD_new",
+				path: "src/foo.ts",
+				line: 3,
+				diffSide: "RIGHT",
+				comments: {
+					...pendingThread.comments,
+					nodes:
+						promotedReplyBody === undefined
+							? [root]
+							: [
+									root,
+									{
+										...root,
+										id: "COMMENT_reply",
+										body: promotedReplyBody,
+										bodyHTML: `<p>${promotedReplyBody}</p>`,
+									},
+								],
+				},
+			},
+		],
+		"REVIEW_pending",
+	);
 }
 
 export function makeAnchorlessPendingReview(): unknown {
