@@ -21,7 +21,6 @@ import {
 } from "@stagereview/types/review";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
-import { useInvalidatePullRequest } from "./pull-request-mutations";
 import { jsonFetch } from "./use-view-state";
 
 export type { CreateCommentThreadBody, GitHubReviewStatus, ReviewEvent, ReviewThread };
@@ -32,6 +31,11 @@ const REVIEW_ROOT = "review";
 interface ReviewQueryData {
 	generation: number;
 	review: ReviewResponse;
+}
+
+interface ReviewMutationOrigin {
+	runId: string;
+	queryKey: readonly unknown[];
 }
 
 export function reviewQueryKey(runId: string): readonly unknown[] {
@@ -121,7 +125,6 @@ export interface UseReviewResult {
  */
 export function useReview(runId: string): UseReviewResult {
 	const queryClient = useQueryClient();
-	const invalidatePullRequest = useInvalidatePullRequest(runId);
 	const queryKey = useMemo(() => reviewQueryKey(runId), [runId]);
 	const [localOverlay, setLocalOverlay] = useState<{
 		runId: string;
@@ -160,7 +163,6 @@ export function useReview(runId: string): UseReviewResult {
 	}, [data, refreshedLocalThreads]);
 	const pendingComments = useMemo(() => data?.pendingComments ?? [], [data]);
 	const threadsByFile = useMemo(() => groupByFile(threads), [threads]);
-	const invalidate = () => queryClient.invalidateQueries({ queryKey });
 	const updateLocalThreads = (update: (threads: LocalReviewThread[]) => LocalReviewThread[]) => {
 		const generation = ++localRefreshGeneration.current;
 		const reviewGeneration = reviewRequestGeneration.current;
@@ -183,37 +185,78 @@ export function useReview(runId: string): UseReviewResult {
 			})
 			.catch(() => {});
 	};
-	const removePromotedLocalThread = (localThreadId: string) => {
-		updateLocalThreads((threads) => threads.filter((thread) => thread.id !== localThreadId));
+	const captureMutationOrigin = (): ReviewMutationOrigin => ({ runId, queryKey });
+	const updateLocalThreadsForOrigin = (
+		origin: ReviewMutationOrigin,
+		update: (threads: LocalReviewThread[]) => LocalReviewThread[],
+	) => {
+		if (origin.runId === runId) {
+			updateLocalThreads(update);
+			return;
+		}
+		// A mutation may settle after this hook navigates to another run. Reconcile
+		// only the cache entry that originated the request; never put A's rows into
+		// B's component-local overlay.
+		queryClient.setQueryData<ReviewQueryData>(origin.queryKey, (current) => {
+			if (!current) return current;
+			const localThreads = current.review.threads.filter(
+				(thread): thread is LocalReviewThread => thread.source === THREAD_SOURCE.LOCAL,
+			);
+			return {
+				...current,
+				review: {
+					...current.review,
+					threads: [
+						...update(localThreads),
+						...current.review.threads.filter((thread) => thread.source !== THREAD_SOURCE.LOCAL),
+					],
+				},
+			};
+		});
+		void queryClient.invalidateQueries({ queryKey: origin.queryKey, refetchType: "none" });
+	};
+	const removePromotedLocalThread = (origin: ReviewMutationOrigin, localThreadId: string) => {
+		updateLocalThreadsForOrigin(origin, (threads) =>
+			threads.filter((thread) => thread.id !== localThreadId),
+		);
 	};
 	// GitHub-affecting actions (submit/resolve/reply/promote) change PR-level state —
 	// reviewer decisions, the merge button — that lives behind separate, infinitely-
 	// stale query keys. Refresh those too so the PR header doesn't go stale until reload.
-	const invalidateGitHub = async () => {
-		await Promise.all([invalidate(), invalidatePullRequest()]);
+	const invalidateGitHub = async (origin: ReviewMutationOrigin) => {
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: origin.queryKey }),
+			queryClient.invalidateQueries({ queryKey: ["pull-request", origin.runId] }),
+			queryClient.invalidateQueries({ queryKey: ["pull-request-reviews", origin.runId] }),
+			queryClient.invalidateQueries({ queryKey: ["pull-request-merge-status", origin.runId] }),
+			queryClient.invalidateQueries({ queryKey: ["pull-request-checks", origin.runId] }),
+		]);
 	};
 
 	const runPath = (suffix: string) => `/api/runs/${encodeURIComponent(runId)}${suffix}`;
 
 	const m = {
 		createLocalThread: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: async (input: CreateCommentThreadBody) =>
 				CommentThreadSchema.parse(
 					await jsonFetch<unknown>(runPath("/comment-threads"), jsonRequest("POST", input)),
 				),
-			onSuccess: (thread) =>
-				updateLocalThreads((threads) =>
+			onSuccess: (thread, _input, origin) =>
+				updateLocalThreadsForOrigin(origin, (threads) =>
 					threads.some((current) => current.id === thread.id)
 						? threads
 						: [...threads, toReviewThread(thread)],
 				),
 		}),
 		createPendingComment: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: (input: CreateCommentThreadBody) =>
 				jsonFetch(runPath("/review/comment"), jsonRequest("POST", input)),
-			onSuccess: invalidateGitHub,
+			onSuccess: (_data, _input, origin) => invalidateGitHub(origin),
 		}),
 		replyLocal: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: async ({ threadId, body }: { threadId: string; body: string }) =>
 				CommentSchema.parse(
 					await jsonFetch(
@@ -221,8 +264,8 @@ export function useReview(runId: string): UseReviewResult {
 						jsonRequest("POST", { body }),
 					),
 				),
-			onSuccess: (comment, { threadId }) =>
-				updateLocalThreads((threads) =>
+			onSuccess: (comment, { threadId }, origin) =>
+				updateLocalThreadsForOrigin(origin, (threads) =>
 					threads.map((thread) => {
 						if (
 							thread.id !== threadId ||
@@ -235,6 +278,7 @@ export function useReview(runId: string): UseReviewResult {
 				),
 		}),
 		editLocalComment: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: async ({ commentId, body }: { commentId: string; body: string }) =>
 				CommentSchema.parse(
 					await jsonFetch(
@@ -242,8 +286,8 @@ export function useReview(runId: string): UseReviewResult {
 						jsonRequest("PATCH", { body }),
 					),
 				),
-			onSuccess: (comment) =>
-				updateLocalThreads((threads) =>
+			onSuccess: (comment, _input, origin) =>
+				updateLocalThreadsForOrigin(origin, (threads) =>
 					threads.map((thread) => ({
 						...thread,
 						comments: thread.comments.map((current) =>
@@ -253,16 +297,20 @@ export function useReview(runId: string): UseReviewResult {
 				),
 		}),
 		deleteLocalThread: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: (threadId: string) =>
 				jsonFetch(`/api/comment-threads/${encodeURIComponent(threadId)}`, jsonRequest("DELETE")),
-			onSuccess: (_data, threadId) =>
-				updateLocalThreads((threads) => threads.filter((thread) => thread.id !== threadId)),
+			onSuccess: (_data, threadId, origin) =>
+				updateLocalThreadsForOrigin(origin, (threads) =>
+					threads.filter((thread) => thread.id !== threadId),
+				),
 		}),
 		deleteLocalComment: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: (commentId: string) =>
 				jsonFetch(`/api/comments/${encodeURIComponent(commentId)}`, jsonRequest("DELETE")),
-			onSuccess: (_data, commentId) =>
-				updateLocalThreads((threads) =>
+			onSuccess: (_data, commentId, origin) =>
+				updateLocalThreadsForOrigin(origin, (threads) =>
 					threads.flatMap((thread) => {
 						const comments = thread.comments.filter((comment) => comment.id !== commentId);
 						return comments.length === 0 ? [] : [{ ...thread, comments }];
@@ -270,6 +318,7 @@ export function useReview(runId: string): UseReviewResult {
 				),
 		}),
 		resolveLocalThread: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: async ({ threadId, resolved }: { threadId: string; resolved: boolean }) =>
 				CommentThreadSchema.parse(
 					await jsonFetch(
@@ -277,47 +326,54 @@ export function useReview(runId: string): UseReviewResult {
 						jsonRequest("PATCH", { resolved }),
 					),
 				),
-			onSuccess: (updated) =>
-				updateLocalThreads((threads) =>
+			onSuccess: (updated, _input, origin) =>
+				updateLocalThreadsForOrigin(origin, (threads) =>
 					threads.map((thread) => (thread.id === updated.id ? toReviewThread(updated) : thread)),
 				),
 		}),
 		addToReview: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: (localThreadId: string) =>
 				jsonFetch(runPath("/review/add"), jsonRequest("POST", { localThreadId })),
-			onSuccess: (_data, localThreadId) => {
-				removePromotedLocalThread(localThreadId);
-				return invalidateGitHub();
+			onSuccess: (_data, localThreadId, origin) => {
+				removePromotedLocalThread(origin, localThreadId);
+				return invalidateGitHub(origin);
 			},
 		}),
 		submitReview: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: (input: { event: ReviewEvent; body: string }) =>
 				jsonFetch(runPath("/review/submit"), jsonRequest("POST", input)),
-			onSuccess: invalidateGitHub,
+			onSuccess: (_data, _input, origin) => invalidateGitHub(origin),
 		}),
 		discardReview: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: () => jsonFetch(runPath("/review/discard"), jsonRequest("POST")),
-			onSuccess: invalidateGitHub,
+			onSuccess: (_data, _input, origin) => invalidateGitHub(origin),
 		}),
 		replyGitHub: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: (input: { threadNodeId: string; body: string; pending: boolean }) =>
 				jsonFetch(runPath("/review/reply"), jsonRequest("POST", input)),
-			onSuccess: invalidateGitHub,
+			onSuccess: (_data, _input, origin) => invalidateGitHub(origin),
 		}),
 		editGitHubComment: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: (input: { nodeId: string; body: string }) =>
 				jsonFetch(runPath("/review/comment/edit"), jsonRequest("POST", input)),
-			onSuccess: invalidateGitHub,
+			onSuccess: (_data, _input, origin) => invalidateGitHub(origin),
 		}),
 		deleteGitHubComment: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: (nodeId: string) =>
 				jsonFetch(runPath("/review/comment/delete"), jsonRequest("POST", { nodeId })),
-			onSuccess: invalidateGitHub,
+			onSuccess: (_data, _input, origin) => invalidateGitHub(origin),
 		}),
 		resolveGitHub: useMutation({
+			onMutate: captureMutationOrigin,
 			mutationFn: (input: { threadNodeId: string; resolved: boolean }) =>
 				jsonFetch(runPath("/review/resolve"), jsonRequest("POST", input)),
-			onSuccess: invalidateGitHub,
+			onSuccess: (_data, _input, origin) => invalidateGitHub(origin),
 		}),
 	};
 

@@ -202,6 +202,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 
 	const repo = parseGitHubRepo(run.originUrl);
 	if (!repo) return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
+	const hasStoredPullRequest = run.prNumber !== null;
 
 	let review: GitHubReview;
 	try {
@@ -223,6 +224,10 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 	// surface only local line threads. Keep the pending-review lifecycle visible so
 	// the viewer can inspect and discard drafts even though this run is read-only.
 	if (!runMatchesPrDiff(run, review)) {
+		// Automatic discovery follows the checkout's current branch, not the branch
+		// that created this historical run. A mismatch therefore cannot safely retain
+		// lifecycle controls: they may belong to an entirely different pull request.
+		if (!hasStoredPullRequest) return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
 		return {
 			...base,
 			github: GITHUB_REVIEW_STATUS.AVAILABLE,
@@ -477,6 +482,7 @@ async function promoteLocalThread(
 		let reviewNodeId: string | null = null;
 		let created = false;
 		let remoteRootIsPending = false;
+		let remoteThreadIsResolved = false;
 		let rootCreatedThisAttempt = false;
 		let rollbackReplyCount = promotedReplyCount;
 		try {
@@ -494,11 +500,12 @@ async function promoteLocalThread(
 					promotedReplyCount = 0;
 				} else {
 					remoteRootIsPending = persistedRoot.isPending;
+					remoteThreadIsResolved = remoteThread.isResolved;
 					// A crash can land a reply immediately before its local checkpoint.
-					// Reconcile the matching remote prefix before sending anything again.
+					// Reconcile only replies authored by this viewer before sending
+					// anything again; another participant may have posted the same body.
 					while (
 						promotedReplyCount < replies.length &&
-						remoteThread.comments[promotedReplyCount + 1]?.isPending &&
 						remoteThread.comments[promotedReplyCount + 1]?.authorLogin === review.viewerLogin &&
 						remoteThread.comments[promotedReplyCount + 1]?.body ===
 							replies[promotedReplyCount]?.body
@@ -554,7 +561,7 @@ async function promoteLocalThread(
 					.run();
 				if (persisted.changes !== 1) throw new Error("Local promotion checkpoint was not saved");
 			}
-			if (thread.resolvedAt !== null) {
+			if (thread.resolvedAt !== null && !remoteThreadIsResolved) {
 				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
 			}
 		} catch (err) {
@@ -693,6 +700,12 @@ export async function submitRunReview(
 /** Discard the viewer's pending review and all its draft comments. */
 export async function discardRunReview(run: ChapterRunRow): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
+		if (run.prNumber === null && !runMatchesPrDiff(run, review)) {
+			throw new ReviewError(
+				"This run isn't tied to the pull request currently discovered for the checkout. Re-run with --pr before discarding its review.",
+				409,
+			);
+		}
 		if (review.pendingReviewNodeId === null) {
 			throw new ReviewError("There's no pending review to discard.", 409);
 		}

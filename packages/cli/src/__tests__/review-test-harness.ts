@@ -235,6 +235,57 @@ export function makeInterruptedPromotionReviewWithForeignMatchingReply(): unknow
 	);
 }
 
+export function makeInterruptedPromotionReviewWithSubmittedReply(): unknown {
+	const root = {
+		...submittedThread.comments.nodes[0],
+		id: "COMMENT_new",
+		body: "Root",
+		bodyHTML: "<p>Root</p>",
+	};
+	const reply = {
+		...submittedThread.comments.nodes[0],
+		id: "COMMENT_reply",
+		body: "Reply",
+		bodyHTML: "<p>Reply</p>",
+	};
+	return makeReview(
+		[
+			{
+				...submittedThread,
+				id: "THREAD_new",
+				path: "src/foo.ts",
+				line: 3,
+				diffSide: "RIGHT",
+				comments: { ...submittedThread.comments, nodes: [root, reply] },
+			},
+		],
+		null,
+	);
+}
+
+export function makeResolvedInterruptedPromotionReview(): unknown {
+	const root = {
+		...pendingThread.comments.nodes[0],
+		id: "COMMENT_new",
+		body: "Local note",
+		bodyHTML: "<p>Local note</p>",
+	};
+	return makeReview(
+		[
+			{
+				...pendingThread,
+				id: "THREAD_new",
+				isResolved: true,
+				path: "src/foo.ts",
+				line: 3,
+				diffSide: "RIGHT",
+				comments: { ...pendingThread.comments, nodes: [root] },
+			},
+		],
+		"REVIEW_pending",
+	);
+}
+
 export function makeAnchorlessPendingReview(): unknown {
 	return makeReview(
 		[
@@ -283,6 +334,7 @@ export function makePaginatedThreadReview(): unknown {
 
 interface GhShimOptions {
 	addThreadDelayMs?: number;
+	discoveredPullRequest?: boolean;
 	failAddThread?: boolean;
 	failAddReply?: boolean;
 	failDeleteComment?: boolean;
@@ -370,7 +422,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
     process.stderr.write("no pull requests found for branch \\"feature\\"\\n");
     process.exit(1);
   }
-  emit({});
+  emit(${options.discoveredPullRequest ? `{ number: 5, title: "Other branch", body: "", url: "https://github.com/owner/repo/pull/5", state: "OPEN", isDraft: false, mergedAt: null, createdAt: "2026-01-01T00:00:00Z", author: { login: "octocat" }, headRefName: "other", headRefOid: ${JSON.stringify(HEAD)}, baseRefName: "main" }` : "{}"});
 } else if (query.includes("query GetReviewThreadComments")) {
   fs.appendFileSync(log, "get-thread-comments\\n");
   if (${options.failThreadComments ? "true" : "false"}) { process.stderr.write("gh: follow-up page failed\\n"); process.exit(1); }

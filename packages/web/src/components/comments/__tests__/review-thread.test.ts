@@ -8,6 +8,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
 	activeEditingCommentId,
+	activeReplyingState,
 	canEditReviewComment,
 	canPublishReplyImmediately,
 	canReplyToGitHubThread,
@@ -40,6 +41,11 @@ describe("GitHub reply destination", () => {
 
 	it("disables replies when the pull request is read-only", () => {
 		expect(canReplyToGitHubThread(makeThread([COMMENT_STATE.SUBMITTED]), false, false)).toBe(false);
+	});
+
+	it("clears an active reply when the thread becomes read-only", () => {
+		expect(activeReplyingState(true, true)).toBe(true);
+		expect(activeReplyingState(true, false)).toBe(false);
 	});
 });
 

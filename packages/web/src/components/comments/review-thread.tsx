@@ -100,6 +100,10 @@ export function canReplyToGitHubThread(
 	return canWriteToGitHub && (canPushToReview || canPublishReplyImmediately(thread));
 }
 
+export function activeReplyingState(isReplying: boolean, canReply: boolean): boolean {
+	return isReplying && canReply;
+}
+
 export function deleteRemovesReplies(thread: ReviewThread, comment: ReviewComment): boolean {
 	return thread.comments.length > 1 && thread.comments[0]?.id === comment.id;
 }
@@ -118,18 +122,25 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	const [error, setError] = useState<string | null>(null);
 
 	const activeEditingId = activeEditingCommentId(thread.comments, editingId, canPushToReview);
+	const canReply = !isGitHub || canReplyToGitHubThread(thread, canWriteToGitHub, canPushToReview);
+	const activeIsReplying = activeReplyingState(isReplying, canReply);
 	useEffect(() => {
 		if (editingId !== null && activeEditingId === null) {
 			setEditingId(null);
 			setError(null);
 		}
 	}, [editingId, activeEditingId]);
+	useEffect(() => {
+		if (isReplying && !activeIsReplying) {
+			setIsReplying(false);
+			setError(null);
+		}
+	}, [isReplying, activeIsReplying]);
 
 	const root = thread.comments[0];
 	if (!root) return null;
 	const replies = thread.comments.slice(1);
-	const idle = !isReplying && activeEditingId === null;
-	const canReply = !isGitHub || canReplyToGitHubThread(thread, canWriteToGitHub, canPushToReview);
+	const idle = !activeIsReplying && activeEditingId === null;
 	const publishesImmediately = isGitHub && canPublishReplyImmediately(thread);
 	const forceImmediateReply = publishesImmediately && !canPushToReview;
 
@@ -140,7 +151,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	async function handleResolveToggle() {
 		const next = !thread.isResolved;
 		const wasOpen = isOpen;
-		const hasActiveForm = isReplying || activeEditingId !== null || deleteTarget !== null;
+		const hasActiveForm = activeIsReplying || activeEditingId !== null || deleteTarget !== null;
 		if (!next || !hasActiveForm) setIsOpen(!next);
 		try {
 			if (thread.source === THREAD_SOURCE.GITHUB) {
@@ -155,7 +166,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	}
 
 	function handleOpenChange(open: boolean) {
-		if (!open && (isReplying || activeEditingId !== null || deleteTarget !== null)) return;
+		if (!open && (activeIsReplying || activeEditingId !== null || deleteTarget !== null)) return;
 		setIsOpen(open);
 	}
 
@@ -340,7 +351,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 						</div>
 					)}
 
-					{isReplying && canReply && (
+					{activeIsReplying && (
 						<CommentForm
 							label="Reply"
 							placeholder="Write a reply…"

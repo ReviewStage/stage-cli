@@ -121,6 +121,24 @@ describe("review API — GitHub boundaries", () => {
 		expect(JSON.parse(write.body).error).toMatch(/no GitHub pull request/i);
 	});
 
+	it("does not expose another branch's discovered pending review to a stale run", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, { discoveredPullRequest: true });
+		const runId = harness.insertRun({ prNumber: null, headSha: "d".repeat(40) });
+		const port = await harness.start();
+
+		const read = await harness.request(port, "GET", `/api/runs/${runId}/review`);
+		const discard = await harness.request(port, "POST", `/api/runs/${runId}/review/discard`);
+		const review = JSON.parse(read.body);
+
+		expect(read.status).toBe(200);
+		expect(review.github).toBe("none");
+		expect(review.hasPendingReview).toBe(false);
+		expect(review.pendingComments).toHaveLength(0);
+		expect(discard.status).toBe(409);
+		expect(JSON.parse(discard.body).error).toMatch(/isn't tied to the pull request/i);
+		expect(await harness.logLines()).not.toContain("discard-review");
+	});
+
 	it.each([
 		["edit", "/comment/edit", { nodeId: "COMMENT_other", body: "Nope" }],
 		["delete", "/comment/delete", { nodeId: "COMMENT_other" }],

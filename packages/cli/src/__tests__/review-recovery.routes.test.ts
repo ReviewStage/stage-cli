@@ -6,7 +6,9 @@ import {
 	makeAnchorlessPendingReview,
 	makeInterruptedPromotionReview,
 	makeInterruptedPromotionReviewWithForeignMatchingReply,
+	makeInterruptedPromotionReviewWithSubmittedReply,
 	makePublishedInterruptedPromotionReview,
+	makeResolvedInterruptedPromotionReview,
 	makeSummaryOnlyPendingReview,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -217,6 +219,54 @@ describe("review API — recovery", () => {
 
 		expect(promotion.status, promotion.body).toBe(200);
 		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(1);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("reconciles a matching viewer reply after its review was submitted", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReviewWithSubmittedReply());
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true });
+		harness.db
+			.update(commentThread)
+			.set({
+				promotionThreadNodeId: "THREAD_new",
+				promotionRootCommentNodeId: "COMMENT_new",
+			})
+			.run();
+
+		const promotion = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/add`,
+			{ localThreadId },
+		);
+
+		expect(promotion.status, promotion.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(0);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("does not resolve a recovered remote thread twice", async () => {
+		await harness.writeGhShim(makeResolvedInterruptedPromotionReview());
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ resolved: true });
+		harness.db
+			.update(commentThread)
+			.set({
+				promotionThreadNodeId: "THREAD_new",
+				promotionRootCommentNodeId: "COMMENT_new",
+			})
+			.run();
+
+		const promotion = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/add`,
+			{ localThreadId },
+		);
+
+		expect(promotion.status, promotion.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "resolve-thread")).toHaveLength(0);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 
