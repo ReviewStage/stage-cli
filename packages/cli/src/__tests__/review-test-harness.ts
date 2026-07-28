@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
@@ -82,6 +83,7 @@ function makeReview(
 					id: "PR_node",
 					viewerDidAuthor: false,
 					headRefOid: HEAD,
+					baseRefOid: BASE,
 					reviews: {
 						nodes:
 							pendingReviewId === null ? [] : [{ id: pendingReviewId, body: pendingReviewBody }],
@@ -156,6 +158,7 @@ interface GhShimOptions {
 	failDeleteComment?: boolean;
 	failResolve?: boolean;
 	failThreadComments?: boolean;
+	mergeBaseOid?: string;
 	persistCreatedReview?: boolean;
 	reviewQueryDelayMs?: number;
 }
@@ -164,6 +167,7 @@ interface InsertRunOptions {
 	originUrl?: string | null;
 	committed?: boolean;
 	headSha?: string;
+	prNumber?: number | null;
 	repoRoot?: string;
 }
 
@@ -179,6 +183,7 @@ export class ReviewRouteHarness {
 	private webDist = "";
 	private repoRoot = "";
 	private binDir = "";
+	private prNumber = 0;
 	private originalPath: string | undefined;
 	private readonly handles: ServerHandle[] = [];
 
@@ -192,6 +197,10 @@ export class ReviewRouteHarness {
 		this.webDist = path.join(this.tmpDir, "web-dist");
 		this.repoRoot = path.join(this.tmpDir, "repo");
 		this.binDir = path.join(this.tmpDir, "bin");
+		this.prNumber = Number.parseInt(
+			createHash("sha256").update(this.tmpDir).digest("hex").slice(0, 7),
+			16,
+		);
 		await fs.mkdir(this.webDist);
 		await fs.writeFile(path.join(this.webDist, "index.html"), "<html></html>");
 		await fs.mkdir(this.repoRoot);
@@ -223,7 +232,9 @@ const log = ${JSON.stringify(path.join(this.tmpDir, "gh-log.txt"))};
 const reviewPath = ${JSON.stringify(reviewPath)};
 function emit(o) { process.stdout.write(JSON.stringify(o)); }
 function sleep(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
-if (query.includes("query GetReviewThreadComments")) {
+if (args.some((arg) => arg.includes("/compare/"))) {
+  emit({ merge_base_commit: { sha: ${JSON.stringify(options.mergeBaseOid ?? MERGE_BASE)} } });
+} else if (query.includes("query GetReviewThreadComments")) {
   fs.appendFileSync(log, "get-thread-comments\\n");
   if (${options.failThreadComments ? "true" : "false"}) { process.stderr.write("gh: follow-up page failed\\n"); process.exit(1); }
   emit({ data: { node: { comments: {
@@ -305,7 +316,7 @@ if (query.includes("query GetReviewThreadComments")) {
 			.values({
 				repoRoot: options.repoRoot ?? this.repoRoot,
 				originUrl,
-				prNumber: 5,
+				prNumber: options.prNumber === undefined ? this.prNumber : options.prNumber,
 				scopeKind: committed ? SCOPE_KIND.COMMITTED : SCOPE_KIND.WORKING_TREE,
 				workingTreeRef: committed ? null : WORKING_TREE_REF.WORK,
 				baseSha: BASE,

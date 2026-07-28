@@ -17,7 +17,7 @@ import {
 } from "../db/schema/index.js";
 import { type LocalThreadScope, loadLocalThreadRecords } from "../runs/local-comment-threads.js";
 import { isLocalThreadPromoting } from "../runs/review.js";
-import { reviewActions } from "../runs/review-action-queue.js";
+import { REVIEW_ACTION_SCOPE, reviewActions } from "../runs/review-action-queue.js";
 import { deriveScopeKey } from "../runs/scope-key.js";
 import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
@@ -95,7 +95,7 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 					return;
 				}
 
-				await reviewActions.run(repoRoot, async () => {
+				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
 					if (!threadExists(db, threadId)) {
 						writeJson(res, 404, { error: `Thread ${threadId} not found` });
 						return;
@@ -137,7 +137,7 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 					return;
 				}
 
-				await reviewActions.run(repoRoot, async () => {
+				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
 					const [updated] = db
 						.update(commentThread)
 						.set({ resolvedAt: body.resolved ? new Date() : null })
@@ -166,7 +166,7 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 					writeJson(res, 409, { error: "This comment thread is being added to the review." });
 					return;
 				}
-				await reviewActions.run(repoRoot, async () => {
+				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
 					// Idempotent: deleting an absent thread is a no-op. The cascade FK
 					// removes the thread's comments.
 					db.delete(commentThread).where(eq(commentThread.id, threadId)).run();
@@ -187,7 +187,7 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 				const body = await parseJsonBody(req, res, CommentBodySchema);
 				if (!body) return;
 
-				await reviewActions.run(repoRoot, async () => {
+				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
 					const [existing] = db
 						.select({ threadId: comment.threadId })
 						.from(comment)
@@ -226,7 +226,7 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 					writeJson(res, 400, { error: "Missing commentId" });
 					return;
 				}
-				await reviewActions.run(repoRoot, async () => {
+				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
 					const [existing] = db
 						.select({ threadId: comment.threadId })
 						.from(comment)

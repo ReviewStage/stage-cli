@@ -27,6 +27,7 @@ import {
 	type DraftBodies,
 	type DraftState,
 	findDraftAt,
+	getDraftGitHubDestination,
 	isSameAnchor,
 	readDraftBody,
 	upsertDraft,
@@ -251,7 +252,7 @@ export function PierreDiffViewer({
 			};
 			try {
 				// "Comment on the PR" creates a pending GitHub comment; otherwise it stays local.
-				if (onPr && draft.canPushToReview) await createPendingComment(anchor);
+				if (onPr) await createPendingComment(anchor);
 				else await createLocalThread(anchor);
 				closeDraft(draft);
 			} catch (err) {
@@ -282,6 +283,8 @@ export function PierreDiffViewer({
 			const threads = annotation.metadata ?? [];
 			const draft = findDraftAt(drafts, annotation.side, annotation.lineNumber);
 			if (threads.length === 0 && !draft) return null;
+			const githubDestination =
+				draft === undefined ? null : getDraftGitHubDestination(draft, canPushToReview);
 			return (
 				<div
 					className="space-y-2 px-3 py-2 font-sans"
@@ -303,7 +306,7 @@ export function PierreDiffViewer({
 						// by its anchor to force a clean remount (re-reading its own draft text)
 						// instead of inheriting another composer's in-progress state.
 						<CommentForm
-							key={`draft-${draft.side}-${draft.endLine}`}
+							key={`draft-${draft.side}-${draft.endLine}-${githubDestination?.available}`}
 							label="Comment"
 							placeholder="Leave a comment…"
 							error={draft.error}
@@ -312,9 +315,10 @@ export function PierreDiffViewer({
 								writeDraftBody(draftBodiesRef.current, draft.side, draft.endLine, body)
 							}
 							destination={
-								draft.canPushToReview
+								githubDestination?.available
 									? {
 											toggleLabel: "Add to GitHub review",
+											defaultOn: githubDestination.defaultOn,
 											on: {
 												label: "Pending on GitHub",
 												description: "Only you can see it until you submit your review.",
@@ -332,14 +336,23 @@ export function PierreDiffViewer({
 											isGitHub: false,
 										}
 							}
-							onSubmit={(body, onPr) => handleCreateComment(draft, body, onPr)}
+							onSubmit={(body, onPr) =>
+								handleCreateComment(draft, body, onPr && githubDestination?.available === true)
+							}
 							onCancel={() => closeDraft(draft)}
 						/>
 					)}
 				</div>
 			);
 		},
-		[drafts, handleCreateComment, closeDraft, handleThreadMouseEnter, handleThreadMouseLeave],
+		[
+			drafts,
+			canPushToReview,
+			handleCreateComment,
+			closeDraft,
+			handleThreadMouseEnter,
+			handleThreadMouseLeave,
+		],
 	);
 
 	const renderGutterUtility = useCallback(

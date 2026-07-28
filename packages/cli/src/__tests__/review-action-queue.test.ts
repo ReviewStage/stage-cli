@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ReviewActionQueue } from "../runs/review-action-queue.js";
+import { REVIEW_ACTION_SCOPE, ReviewActionQueue } from "../runs/review-action-queue.js";
 
 const tempDirs: string[] = [];
 
@@ -16,6 +16,7 @@ describe("ReviewActionQueue", () => {
 		tempDirs.push(tempDir);
 		const repoRoot = path.join(tempDir, "repo");
 		await fs.mkdir(repoRoot);
+		const lockDirectory = path.join(tempDir, "locks");
 		const events: string[] = [];
 		let releaseFirst: () => void = () => {
 			throw new Error("First action gate was not initialized");
@@ -24,21 +25,92 @@ describe("ReviewActionQueue", () => {
 			releaseFirst = resolve;
 		});
 
-		const first = new ReviewActionQueue().run(repoRoot, async () => {
-			events.push("first:start");
-			await firstGate;
-			events.push("first:end");
-		});
+		const first = new ReviewActionQueue(lockDirectory).run(
+			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot },
+			async () => {
+				events.push("first:start");
+				await firstGate;
+				events.push("first:end");
+			},
+		);
 		await expect.poll(() => events).toEqual(["first:start"]);
 
-		const second = new ReviewActionQueue().run(repoRoot, async () => {
-			events.push("second");
-		});
+		const second = new ReviewActionQueue(lockDirectory).run(
+			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot },
+			async () => {
+				events.push("second");
+			},
+		);
 		await new Promise((resolve) => setTimeout(resolve, 100));
 		expect(events).toEqual(["first:start"]);
 
 		releaseFirst();
 		await Promise.all([first, second]);
 		expect(events).toEqual(["first:start", "first:end", "second"]);
+	});
+
+	it("serializes the same pull request across checkout-specific queue instances", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-review-lock-"));
+		tempDirs.push(tempDir);
+		const lockDirectory = path.join(tempDir, "locks");
+		const events: string[] = [];
+		let releaseFirst: () => void = () => {
+			throw new Error("First action gate was not initialized");
+		};
+		const firstGate = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+
+		const first = new ReviewActionQueue(lockDirectory).run(
+			{
+				kind: REVIEW_ACTION_SCOPE.PULL_REQUEST,
+				owner: "ReviewStage",
+				repo: "stage-cli",
+				prNumber: 70,
+			},
+			async () => {
+				events.push("first:start");
+				await firstGate;
+				events.push("first:end");
+			},
+		);
+		await expect.poll(() => events).toEqual(["first:start"]);
+
+		const second = new ReviewActionQueue(lockDirectory).run(
+			{
+				kind: REVIEW_ACTION_SCOPE.PULL_REQUEST,
+				owner: "reviewstage",
+				repo: "STAGE-CLI",
+				prNumber: 70,
+			},
+			async () => {
+				events.push("second");
+			},
+		);
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		expect(events).toEqual(["first:start"]);
+
+		releaseFirst();
+		await Promise.all([first, second]);
+		expect(events).toEqual(["first:start", "first:end", "second"]);
+	});
+
+	it("does not require the checkout or its parent directory to be lockfile-writable", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-review-lock-"));
+		tempDirs.push(tempDir);
+		const lockDirectory = path.join(tempDir, "locks");
+		let ran = false;
+
+		await new ReviewActionQueue(lockDirectory).run(
+			{
+				kind: REVIEW_ACTION_SCOPE.CHECKOUT,
+				repoRoot: path.join(tempDir, "unmounted", "repo"),
+			},
+			async () => {
+				ran = true;
+			},
+		);
+
+		expect(ran).toBe(true);
 	});
 });

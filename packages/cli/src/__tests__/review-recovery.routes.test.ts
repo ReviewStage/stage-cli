@@ -2,7 +2,7 @@ import { ReviewResponseSchema } from "@stagereview/types/review";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { comment, commentThread } from "../db/schema/index.js";
-import { ReviewActionQueue } from "../runs/review-action-queue.js";
+import { REVIEW_ACTION_SCOPE, ReviewActionQueue } from "../runs/review-action-queue.js";
 import {
 	EMPTY_REVIEW,
 	makeAnchorlessPendingReview,
@@ -205,10 +205,13 @@ describe("review API — recovery and concurrency", () => {
 			releaseLock = resolve;
 		});
 		let lockHeld = false;
-		const blocker = new ReviewActionQueue().run(thread.repoRoot, async () => {
-			lockHeld = true;
-			await gate;
-		});
+		const blocker = new ReviewActionQueue().run(
+			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: thread.repoRoot },
+			async () => {
+				lockHeld = true;
+				await gate;
+			},
+		);
 		await expect.poll(() => lockHeld).toBe(true);
 
 		const reply = harness.request(

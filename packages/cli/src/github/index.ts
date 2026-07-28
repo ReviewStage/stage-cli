@@ -9,7 +9,13 @@ export {
 	setAutoMerge,
 	setDraft,
 } from "./mutations.js";
-export { getChecks, getMergeStatus, getPullRequest, getReviews } from "./pull-request.js";
+export {
+	getChecks,
+	getMergeStatus,
+	getPullRequest,
+	getPullRequestOrThrow,
+	getReviews,
+} from "./pull-request.js";
 export {
 	type PullRequestRefs,
 	parsePullRequestNumber,

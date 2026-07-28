@@ -16,7 +16,7 @@ import {
 	type ReviewerStatus,
 } from "@stagereview/types/pull-request";
 import { z } from "zod";
-import { gh } from "./exec.js";
+import { gh, ghOrThrow } from "./exec.js";
 import { type GitHubRepo, parseGitHubRepo } from "./repo.js";
 
 // ─── Pull request ─────────────────────────────────────────────────────────────
@@ -118,38 +118,53 @@ export async function getPullRequest(
 	originUrl: string | null,
 	prNumber: number | null = null,
 ): Promise<GitHubPullRequest | null> {
-	const repo = parseGitHubRepo(originUrl);
-	if (!repo) return null;
 	try {
-		const viewArgs =
-			prNumber === null
-				? ["pr", "view", "--json", PR_FIELDS.join(",")]
-				: ["pr", "view", String(prNumber), "--json", PR_FIELDS.join(",")];
-		const stdout = await gh(viewArgs, repoRoot);
-		const parsed = GhPullRequestSchema.safeParse(JSON.parse(stdout));
-		if (!parsed.success) return null;
-		const pr = parsed.data;
-		// Prefer the REST author (real avatar, bot type, [bot] login); fall back to
-		// gh's leaner author projection only if the REST lookup fails.
-		const rest = await fetchRestPullRequest(repoRoot, repo, pr.number);
-		const user = rest?.user ?? ghAuthorFallback(pr.author);
-		return {
-			number: pr.number,
-			title: pr.title,
-			body: pr.body ?? "",
-			html_url: pr.url,
-			// REST `state` is open|closed; merged implies closed.
-			state: pr.state === "OPEN" ? "open" : "closed",
-			draft: pr.isDraft,
-			merged_at: pr.mergedAt && pr.mergedAt.length > 0 ? pr.mergedAt : null,
-			created_at: pr.createdAt,
-			user,
-			head: { ref: pr.headRefName, sha: pr.headRefOid },
-			base: { ref: pr.baseRefName },
-		};
+		return await getPullRequestOrThrow(repoRoot, originUrl, prNumber);
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Resolve a pull request while preserving GitHub CLI and response-shape failures.
+ * Review reads use this variant so an unavailable GitHub session is not mistaken
+ * for a repository that simply has no pull request.
+ */
+export async function getPullRequestOrThrow(
+	repoRoot: string,
+	originUrl: string | null,
+	prNumber: number | null = null,
+): Promise<GitHubPullRequest | null> {
+	const repo = parseGitHubRepo(originUrl);
+	if (!repo) return null;
+	const viewArgs =
+		prNumber === null
+			? ["pr", "view", "--json", PR_FIELDS.join(",")]
+			: ["pr", "view", String(prNumber), "--json", PR_FIELDS.join(",")];
+	const stdout = await ghOrThrow(viewArgs, repoRoot);
+	const parsed = GhPullRequestSchema.safeParse(JSON.parse(stdout));
+	if (!parsed.success) {
+		throw new Error(`Unexpected response shape from GitHub pull request lookup: ${parsed.error}`);
+	}
+	const pr = parsed.data;
+	// Prefer the REST author (real avatar, bot type, [bot] login); fall back to
+	// gh's leaner author projection only if the REST lookup fails.
+	const rest = await fetchRestPullRequest(repoRoot, repo, pr.number);
+	const user = rest?.user ?? ghAuthorFallback(pr.author);
+	return {
+		number: pr.number,
+		title: pr.title,
+		body: pr.body ?? "",
+		html_url: pr.url,
+		// REST `state` is open|closed; merged implies closed.
+		state: pr.state === "OPEN" ? "open" : "closed",
+		draft: pr.isDraft,
+		merged_at: pr.mergedAt && pr.mergedAt.length > 0 ? pr.mergedAt : null,
+		created_at: pr.createdAt,
+		user,
+		head: { ref: pr.headRefName, sha: pr.headRefOid },
+		base: { ref: pr.baseRefName },
+	};
 }
 
 // ─── CI checks ──────────────────────────────────────────────────────────────

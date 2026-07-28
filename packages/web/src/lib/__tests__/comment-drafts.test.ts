@@ -7,6 +7,7 @@ import {
 	type DraftBodies,
 	type DraftState,
 	findDraftAt,
+	getDraftGitHubDestination,
 	isSameAnchor,
 	readDraftBody,
 	upsertDraft,
@@ -32,9 +33,9 @@ function draftState(
 	side: CommentDraft["side"],
 	startLine: number,
 	endLine: number,
-	canPushToReview = false,
+	defaultToGitHub = false,
 ): DraftState {
-	return { side, startLine, endLine, error: null, canPushToReview };
+	return { side, startLine, endLine, error: null, defaultToGitHub };
 }
 
 function rowFor(
@@ -108,7 +109,7 @@ describe("upsertDraft", () => {
 		);
 		expect(result).toHaveLength(2);
 		expect(findDraftAt(result, "deletions", 10)?.startLine).toBe(8);
-		expect(findDraftAt(result, "deletions", 10)?.canPushToReview).toBe(true);
+		expect(findDraftAt(result, "deletions", 10)?.defaultToGitHub).toBe(true);
 	});
 
 	it("adopts the new startLine when re-opening the same (side, endLine) row", () => {
@@ -119,7 +120,7 @@ describe("upsertDraft", () => {
 		// A re-drag clears any stale submit error.
 		expect(result[0]?.error).toBeNull();
 		// GitHub becoming available must not change an already-open local-only composer.
-		expect(result[0]?.canPushToReview).toBe(false);
+		expect(result[0]?.defaultToGitHub).toBe(false);
 	});
 
 	it("leaves other open drafts untouched when updating one", () => {
@@ -140,6 +141,22 @@ describe("upsertDraft", () => {
 			false,
 		);
 		expect(result).toHaveLength(2);
+	});
+});
+
+describe("getDraftGitHubDestination", () => {
+	it("offers GitHub as an explicit opt-in when it becomes available after opening", () => {
+		expect(getDraftGitHubDestination(draftState("additions", 5, 5), true)).toEqual({
+			available: true,
+			defaultOn: false,
+		});
+	});
+
+	it("keeps GitHub selected when the composer opened with it available", () => {
+		expect(getDraftGitHubDestination(draftState("additions", 5, 5, true), false)).toEqual({
+			available: true,
+			defaultOn: true,
+		});
 	});
 });
 

@@ -33,7 +33,7 @@ describe("review API — writes", () => {
 			},
 		);
 
-		expect(res.status).toBe(200);
+		expect(res.status, res.body).toBe(200);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 		expect((await harness.logLines()).filter((line) => line === "create-review")).toHaveLength(1);
 	});
@@ -129,6 +129,29 @@ describe("review API — writes", () => {
 		expect(res.status).toBe(409);
 		expect(JSON.parse(res.body)).toEqual({
 			error: expect.stringMatching(/committed diff/i),
+		});
+	});
+
+	it("rejects PR comments when the run has a different merge base", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, { mergeBaseOid: "d".repeat(40) });
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/comment`,
+			{
+				filePath: "src/foo.ts",
+				side: "additions",
+				startLine: 3,
+				endLine: 3,
+				body: "On the PR",
+			},
+		);
+
+		expect(res.status).toBe(409);
+		expect(JSON.parse(res.body)).toEqual({
+			error: expect.stringMatching(/current PR diff/i),
 		});
 	});
 

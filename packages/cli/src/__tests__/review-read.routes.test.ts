@@ -111,6 +111,18 @@ describe("review API — read", () => {
 		expect(stderr).toHaveBeenCalledWith(expect.stringContaining("gh: authentication required"));
 	});
 
+	it("reports offline when automatic pull request discovery fails", async () => {
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		await harness.writeFailingGhShim();
+		const runId = harness.insertRun({ prNumber: null });
+
+		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
+
+		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
+		expect(review.github).toBe("offline");
+		expect(stderr).toHaveBeenCalledWith(expect.stringContaining("gh: authentication required"));
+	});
+
 	it("reports offline when the PR cannot be resolved", async () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 		await harness.writeGhShim({ data: { repository: { pullRequest: null } } });
@@ -129,6 +141,17 @@ describe("review API — read", () => {
 	it("hides GitHub threads when the run does not match the PR head", async () => {
 		await harness.writeGhShim(REVIEW_QUERY_RESULT);
 		const runId = harness.insertRun({ headSha: HEAD.replaceAll("a", "d") });
+
+		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
+
+		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
+		expect(review.github).toBe("none");
+		expect(review.threads.every((t) => t.source === "local")).toBe(true);
+	});
+
+	it("hides GitHub threads when the run does not match the PR merge base", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, { mergeBaseOid: "d".repeat(40) });
+		const runId = harness.insertRun();
 
 		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
 

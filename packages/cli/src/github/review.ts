@@ -26,6 +26,7 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
       id
       viewerDidAuthor
       headRefOid
+      baseRefOid
       reviews(states: PENDING, first: 1) { nodes { id body } }
       reviewThreads(first: 50, after: $cursor) {
         pageInfo { hasNextPage endCursor }
@@ -116,6 +117,7 @@ const ReviewQuerySchema = z.object({
 						id: z.string(),
 						viewerDidAuthor: z.boolean(),
 						headRefOid: z.string(),
+						baseRefOid: z.string(),
 						reviews: z.object({
 							nodes: z.array(z.object({ id: z.string(), body: z.string() })),
 						}),
@@ -173,6 +175,8 @@ export interface GitHubReview {
 	viewerDidAuthor: boolean;
 	/** The PR's current head commit — comments anchor to this commit's diff. */
 	headRefOid: string;
+	/** Merge base of the PR's current base and head commits — the other half of its diff identity. */
+	mergeBaseOid: string;
 	/** The viewer's open pending review, or null when they have none. */
 	pendingReviewNodeId: string | null;
 	/** Existing summary text on the viewer's open pending review. */
@@ -206,6 +210,7 @@ export async function getReview(
 	let pullRequestNodeId = "";
 	let viewerDidAuthor = false;
 	let headRefOid = "";
+	let baseRefOid = "";
 	let pendingReviewNodeId: string | null = null;
 	let pendingReviewBody = "";
 	let pendingCommentCount = 0;
@@ -237,6 +242,7 @@ export async function getReview(
 		pullRequestNodeId = pr.id;
 		viewerDidAuthor = pr.viewerDidAuthor;
 		headRefOid = pr.headRefOid;
+		baseRefOid = pr.baseRefOid;
 		pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
 		pendingReviewBody = pr.reviews.nodes[0]?.body ?? "";
 
@@ -274,17 +280,36 @@ export async function getReview(
 	// resolves) — treat as unavailable rather than handing back an empty node id that
 	// later write mutations would post against.
 	if (pullRequestNodeId === "") throw new Error("Pull request not found on GitHub");
+	const mergeBaseOid = await getPullRequestMergeBase(repoRoot, repo, baseRefOid, headRefOid);
 
 	return {
 		pullRequestNodeId,
 		viewerDidAuthor,
 		headRefOid,
+		mergeBaseOid,
 		pendingReviewNodeId,
 		pendingReviewBody,
 		pendingCommentCount,
 		pendingComments,
 		threads,
 	};
+}
+
+const CompareSchema = z.object({
+	merge_base_commit: z.object({ sha: z.string() }),
+});
+
+async function getPullRequestMergeBase(
+	repoRoot: string,
+	repo: GitHubRepo,
+	baseRefOid: string,
+	headRefOid: string,
+): Promise<string> {
+	const stdout = await ghOrThrow(
+		["api", `repos/${repo.owner}/${repo.repo}/compare/${baseRefOid}...${headRefOid}`],
+		repoRoot,
+	);
+	return CompareSchema.parse(JSON.parse(stdout)).merge_base_commit.sha;
 }
 
 async function loadThreadCommentsInBatches(

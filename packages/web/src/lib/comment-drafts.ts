@@ -12,8 +12,8 @@ export interface CommentDraft {
 /** A draft plus the last submit error for its composer (null while clean). */
 export interface DraftState extends CommentDraft {
 	error: string | null;
-	/** Whether this composer offered GitHub as a destination when it opened. */
-	canPushToReview: boolean;
+	/** Whether GitHub was available when the composer opened, which controls its default. */
+	defaultToGitHub: boolean;
 }
 
 /**
@@ -62,6 +62,17 @@ export function findDraftAt(
 	return drafts.find((draft) => isSameAnchor(draft, side, endLine));
 }
 
+/** GitHub can appear later, but only drafts opened with it available default to sending there. */
+export function getDraftGitHubDestination(
+	draft: DraftState,
+	canPushToReview: boolean,
+): { available: boolean; defaultOn: boolean } {
+	return {
+		available: draft.defaultToGitHub || canPushToReview,
+		defaultOn: draft.defaultToGitHub,
+	};
+}
+
 /**
  * Opens a composer for the anchor. Since a row holds at most one composer, re-opening
  * the same `(side, endLine)` doesn't duplicate it — instead it adopts the new range's
@@ -71,10 +82,10 @@ export function findDraftAt(
 export function upsertDraft(
 	drafts: readonly DraftState[],
 	anchor: CommentDraft,
-	canPushToReview: boolean,
+	defaultToGitHub: boolean,
 ): DraftState[] {
 	if (!findDraftAt(drafts, anchor.side, anchor.endLine)) {
-		return [...drafts, { ...anchor, error: null, canPushToReview }];
+		return [...drafts, { ...anchor, error: null, defaultToGitHub }];
 	}
 	return drafts.map((draft) =>
 		isSameAnchor(draft, anchor.side, anchor.endLine)
