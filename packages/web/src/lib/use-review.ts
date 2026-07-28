@@ -1,12 +1,17 @@
 import {
+	CommentSchema,
+	CommentThreadSchema,
 	CommentThreadsResponseSchema,
 	type CreateCommentThreadBody,
+	type Comment as LocalComment,
 	type CommentThread as LocalCommentThread,
 } from "@stagereview/types/comments";
 import {
 	COMMENT_STATE,
 	GITHUB_REVIEW_STATUS,
 	type GitHubReviewStatus,
+	type LocalReviewComment,
+	type LocalReviewThread,
 	type PendingReviewComment,
 	type ReviewEvent,
 	type ReviewResponse,
@@ -15,7 +20,7 @@ import {
 	THREAD_SOURCE,
 } from "@stagereview/types/review";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useInvalidatePullRequest } from "./pull-request-mutations";
 import { jsonFetch } from "./use-view-state";
 
@@ -33,12 +38,25 @@ async function fetchReview(runId: string): Promise<ReviewResponse> {
 	return ReviewResponseSchema.parse(raw);
 }
 
-async function fetchLocalThreads(runId: string): Promise<ReviewThread[]> {
+async function fetchLocalThreads(runId: string): Promise<LocalReviewThread[]> {
 	const raw = await jsonFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}/comment-threads`);
 	return CommentThreadsResponseSchema.parse(raw).map(toReviewThread);
 }
 
-function toReviewThread(thread: LocalCommentThread): ReviewThread {
+function toReviewComment(comment: LocalComment): LocalReviewComment {
+	return {
+		id: comment.id,
+		state: COMMENT_STATE.LOCAL,
+		body: comment.body,
+		bodyHtml: null,
+		author: null,
+		nodeId: null,
+		htmlUrl: null,
+		createdAt: comment.createdAt,
+	};
+}
+
+function toReviewThread(thread: LocalCommentThread): LocalReviewThread {
 	return {
 		id: thread.id,
 		source: THREAD_SOURCE.LOCAL,
@@ -48,16 +66,7 @@ function toReviewThread(thread: LocalCommentThread): ReviewThread {
 		startLine: thread.startLine,
 		endLine: thread.endLine,
 		isResolved: thread.resolvedAt !== null,
-		comments: thread.comments.map((comment) => ({
-			id: comment.id,
-			state: COMMENT_STATE.LOCAL,
-			body: comment.body,
-			bodyHtml: null,
-			author: null,
-			nodeId: null,
-			htmlUrl: null,
-			createdAt: comment.createdAt,
-		})),
+		comments: thread.comments.map(toReviewComment),
 	};
 }
 
@@ -110,8 +119,9 @@ export function useReview(runId: string): UseReviewResult {
 	const queryKey = useMemo(() => reviewQueryKey(runId), [runId]);
 	const [localOverlay, setLocalOverlay] = useState<{
 		runId: string;
-		threads: ReviewThread[];
+		threads: LocalReviewThread[];
 	} | null>(null);
+	const localRefreshGeneration = useRef(0);
 
 	const { data, isLoading, error } = useQuery<ReviewResponse>({
 		queryKey,
@@ -131,26 +141,30 @@ export function useReview(runId: string): UseReviewResult {
 	const pendingComments = useMemo(() => data?.pendingComments ?? [], [data]);
 	const threadsByFile = useMemo(() => groupByFile(threads), [threads]);
 	const invalidate = () => queryClient.invalidateQueries({ queryKey });
-	const refreshLocal = () => {
-		// The write already succeeded. Refreshing its local projection is best-effort
-		// and must not reject mutateAsync (which could prompt a duplicate retry).
-		void fetchLocalThreads(runId)
-			.then((localThreads) => setLocalOverlay({ runId, threads: localThreads }))
-			.catch(() => {});
-	};
-	const removePromotedLocalThread = (localThreadId: string) => {
+	const updateLocalThreads = (update: (threads: LocalReviewThread[]) => LocalReviewThread[]) => {
+		const generation = ++localRefreshGeneration.current;
 		setLocalOverlay((current) => {
 			const localThreads =
 				current?.runId === runId
 					? current.threads
 					: (queryClient
 							.getQueryData<ReviewResponse>(queryKey)
-							?.threads.filter((thread) => thread.source === THREAD_SOURCE.LOCAL) ?? []);
-			return {
-				runId,
-				threads: localThreads.filter((thread) => thread.id !== localThreadId),
-			};
+							?.threads.filter(
+								(thread): thread is LocalReviewThread => thread.source === THREAD_SOURCE.LOCAL,
+							) ?? []);
+			return { runId, threads: update(localThreads) };
 		});
+		// The mutation response above is authoritative. This best-effort read fills
+		// any rows not yet cached, but only the newest mutation may reconcile state.
+		void fetchLocalThreads(runId)
+			.then((localThreads) => {
+				if (localRefreshGeneration.current !== generation) return;
+				setLocalOverlay({ runId, threads: localThreads });
+			})
+			.catch(() => {});
+	};
+	const removePromotedLocalThread = (localThreadId: string) => {
+		updateLocalThreads((threads) => threads.filter((thread) => thread.id !== localThreadId));
 	};
 	// GitHub-affecting actions (submit/resolve/reply/promote) change PR-level state —
 	// reviewer decisions, the merge button — that lives behind separate, infinitely-
@@ -164,9 +178,11 @@ export function useReview(runId: string): UseReviewResult {
 
 	const m = {
 		createLocalThread: useMutation({
-			mutationFn: (input: CreateCommentThreadBody) =>
-				jsonFetch<unknown>(runPath("/comment-threads"), jsonRequest("POST", input)),
-			onSuccess: refreshLocal,
+			mutationFn: async (input: CreateCommentThreadBody) =>
+				CommentThreadSchema.parse(
+					await jsonFetch<unknown>(runPath("/comment-threads"), jsonRequest("POST", input)),
+				),
+			onSuccess: (thread) => updateLocalThreads((threads) => [...threads, toReviewThread(thread)]),
 		}),
 		createPendingComment: useMutation({
 			mutationFn: (input: CreateCommentThreadBody) =>
@@ -174,42 +190,75 @@ export function useReview(runId: string): UseReviewResult {
 			onSuccess: invalidateGitHub,
 		}),
 		replyLocal: useMutation({
-			mutationFn: ({ threadId, body }: { threadId: string; body: string }) =>
-				jsonFetch(
-					`/api/comment-threads/${encodeURIComponent(threadId)}/replies`,
-					jsonRequest("POST", { body }),
+			mutationFn: async ({ threadId, body }: { threadId: string; body: string }) =>
+				CommentSchema.parse(
+					await jsonFetch(
+						`/api/comment-threads/${encodeURIComponent(threadId)}/replies`,
+						jsonRequest("POST", { body }),
+					),
 				),
-			onSuccess: refreshLocal,
+			onSuccess: (comment, { threadId }) =>
+				updateLocalThreads((threads) =>
+					threads.map((thread) =>
+						thread.id === threadId
+							? { ...thread, comments: [...thread.comments, toReviewComment(comment)] }
+							: thread,
+					),
+				),
 		}),
 		editLocalComment: useMutation({
-			mutationFn: ({ commentId, body }: { commentId: string; body: string }) =>
-				jsonFetch(`/api/comments/${encodeURIComponent(commentId)}`, jsonRequest("PATCH", { body })),
-			onSuccess: refreshLocal,
+			mutationFn: async ({ commentId, body }: { commentId: string; body: string }) =>
+				CommentSchema.parse(
+					await jsonFetch(
+						`/api/comments/${encodeURIComponent(commentId)}`,
+						jsonRequest("PATCH", { body }),
+					),
+				),
+			onSuccess: (comment) =>
+				updateLocalThreads((threads) =>
+					threads.map((thread) => ({
+						...thread,
+						comments: thread.comments.map((current) =>
+							current.id === comment.id ? toReviewComment(comment) : current,
+						),
+					})),
+				),
 		}),
 		deleteLocalThread: useMutation({
 			mutationFn: (threadId: string) =>
 				jsonFetch(`/api/comment-threads/${encodeURIComponent(threadId)}`, jsonRequest("DELETE")),
-			onSuccess: refreshLocal,
+			onSuccess: (_data, threadId) =>
+				updateLocalThreads((threads) => threads.filter((thread) => thread.id !== threadId)),
 		}),
 		deleteLocalComment: useMutation({
 			mutationFn: (commentId: string) =>
 				jsonFetch(`/api/comments/${encodeURIComponent(commentId)}`, jsonRequest("DELETE")),
-			onSuccess: refreshLocal,
+			onSuccess: (_data, commentId) =>
+				updateLocalThreads((threads) =>
+					threads.flatMap((thread) => {
+						const comments = thread.comments.filter((comment) => comment.id !== commentId);
+						return comments.length === 0 ? [] : [{ ...thread, comments }];
+					}),
+				),
 		}),
 		resolveLocalThread: useMutation({
-			mutationFn: ({ threadId, resolved }: { threadId: string; resolved: boolean }) =>
-				jsonFetch(
-					`/api/comment-threads/${encodeURIComponent(threadId)}`,
-					jsonRequest("PATCH", { resolved }),
+			mutationFn: async ({ threadId, resolved }: { threadId: string; resolved: boolean }) =>
+				CommentThreadSchema.parse(
+					await jsonFetch(
+						`/api/comment-threads/${encodeURIComponent(threadId)}`,
+						jsonRequest("PATCH", { resolved }),
+					),
 				),
-			onSuccess: refreshLocal,
+			onSuccess: (updated) =>
+				updateLocalThreads((threads) =>
+					threads.map((thread) => (thread.id === updated.id ? toReviewThread(updated) : thread)),
+				),
 		}),
 		addToReview: useMutation({
 			mutationFn: (localThreadId: string) =>
 				jsonFetch(runPath("/review/add"), jsonRequest("POST", { localThreadId })),
 			onSuccess: (_data, localThreadId) => {
 				removePromotedLocalThread(localThreadId);
-				refreshLocal();
 				invalidateGitHub();
 			},
 		}),

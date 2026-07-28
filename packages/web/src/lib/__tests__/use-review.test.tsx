@@ -89,7 +89,7 @@ describe("useReview", () => {
 					return jsonResponse(reviewReads === 1 ? AVAILABLE_REVIEW : OFFLINE_REVIEW);
 				}
 				if (url.endsWith("/comment-threads") && method === "POST") {
-					return jsonResponse({});
+					return jsonResponse(LOCAL_THREAD);
 				}
 				if (url.endsWith("/comment-threads") && method === "GET") {
 					return jsonResponse([LOCAL_THREAD]);
@@ -126,7 +126,7 @@ describe("useReview", () => {
 			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 				const url = typeof input === "string" ? input : input.toString();
 				if (url.endsWith("/review")) return jsonResponse(AVAILABLE_REVIEW);
-				if ((init?.method ?? "GET") === "POST") return jsonResponse({});
+				if ((init?.method ?? "GET") === "POST") return jsonResponse(LOCAL_THREAD);
 				return new Response("offline", { status: 500 });
 			}),
 		);
@@ -156,7 +156,9 @@ describe("useReview", () => {
 				const url = typeof input === "string" ? input : input.toString();
 				const method = init?.method ?? "GET";
 				if (url.endsWith("/review")) return pendingReview;
-				if (url.endsWith("/comment-threads") && method === "POST") return jsonResponse({});
+				if (url.endsWith("/comment-threads") && method === "POST") {
+					return jsonResponse(LOCAL_THREAD);
+				}
 				if (url.endsWith("/comment-threads")) return jsonResponse([LOCAL_THREAD]);
 				return new Response("not found", { status: 404 });
 			}),

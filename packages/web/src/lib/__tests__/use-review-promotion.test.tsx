@@ -72,7 +72,9 @@ describe("useReview promotion", () => {
 				const url = typeof input === "string" ? input : input.toString();
 				const method = init?.method ?? "GET";
 				if (url.endsWith("/review") && method === "GET") return jsonResponse(review(promoted));
-				if (url.endsWith("/comment-threads") && method === "POST") return jsonResponse({});
+				if (url.endsWith("/comment-threads") && method === "POST") {
+					return jsonResponse(LOCAL_THREAD);
+				}
 				if (url.endsWith("/comment-threads") && method === "GET") {
 					return promoted ? new Response("offline", { status: 500 }) : jsonResponse([LOCAL_THREAD]);
 				}
