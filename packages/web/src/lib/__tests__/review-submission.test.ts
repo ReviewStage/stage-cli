@@ -46,4 +46,15 @@ describe("canSubmitReview", () => {
 			}),
 		).toBe(false);
 	});
+
+	it("disables submission while a review is being submitted", () => {
+		expect(
+			canSubmitReview({
+				event: REVIEW_EVENT.APPROVE,
+				body: "Looks good",
+				pendingCommentCount: 2,
+				isSubmitting: true,
+			}),
+		).toBe(false);
+	});
 });

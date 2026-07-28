@@ -87,6 +87,7 @@ export function FilesPage({ runId }: FilesPageProps) {
 			}
 		>
 			<FileDiffList
+				key={runId}
 				ref={diffListRef}
 				entries={entries}
 				emptyMessage="No files changed in this run."

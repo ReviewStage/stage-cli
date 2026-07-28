@@ -1,7 +1,7 @@
 import type { Chapter, LineRef } from "@stagereview/types/chapters";
 import type { FileContentsMap } from "@stagereview/types/diff";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { ChapterSidePanel } from "@/components/chapter";
 import { type ChapterOverlayProps, FileDiffList, SidebarLayout } from "@/components/files";
@@ -325,17 +325,19 @@ function ChapterDetailContent({
 				/>
 			}
 		>
-			<FileDiffList
-				key={chapter.id}
-				ref={diffListRef}
-				entries={chapterEntries}
-				emptyMessage="No changes in this chapter"
-				viewedPathSet={view.filePathSet}
-				onToggleViewed={handleToggleFileViewed}
-				collapseState={collapseState}
-				chapterOverlay={chapterOverlay}
-				focusedFilePath={keyboardFocusedFilePath}
-			/>
+			<Fragment key={runId}>
+				<FileDiffList
+					key={chapter.id}
+					ref={diffListRef}
+					entries={chapterEntries}
+					emptyMessage="No changes in this chapter"
+					viewedPathSet={view.filePathSet}
+					onToggleViewed={handleToggleFileViewed}
+					collapseState={collapseState}
+					chapterOverlay={chapterOverlay}
+					focusedFilePath={keyboardFocusedFilePath}
+				/>
+			</Fragment>
 		</SidebarLayout>
 	);
 }

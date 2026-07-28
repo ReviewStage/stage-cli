@@ -64,6 +64,52 @@ const review = (promoted: boolean): ReviewResponse => ({
 afterEach(() => vi.unstubAllGlobals());
 
 describe("useReview promotion", () => {
+	it("does not resolve a GitHub mutation until the review refetch completes", async () => {
+		let reviewReads = 0;
+		let releaseRefetch: (response: Response) => void = () => {
+			throw new Error("Review refetch gate was not initialized");
+		};
+		const refetchGate = new Promise<Response>((resolve) => {
+			releaseRefetch = resolve;
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+				const url = typeof input === "string" ? input : input.toString();
+				const method = init?.method ?? "GET";
+				if (url.endsWith("/review") && method === "GET") {
+					reviewReads += 1;
+					return reviewReads === 1 ? jsonResponse(review(false)) : refetchGate;
+				}
+				if (url.endsWith("/review/comment") && method === "POST") return jsonResponse({});
+				return new Response("not found", { status: 404 });
+			}),
+		);
+		const { Wrapper } = makeWrapper();
+		const { result } = renderHook(() => useReview("run1"), { wrapper: Wrapper });
+		await waitFor(() => expect(result.current.github).toBe("available"));
+
+		let mutationSettled = false;
+		const mutation = result.current
+			.createPendingComment({
+				filePath: "src/foo.ts",
+				side: "additions",
+				startLine: 3,
+				endLine: 3,
+				body: "Pending comment",
+			})
+			.finally(() => {
+				mutationSettled = true;
+			});
+		await waitFor(() => expect(reviewReads).toBe(2));
+		expect(mutationSettled).toBe(false);
+
+		releaseRefetch(jsonResponse(review(true)));
+		await act(async () => mutation);
+		expect(mutationSettled).toBe(true);
+		await waitFor(() => expect(result.current.pendingCommentCount).toBe(1));
+	});
+
 	it("removes the local overlay even when its post-promotion refresh fails", async () => {
 		let promoted = false;
 		vi.stubGlobal(

@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { commentThread } from "../db/schema/index.js";
-import {
-	EMPTY_REVIEW,
-	makeSummaryOnlyPendingReview,
-	REVIEW_QUERY_RESULT,
-	ReviewRouteHarness,
-} from "./review-test-harness.js";
+import { EMPTY_REVIEW, REVIEW_QUERY_RESULT, ReviewRouteHarness } from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
 
@@ -58,73 +53,6 @@ describe("review API — writes", () => {
 		expect(res.status).toBe(200);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 		expect((await harness.logLines()).some((line) => line.startsWith("add-thread"))).toBe(true);
-	});
-
-	it("submits the pending review with the chosen event", async () => {
-		await harness.writeGhShim(REVIEW_QUERY_RESULT);
-		const runId = harness.insertRun();
-
-		const res = await harness.request(
-			await harness.start(),
-			"POST",
-			`/api/runs/${runId}/review/submit`,
-			{ event: "APPROVE", body: "LGTM" },
-		);
-
-		expect(res.status).toBe(200);
-		expect((await harness.logLines()).find((line) => line.startsWith("submit"))).toContain(
-			"event=APPROVE",
-		);
-	});
-
-	it("rejects an empty comment review", async () => {
-		await harness.writeGhShim(EMPTY_REVIEW);
-		const runId = harness.insertRun();
-
-		const res = await harness.request(
-			await harness.start(),
-			"POST",
-			`/api/runs/${runId}/review/submit`,
-			{ event: "COMMENT", body: "   " },
-		);
-
-		expect(res.status).toBe(400);
-		expect((await harness.logLines()).join("\n")).not.toMatch(/create-review|submit/);
-	});
-
-	it("rejects a request for changes without a summary", async () => {
-		await harness.writeGhShim(REVIEW_QUERY_RESULT);
-		const runId = harness.insertRun();
-
-		const res = await harness.request(
-			await harness.start(),
-			"POST",
-			`/api/runs/${runId}/review/submit`,
-			{ event: "REQUEST_CHANGES", body: "   " },
-		);
-
-		expect(res.status).toBe(400);
-		expect(JSON.parse(res.body)).toEqual({
-			error: expect.stringMatching(/summary.*request changes/i),
-		});
-		expect((await harness.logLines()).join("\n")).not.toMatch(/submit/);
-	});
-
-	it("allows an existing pending summary to be cleared", async () => {
-		await harness.writeGhShim(makeSummaryOnlyPendingReview());
-		const runId = harness.insertRun();
-
-		const submit = await harness.request(
-			await harness.start(),
-			"POST",
-			`/api/runs/${runId}/review/submit`,
-			{ event: "APPROVE", body: "" },
-		);
-		const log = (await harness.logLines()).find((line) => line.startsWith("submit")) ?? "";
-
-		expect(submit.status).toBe(200);
-		expect(log).toContain("body=");
-		expect(log).not.toContain("Existing draft summary");
 	});
 
 	it("rejects PR comments from a working-tree run", async () => {

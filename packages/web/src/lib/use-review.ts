@@ -188,9 +188,8 @@ export function useReview(runId: string): UseReviewResult {
 	// GitHub-affecting actions (submit/resolve/reply/promote) change PR-level state —
 	// reviewer decisions, the merge button — that lives behind separate, infinitely-
 	// stale query keys. Refresh those too so the PR header doesn't go stale until reload.
-	const invalidateGitHub = () => {
-		invalidate();
-		void invalidatePullRequest();
+	const invalidateGitHub = async () => {
+		await Promise.all([invalidate(), invalidatePullRequest()]);
 	};
 
 	const runPath = (suffix: string) => `/api/runs/${encodeURIComponent(runId)}${suffix}`;
@@ -287,7 +286,7 @@ export function useReview(runId: string): UseReviewResult {
 				jsonFetch(runPath("/review/add"), jsonRequest("POST", { localThreadId })),
 			onSuccess: (_data, localThreadId) => {
 				removePromotedLocalThread(localThreadId);
-				invalidateGitHub();
+				return invalidateGitHub();
 			},
 		}),
 		submitReview: useMutation({
