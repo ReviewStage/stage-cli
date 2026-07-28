@@ -1,7 +1,11 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { chapterRun, comment } from "../db/schema/index.js";
-import { addLocalThreadToReview, isLocalThreadPromoting } from "../runs/review.js";
+import {
+	addLocalThreadToReview,
+	isLocalThreadPromoting,
+	isLocalThreadPromotionPending,
+} from "../runs/review.js";
 import { REVIEW_ACTION_SCOPE, reviewActions } from "../runs/review-action-queue.js";
 import { EMPTY_REVIEW, ReviewRouteHarness } from "./review-test-harness.js";
 
@@ -66,6 +70,43 @@ describe("review API — concurrency", () => {
 
 		expect(reply.status).toBe(409);
 		expect((await promotion).status).toBe(200);
+	});
+
+	it("freezes a local thread while its promotion is queued for the checkout", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW);
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread();
+		const [run] = harness.db
+			.select()
+			.from(chapterRun)
+			.where(eq(chapterRun.id, runId))
+			.limit(1)
+			.all();
+		if (!run) throw new Error("seeded run was not found");
+		const port = await harness.start();
+		let releaseCheckout: (() => void) | undefined;
+		const blocker = reviewActions.run(
+			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot },
+			() =>
+				new Promise<void>((resolve) => {
+					releaseCheckout = resolve;
+				}),
+		);
+		await expect.poll(() => releaseCheckout !== undefined).toBe(true);
+
+		const promotion = addLocalThreadToReview(harness.db, run, localThreadId);
+		expect(isLocalThreadPromotionPending(harness.db, localThreadId)).toBe(true);
+		const reply = await harness.request(
+			port,
+			"POST",
+			`/api/comment-threads/${localThreadId}/replies`,
+			{ body: "Must wait" },
+		);
+
+		expect(reply.status).toBe(409);
+		releaseCheckout?.();
+		await blocker;
+		await promotion;
 	});
 
 	it("promotes an edit that wins the checkout lock before promotion", async () => {

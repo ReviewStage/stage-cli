@@ -365,6 +365,11 @@ export function isLocalThreadPromoting(db: StageDb, localThreadId: string): bool
 	);
 }
 
+/** True once promotion is queued, active, or interrupted and awaiting recovery. */
+export function isLocalThreadPromotionPending(db: StageDb, localThreadId: string): boolean {
+	return queuedPromotions.has(localThreadId) || isLocalThreadPromoting(db, localThreadId);
+}
+
 /**
  * Promote a local comment thread to the viewer's pending GitHub review: the root
  * becomes a new review thread, replies become pending replies, and the local thread
