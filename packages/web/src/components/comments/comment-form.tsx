@@ -3,6 +3,20 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CommentMarkdownEditor } from "./comment-markdown-editor";
 
+type DestinationDetails = {
+	label: string;
+	description: string;
+};
+
+type CommentDestination =
+	| DestinationDetails
+	| {
+			toggleLabel: string;
+			on: DestinationDetails;
+			off: DestinationDetails;
+			defaultOn?: boolean;
+	  };
+
 interface CommentFormProps {
 	/** Label for the primary submit button (e.g. "Comment", "Reply", "Update"). */
 	label: string;
@@ -16,9 +30,8 @@ interface CommentFormProps {
 	/** Reports each edit so a parent can persist an in-progress draft across remounts. */
 	onBodyChange?: (body: string) => void;
 	autoFocus?: boolean;
-	/** When set, renders a checkbox (e.g. "Comment on the PR") whose state is passed to onSubmit. */
-	toggleLabel?: string;
-	toggleDefault?: boolean;
+	/** Explains where a new comment goes, with an optional checkbox to switch destinations. */
+	destination?: CommentDestination;
 }
 
 export function CommentForm({
@@ -30,16 +43,26 @@ export function CommentForm({
 	initialBody,
 	onBodyChange,
 	autoFocus = true,
-	toggleLabel,
-	toggleDefault = true,
+	destination,
 }: CommentFormProps) {
 	const [body, setBody] = useState(initialBody ?? "");
 	const [isSubmitting, setIsSubmitting] = useState(false);
-	const [toggleOn, setToggleOn] = useState(toggleDefault);
+	const hasDestinationToggle = destination !== undefined && "toggleLabel" in destination;
+	const [toggleOn, setToggleOn] = useState(
+		hasDestinationToggle ? (destination.defaultOn ?? true) : true,
+	);
 	const toggleId = useId();
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const submittingRef = useRef(false);
 	const hasContent = body.trim().length > 0;
+	const activeDestination =
+		destination === undefined
+			? undefined
+			: hasDestinationToggle
+				? toggleOn
+					? destination.on
+					: destination.off
+				: destination;
 
 	useEffect(() => {
 		if (!autoFocus) return;
@@ -56,7 +79,7 @@ export function CommentForm({
 		submittingRef.current = true;
 		setIsSubmitting(true);
 		try {
-			await onSubmit(trimmed, toggleLabel === undefined ? true : toggleOn);
+			await onSubmit(trimmed, hasDestinationToggle ? toggleOn : true);
 			setBody("");
 		} catch {
 			// The caller surfaces the error; preserve the body so the user can retry.
@@ -96,8 +119,17 @@ export function CommentForm({
 				previewClassName="max-h-[12rem] overflow-y-auto"
 			>
 				{error && <p className="mt-2 text-destructive text-xs">{error}</p>}
+				{activeDestination && (
+					<div className="mt-2 rounded-lg bg-muted/60 px-2.5 py-2 text-xs">
+						<p className="flex flex-wrap items-baseline gap-x-1.5">
+							<span className="font-medium text-muted-foreground">Destination</span>
+							<span className="font-semibold text-foreground">{activeDestination.label}</span>
+						</p>
+						<p className="mt-0.5 text-muted-foreground">{activeDestination.description}</p>
+					</div>
+				)}
 				<div className="mt-2 flex items-center justify-between gap-2">
-					{toggleLabel !== undefined ? (
+					{hasDestinationToggle ? (
 						<label
 							htmlFor={toggleId}
 							className="flex cursor-pointer select-none items-center gap-1.5"
@@ -108,7 +140,7 @@ export function CommentForm({
 								onCheckedChange={(checked) => setToggleOn(checked === true)}
 								disabled={isSubmitting}
 							/>
-							<span className="text-muted-foreground text-xs">{toggleLabel}</span>
+							<span className="text-muted-foreground text-xs">{destination.toggleLabel}</span>
 						</label>
 					) : (
 						<div />

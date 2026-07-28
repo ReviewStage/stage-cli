@@ -308,7 +308,24 @@ export function PierreDiffViewer({
 							onBodyChange={(body) =>
 								writeDraftBody(draftBodiesRef.current, draft.side, draft.endLine, body)
 							}
-							toggleLabel={canPushToReview ? "Comment on the PR" : undefined}
+							destination={
+								canPushToReview
+									? {
+											toggleLabel: "Add to GitHub review",
+											on: {
+												label: "Pending on GitHub",
+												description: "Only you can see it until you submit your review.",
+											},
+											off: {
+												label: "Local only",
+												description: "Saved on this machine and never sent to GitHub.",
+											},
+										}
+									: {
+											label: "Local only",
+											description: "Saved on this machine and never sent to GitHub.",
+										}
+							}
 							onSubmit={(body, onPr) => handleCreateComment(draft, body, onPr)}
 							onCancel={() => closeDraft(draft)}
 						/>

@@ -71,6 +71,10 @@ function StateBadge({ state }: { state: ReviewComment["state"] }) {
 	return null;
 }
 
+export function threadChevronClassName(isOpen: boolean): string {
+	return cn("size-3.5 transition-transform duration-200", isOpen && "rotate-90");
+}
+
 export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	const review = useReviewContext();
 	const isGitHub = thread.source === THREAD_SOURCE.GITHUB;
@@ -187,7 +191,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 								aria-label={isOpen ? "Collapse thread" : "Expand thread"}
 								className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 							>
-								<ChevronRight className="size-3.5 transition-transform duration-200 [[data-state=open]>&]:rotate-90" />
+								<ChevronRight className={threadChevronClassName(isOpen)} />
 							</CollapsibleTrigger>
 						</TooltipTrigger>
 						<TooltipContent>{isOpen ? "Collapse thread" : "Expand thread"}</TooltipContent>
@@ -294,7 +298,24 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 							label="Reply"
 							placeholder="Write a reply…"
 							error={error}
-							toggleLabel={isGitHub ? "Start a review" : undefined}
+							destination={
+								isGitHub
+									? {
+											toggleLabel: "Start a review",
+											on: {
+												label: "Pending on GitHub",
+												description: "Only you can see it until you submit your review.",
+											},
+											off: {
+												label: "Published on GitHub",
+												description: "Everyone viewing the pull request can see it immediately.",
+											},
+										}
+									: {
+											label: "Local only",
+											description: "Saved on this machine and never sent to GitHub.",
+										}
+							}
 							onSubmit={submitReply}
 							onCancel={() => {
 								setIsReplying(false);

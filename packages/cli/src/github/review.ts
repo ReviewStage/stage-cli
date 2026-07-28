@@ -39,19 +39,18 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
         nodes {
           id
           isResolved
+          path
+          line
+          startLine
+          diffSide
+          startDiffSide
           comments(first: 100) {
             nodes {
-              databaseId
               id
               url
-              path
               body
               bodyHTML
               createdAt
-              line
-              startLine
-              diffSide
-              startDiffSide
               author { login avatarUrl }
               pullRequestReview { state }
             }
@@ -65,17 +64,11 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
 const GqlActorSchema = z.object({ login: z.string(), avatarUrl: z.string() }).nullable();
 
 const GqlReviewCommentSchema = z.object({
-	databaseId: z.number().nullable(),
 	id: z.string(),
 	url: z.string(),
-	path: z.string(),
 	body: z.string(),
 	bodyHTML: z.string(),
 	createdAt: z.string(),
-	line: z.number().nullable(),
-	startLine: z.number().nullable(),
-	diffSide: z.enum(GITHUB_DIFF_SIDE).nullable(),
-	startDiffSide: z.enum(GITHUB_DIFF_SIDE).nullable(),
 	author: GqlActorSchema,
 	pullRequestReview: z.object({ state: z.string() }).nullable(),
 });
@@ -96,6 +89,11 @@ const ReviewQuerySchema = z.object({
 								z.object({
 									id: z.string(),
 									isResolved: z.boolean(),
+									path: z.string(),
+									line: z.number().nullable(),
+									startLine: z.number().nullable(),
+									diffSide: z.enum(GITHUB_DIFF_SIDE),
+									startDiffSide: z.enum(GITHUB_DIFF_SIDE).nullable(),
 									comments: z.object({ nodes: z.array(GqlReviewCommentSchema) }),
 								}),
 							),
@@ -109,7 +107,6 @@ const ReviewQuerySchema = z.object({
 
 /** A comment within a review thread, tagged with whether it's a draft (pending) or published. */
 export interface ReviewComment {
-	databaseId: number | null;
 	nodeId: string;
 	htmlUrl: string;
 	body: string;
@@ -201,15 +198,15 @@ export async function getReview(
 				if (c.pullRequestReview?.state === PENDING_STATE) pendingCommentCount++;
 			}
 			const root = node.comments.nodes[0];
-			if (!root || root.line === null) continue;
+			if (!root || node.line === null) continue;
 			threads.push({
 				threadNodeId: node.id,
 				isResolved: node.isResolved,
-				path: root.path,
-				line: root.line,
-				startLine: root.startLine,
-				side: root.diffSide ?? GITHUB_DIFF_SIDE.RIGHT,
-				startSide: root.startDiffSide,
+				path: node.path,
+				line: node.line,
+				startLine: node.startLine,
+				side: node.diffSide,
+				startSide: node.startDiffSide,
 				comments: node.comments.nodes.map(toReviewComment),
 			});
 		}
@@ -233,7 +230,6 @@ export async function getReview(
 
 function toReviewComment(c: z.infer<typeof GqlReviewCommentSchema>): ReviewComment {
 	return {
-		databaseId: c.databaseId,
 		nodeId: c.id,
 		htmlUrl: c.url,
 		body: c.body,

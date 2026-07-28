@@ -39,20 +39,19 @@ const REVIEW_QUERY_RESULT = {
 						{
 							id: "THREAD_sub",
 							isResolved: false,
+							path: "src/foo.ts",
+							line: 10,
+							startLine: null,
+							diffSide: "RIGHT",
+							startDiffSide: null,
 							comments: {
 								nodes: [
 									{
-										databaseId: 1,
 										id: "COMMENT_sub",
 										url: "https://github.com/owner/repo/pull/5#discussion_r1",
-										path: "src/foo.ts",
 										body: "Submitted comment",
 										bodyHTML: "<p>Submitted comment</p>",
 										createdAt: "2026-01-01T00:00:00Z",
-										line: 10,
-										startLine: null,
-										diffSide: "RIGHT",
-										startDiffSide: null,
 										author: { login: "octocat", avatarUrl: "https://x/o.png" },
 										pullRequestReview: { state: "COMMENTED" },
 									},
@@ -62,20 +61,19 @@ const REVIEW_QUERY_RESULT = {
 						{
 							id: "THREAD_pending",
 							isResolved: false,
+							path: "src/bar.ts",
+							line: 4,
+							startLine: null,
+							diffSide: "LEFT",
+							startDiffSide: null,
 							comments: {
 								nodes: [
 									{
-										databaseId: 2,
 										id: "COMMENT_pending",
 										url: "https://github.com/owner/repo/pull/5#discussion_r2",
-										path: "src/bar.ts",
 										body: "Draft comment",
 										bodyHTML: "<p>Draft comment</p>",
 										createdAt: "2026-01-02T00:00:00Z",
-										line: 4,
-										startLine: null,
-										diffSide: "LEFT",
-										startDiffSide: null,
 										author: { login: "octocat", avatarUrl: "https://x/o.png" },
 										pullRequestReview: { state: "PENDING" },
 									},
@@ -103,6 +101,12 @@ const fields = args.filter((a) => !a.startsWith("query=") && a !== "-f" && a !==
 const log = ${JSON.stringify(path.join(tmpDir, "gh-log.txt"))};
 function emit(o) { process.stdout.write(JSON.stringify(o)); }
 if (query.includes("query GetReview")) {
+  const commentFields = query.slice(query.indexOf("comments(first: 100)"), query.indexOf("author {"));
+  const illegalCommentField = ["databaseId", "diffSide", "startDiffSide"].find((field) => commentFields.includes(field));
+  if (illegalCommentField) {
+    process.stderr.write("gh: PullRequestReviewComment has no field " + illegalCommentField + "\\n");
+    process.exit(1);
+  }
   emit(JSON.parse(fs.readFileSync(${JSON.stringify(path.join(tmpDir, "review.json"))}, "utf8")));
 } else if (query.includes("mutation CreatePendingReview")) {
   fs.appendFileSync(log, "create-review\\n");
@@ -420,20 +424,19 @@ describe("review API — actions", () => {
 								{
 									id: "THREAD_outdated",
 									isResolved: false,
+									path: "src/foo.ts",
+									line: null,
+									startLine: null,
+									diffSide: "RIGHT",
+									startDiffSide: null,
 									comments: {
 										nodes: [
 											{
-												databaseId: 9,
 												id: "COMMENT_outdated",
 												url: "https://github.com/owner/repo/pull/5#d9",
-												path: "src/foo.ts",
 												body: "Outdated draft",
 												bodyHTML: "<p>Outdated draft</p>",
 												createdAt: "2026-01-03T00:00:00Z",
-												line: null,
-												startLine: null,
-												diffSide: "RIGHT",
-												startDiffSide: null,
 												author: { login: "octocat", avatarUrl: "https://x/o.png" },
 												pullRequestReview: { state: "PENDING" },
 											},
