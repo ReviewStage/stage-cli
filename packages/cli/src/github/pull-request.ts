@@ -141,7 +141,19 @@ export async function getPullRequestOrThrow(
 		prNumber === null
 			? ["pr", "view", "--json", PR_FIELDS.join(",")]
 			: ["pr", "view", String(prNumber), "--json", PR_FIELDS.join(",")];
-	const stdout = await ghReadOrThrow(viewArgs, repoRoot);
+	let stdout: string;
+	try {
+		stdout = await ghReadOrThrow(viewArgs, repoRoot);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (
+			/no pull requests found/i.test(message) ||
+			/could not resolve to a PullRequest/i.test(message)
+		) {
+			return null;
+		}
+		throw error;
+	}
 	const parsed = GhPullRequestSchema.safeParse(JSON.parse(stdout));
 	if (!parsed.success) {
 		throw new Error(`Unexpected response shape from GitHub pull request lookup: ${parsed.error}`);

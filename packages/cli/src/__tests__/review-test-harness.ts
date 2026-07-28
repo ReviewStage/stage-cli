@@ -77,7 +77,7 @@ function makeReview(
 	pendingReviewBody = "",
 	options: {
 		state?: "OPEN" | "CLOSED" | "MERGED";
-		pendingReviewCommitOid?: string;
+		pendingReviewCommitOid?: string | null;
 		viewerDidAuthor?: boolean;
 	} = {},
 ): unknown {
@@ -98,7 +98,10 @@ function makeReview(
 										{
 											id: pendingReviewId,
 											body: pendingReviewBody,
-											commit: { oid: options.pendingReviewCommitOid ?? HEAD },
+											commit:
+												options.pendingReviewCommitOid === null
+													? null
+													: { oid: options.pendingReviewCommitOid ?? HEAD },
 										},
 									],
 					},
@@ -128,6 +131,12 @@ export function makeClosedReview(): unknown {
 export function makeStalePendingReview(): unknown {
 	return makeReview([submittedThread, pendingThread], "REVIEW_pending", "", {
 		pendingReviewCommitOid: "d".repeat(40),
+	});
+}
+
+export function makeMissingPendingCommitReview(): unknown {
+	return makeReview([submittedThread, pendingThread], "REVIEW_pending", "", {
+		pendingReviewCommitOid: null,
 	});
 }
 
@@ -227,6 +236,7 @@ interface GhShimOptions {
 	failResolve?: boolean;
 	failThreadComments?: boolean;
 	mergeBaseOid?: string;
+	noPullRequest?: boolean;
 	persistCreatedReview?: boolean;
 	reviewQueryDelayMs?: number;
 }
@@ -302,6 +312,12 @@ function emit(o) { process.stdout.write(JSON.stringify(o)); }
 function sleep(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 if (args.some((arg) => arg.includes("/compare/"))) {
   emit({ merge_base_commit: { sha: ${JSON.stringify(options.mergeBaseOid ?? MERGE_BASE)} } });
+} else if (args[0] === "pr" && args[1] === "view") {
+  if (${options.noPullRequest ? "true" : "false"}) {
+    process.stderr.write("no pull requests found for branch \\"feature\\"\\n");
+    process.exit(1);
+  }
+  emit({});
 } else if (query.includes("query GetReviewThreadComments")) {
   fs.appendFileSync(log, "get-thread-comments\\n");
   if (${options.failThreadComments ? "true" : "false"}) { process.stderr.write("gh: follow-up page failed\\n"); process.exit(1); }

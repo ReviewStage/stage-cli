@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	makeClosedReview,
+	makeMissingPendingCommitReview,
 	makeStalePendingReview,
 	REVIEW_QUERY_RESULT,
 	ReviewRouteHarness,
@@ -68,6 +69,39 @@ describe("review API — GitHub boundaries", () => {
 		expect(immediateReply.status).toBe(200);
 		expect(resolve.status).toBe(200);
 		expect(await harness.logLines()).toEqual(expect.arrayContaining(["reply", "resolve-thread"]));
+	});
+
+	it("treats a pending review with no commit as stale instead of offline", async () => {
+		await harness.writeGhShim(makeMissingPendingCommitReview());
+		const runId = harness.insertRun();
+
+		const read = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
+		const review = JSON.parse(read.body);
+
+		expect(read.status).toBe(200);
+		expect(review.github).toBe("available");
+		expect(review.hasPendingReview).toBe(true);
+		expect(review.canPushToReview).toBe(false);
+		expect(review.canWriteToGitHub).toBe(true);
+	});
+
+	it("reports a missing automatically discovered PR without treating GitHub as offline", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, { noPullRequest: true });
+		const runId = harness.insertRun({ prNumber: null });
+		const port = await harness.start();
+
+		const read = await harness.request(port, "GET", `/api/runs/${runId}/review`);
+		const write = await harness.request(port, "POST", `/api/runs/${runId}/review/comment`, {
+			filePath: "src/foo.ts",
+			side: "additions",
+			startLine: 3,
+			endLine: 3,
+			body: "No PR",
+		});
+
+		expect(JSON.parse(read.body).github).toBe("none");
+		expect(write.status).toBe(404);
+		expect(JSON.parse(write.body).error).toMatch(/no GitHub pull request/i);
 	});
 
 	it.each([

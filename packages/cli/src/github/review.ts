@@ -125,7 +125,7 @@ const ReviewQuerySchema = z.object({
 								z.object({
 									id: z.string(),
 									body: z.string(),
-									commit: z.object({ oid: z.string() }),
+									commit: z.object({ oid: z.string() }).nullable(),
 								}),
 							),
 						}),
@@ -259,7 +259,7 @@ export async function getReview(
 		headRefOid = pr.headRefOid;
 		baseRefOid = pr.baseRefOid;
 		pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
-		pendingReviewCommitOid = pr.reviews.nodes[0]?.commit.oid ?? null;
+		pendingReviewCommitOid = pr.reviews.nodes[0]?.commit?.oid ?? null;
 		pendingReviewBody = pr.reviews.nodes[0]?.body ?? "";
 
 		const nodesWithComments = await loadThreadCommentsInBatches(repoRoot, pr.reviewThreads.nodes);
