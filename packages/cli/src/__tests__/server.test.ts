@@ -190,11 +190,21 @@ describe("startServer", () => {
 	});
 
 	it("close() stops the server from accepting new connections", async () => {
-		const handle = await start();
+		const marker = "owned-by-server-close-test";
+		const handle = await start([
+			{
+				method: "GET",
+				pattern: "/api/close-probe",
+				handler: (_req, res) => {
+					res.end(marker);
+				},
+			},
+		]);
 		const { port } = handle;
 		// Take ownership: don't auto-close, we're closing manually.
 		handles.pop();
 		await handle.close();
-		await expect(rawRequest(port, "/")).rejects.toThrow();
+		const response = await rawRequest(port, "/api/close-probe").catch(() => null);
+		expect(response?.body).not.toBe(marker);
 	});
 });
