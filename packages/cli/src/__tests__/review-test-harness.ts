@@ -75,18 +75,31 @@ function makeReview(
 	threads: unknown[],
 	pendingReviewId: string | null,
 	pendingReviewBody = "",
+	options: {
+		state?: "OPEN" | "CLOSED" | "MERGED";
+		pendingReviewCommitOid?: string;
+	} = {},
 ): unknown {
 	return {
 		data: {
 			repository: {
 				pullRequest: {
 					id: "PR_node",
+					state: options.state ?? "OPEN",
 					viewerDidAuthor: false,
 					headRefOid: HEAD,
 					baseRefOid: BASE,
 					reviews: {
 						nodes:
-							pendingReviewId === null ? [] : [{ id: pendingReviewId, body: pendingReviewBody }],
+							pendingReviewId === null
+								? []
+								: [
+										{
+											id: pendingReviewId,
+											body: pendingReviewBody,
+											commit: { oid: options.pendingReviewCommitOid ?? HEAD },
+										},
+									],
 					},
 					reviewThreads: {
 						pageInfo: { hasNextPage: false, endCursor: null },
@@ -103,6 +116,18 @@ export const EMPTY_REVIEW = makeReview([], null);
 
 export function makeSummaryOnlyPendingReview(): unknown {
 	return makeReview([], "REVIEW_pending", "Existing draft summary");
+}
+
+export function makeClosedReview(): unknown {
+	return makeReview([submittedThread, pendingThread], "REVIEW_pending", "", {
+		state: "CLOSED",
+	});
+}
+
+export function makeStalePendingReview(): unknown {
+	return makeReview([submittedThread, pendingThread], "REVIEW_pending", "", {
+		pendingReviewCommitOid: "d".repeat(40),
+	});
 }
 
 export function makeAnchorlessPendingReview(): unknown {
@@ -259,10 +284,14 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   }
   emit(JSON.parse(fs.readFileSync(reviewPath, "utf8")));
 } else if (query.includes("mutation CreatePendingReview")) {
-  fs.appendFileSync(log, "create-review\\n");
+  fs.appendFileSync(log, "create-review " + fields + "\\n");
   if (${options.persistCreatedReview ? "true" : "false"}) {
     const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-    review.data.repository.pullRequest.reviews.nodes = [{ id: "REVIEW_new", body: "" }];
+    review.data.repository.pullRequest.reviews.nodes = [{
+      id: "REVIEW_new",
+      body: "",
+      commit: { oid: review.data.repository.pullRequest.headRefOid }
+    }];
     fs.writeFileSync(reviewPath, JSON.stringify(review));
   }
   emit({ data: { addPullRequestReview: { pullRequestReview: { id: "REVIEW_new" } } } });

@@ -74,12 +74,45 @@ function runMatchesPrDiff(run: ChapterRunRow, review: GitHubReview): boolean {
 }
 
 function assertPushable(run: ChapterRunRow, review: GitHubReview): void {
+	if (review.state !== "OPEN") {
+		throw new ReviewError("This pull request is closed, so its review is read-only.", 409);
+	}
+	if (review.pendingReviewNodeId !== null && review.pendingReviewCommitOid !== review.headRefOid) {
+		throw new ReviewError(
+			"Your pending GitHub review belongs to an earlier PR version. Submit or discard it on GitHub before commenting on this run.",
+			409,
+		);
+	}
 	if (runMatchesPrDiff(run, review)) return;
 	const reason =
 		run.scopeKind !== SCOPE_KIND.COMMITTED
 			? "Only comments on a committed diff can be added to the PR — working-tree comments aren't anchored to the PR's commits."
 			: "This run's diff doesn't match the current PR diff. Re-run against the latest PR base and head to comment on it.";
 	throw new ReviewError(reason, 409);
+}
+
+function canPushToReview(run: ChapterRunRow, review: GitHubReview): boolean {
+	return (
+		review.state === "OPEN" &&
+		runMatchesPrDiff(run, review) &&
+		(review.pendingReviewNodeId === null || review.pendingReviewCommitOid === review.headRefOid)
+	);
+}
+
+function requireReviewThread(review: GitHubReview, threadNodeId: string): void {
+	if (review.threads.some((thread) => thread.threadNodeId === threadNodeId)) return;
+	throw new ReviewError("That GitHub review thread doesn't belong to this pull request.", 400);
+}
+
+function requirePendingComment(review: GitHubReview, nodeId: string): void {
+	const comment = review.threads
+		.flatMap((thread) => thread.comments)
+		.find((candidate) => candidate.nodeId === nodeId);
+	if (comment?.isPending) return;
+	throw new ReviewError(
+		"That GitHub comment isn't an editable pending comment on this pull request.",
+		400,
+	);
 }
 
 // ─── Read: merged local + GitHub review ─────────────────────────────────────────
@@ -193,7 +226,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		hasPendingReview: review.pendingReviewNodeId !== null,
 		pendingReviewBody: review.pendingReviewBody,
 		isOwnPullRequest: review.viewerDidAuthor,
-		canPushToReview: true,
+		canPushToReview: canPushToReview(run, review),
 	};
 }
 
@@ -254,10 +287,20 @@ async function openPendingReview(
 	review: GitHubReview,
 ): Promise<{ reviewNodeId: string; created: boolean }> {
 	if (review.pendingReviewNodeId !== null) {
+		if (review.pendingReviewCommitOid !== review.headRefOid) {
+			throw new ReviewError(
+				"Your pending GitHub review belongs to an earlier PR version. Submit or discard it on GitHub before commenting on this run.",
+				409,
+			);
+		}
 		return { reviewNodeId: review.pendingReviewNodeId, created: false };
 	}
 	return {
-		reviewNodeId: await createPendingReview(run.repoRoot, review.pullRequestNodeId),
+		reviewNodeId: await createPendingReview(
+			run.repoRoot,
+			review.pullRequestNodeId,
+			review.headRefOid,
+		),
 		created: true,
 	};
 }
@@ -473,6 +516,7 @@ export async function replyToGitHubThread(
 ): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
 		assertPushable(run, review);
+		requireReviewThread(review, threadNodeId);
 		if (!pending) {
 			await addReviewReply(run.repoRoot, threadNodeId, body, null);
 			return;
@@ -522,14 +566,18 @@ export async function editGitHubComment(
 	nodeId: string,
 	body: string,
 ): Promise<void> {
-	await withLockedReviewTarget(run, async () => {
+	await withLockedReviewTarget(run, async ({ review }) => {
+		assertPushable(run, review);
+		requirePendingComment(review, nodeId);
 		await updateReviewComment(run.repoRoot, nodeId, body);
 	});
 }
 
 /** Delete a pending GitHub review comment by node id. */
 export async function deleteGitHubComment(run: ChapterRunRow, nodeId: string): Promise<void> {
-	await withLockedReviewTarget(run, async () => {
+	await withLockedReviewTarget(run, async ({ review }) => {
+		assertPushable(run, review);
+		requirePendingComment(review, nodeId);
 		await deleteReviewComment(run.repoRoot, nodeId);
 	});
 }
@@ -540,7 +588,9 @@ export async function resolveGitHubThread(
 	threadNodeId: string,
 	resolved: boolean,
 ): Promise<void> {
-	await withLockedReviewTarget(run, async () => {
+	await withLockedReviewTarget(run, async ({ review }) => {
+		assertPushable(run, review);
+		requireReviewThread(review, threadNodeId);
 		await setThreadResolved(run.repoRoot, threadNodeId, resolved);
 	});
 }

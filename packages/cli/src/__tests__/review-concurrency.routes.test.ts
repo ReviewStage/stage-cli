@@ -39,7 +39,7 @@ describe("review API — concurrency", () => {
 
 		expect(responses.map((res) => res.status)).toEqual([200, 200]);
 		const log = await harness.logLines();
-		expect(log.filter((line) => line === "create-review")).toHaveLength(1);
+		expect(log.filter((line) => line.startsWith("create-review"))).toHaveLength(1);
 		expect(log.filter((line) => line.startsWith("add-thread"))).toHaveLength(2);
 	});
 

@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { commentThread } from "../db/schema/index.js";
-import { EMPTY_REVIEW, REVIEW_QUERY_RESULT, ReviewRouteHarness } from "./review-test-harness.js";
+import {
+	EMPTY_REVIEW,
+	HEAD,
+	REVIEW_QUERY_RESULT,
+	ReviewRouteHarness,
+} from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
 
@@ -30,7 +35,11 @@ describe("review API — writes", () => {
 
 		expect(res.status, res.body).toBe(200);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
-		expect((await harness.logLines()).filter((line) => line === "create-review")).toHaveLength(1);
+		expect(
+			(await harness.logLines()).some((line) =>
+				new RegExp(`^create-review .*commitOID=${HEAD}`).test(line),
+			),
+		).toBe(true);
 	});
 
 	it("creates a pending PR comment without storing it locally", async () => {

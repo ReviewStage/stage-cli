@@ -24,10 +24,11 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       id
+      state
       viewerDidAuthor
       headRefOid
       baseRefOid
-      reviews(states: PENDING, first: 1) { nodes { id body } }
+      reviews(states: PENDING, first: 1) { nodes { id body commit { oid } } }
       reviewThreads(first: 50, after: $cursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -115,11 +116,18 @@ const ReviewQuerySchema = z.object({
 				pullRequest: z
 					.object({
 						id: z.string(),
+						state: z.enum(["OPEN", "CLOSED", "MERGED"]),
 						viewerDidAuthor: z.boolean(),
 						headRefOid: z.string(),
 						baseRefOid: z.string(),
 						reviews: z.object({
-							nodes: z.array(z.object({ id: z.string(), body: z.string() })),
+							nodes: z.array(
+								z.object({
+									id: z.string(),
+									body: z.string(),
+									commit: z.object({ oid: z.string() }),
+								}),
+							),
 						}),
 						reviewThreads: z.object({
 							pageInfo: GqlPageInfoSchema,
@@ -171,6 +179,8 @@ export interface ReviewThread {
 export interface GitHubReview {
 	/** GraphQL node id of the PR, required by the write mutations. */
 	pullRequestNodeId: string;
+	/** GitHub lifecycle state; only an open PR accepts review writes. */
+	state: "OPEN" | "CLOSED" | "MERGED";
 	/** True when the viewer opened the PR (GitHub forbids approving your own PR). */
 	viewerDidAuthor: boolean;
 	/** The PR's current head commit — comments anchor to this commit's diff. */
@@ -179,6 +189,8 @@ export interface GitHubReview {
 	mergeBaseOid: string;
 	/** The viewer's open pending review, or null when they have none. */
 	pendingReviewNodeId: string | null;
+	/** Commit the pending review is pinned to, or null when no review is open. */
+	pendingReviewCommitOid: string | null;
 	/** Existing summary text on the viewer's open pending review. */
 	pendingReviewBody: string;
 	/** Viewer's pending (draft) comments across all threads, including anchorless ones. */
@@ -208,10 +220,12 @@ export async function getReview(
 	prNumber: number,
 ): Promise<GitHubReview> {
 	let pullRequestNodeId = "";
+	let state: GitHubReview["state"] = "OPEN";
 	let viewerDidAuthor = false;
 	let headRefOid = "";
 	let baseRefOid = "";
 	let pendingReviewNodeId: string | null = null;
+	let pendingReviewCommitOid: string | null = null;
 	let pendingReviewBody = "";
 	let pendingCommentCount = 0;
 	const pendingComments: PendingReviewComment[] = [];
@@ -240,10 +254,12 @@ export async function getReview(
 		const pr = parsed.data.data.repository?.pullRequest;
 		if (!pr) break;
 		pullRequestNodeId = pr.id;
+		state = pr.state;
 		viewerDidAuthor = pr.viewerDidAuthor;
 		headRefOid = pr.headRefOid;
 		baseRefOid = pr.baseRefOid;
 		pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
+		pendingReviewCommitOid = pr.reviews.nodes[0]?.commit.oid ?? null;
 		pendingReviewBody = pr.reviews.nodes[0]?.body ?? "";
 
 		const nodesWithComments = await loadThreadCommentsInBatches(repoRoot, pr.reviewThreads.nodes);
@@ -284,10 +300,12 @@ export async function getReview(
 
 	return {
 		pullRequestNodeId,
+		state,
 		viewerDidAuthor,
 		headRefOid,
 		mergeBaseOid,
 		pendingReviewNodeId,
+		pendingReviewCommitOid,
 		pendingReviewBody,
 		pendingCommentCount,
 		pendingComments,
@@ -400,8 +418,8 @@ function toReviewComment(c: z.infer<typeof GqlReviewCommentSchema>): ReviewComme
 
 // ─── Write: pending-review lifecycle ────────────────────────────────────────────
 
-const CREATE_PENDING_REVIEW = `mutation CreatePendingReview($pullRequestId: ID!) {
-  addPullRequestReview(input: { pullRequestId: $pullRequestId }) {
+const CREATE_PENDING_REVIEW = `mutation CreatePendingReview($pullRequestId: ID!, $commitOID: GitObjectID!) {
+  addPullRequestReview(input: { pullRequestId: $pullRequestId, commitOID: $commitOID }) {
     pullRequestReview { id }
   }
 }`;
@@ -472,9 +490,10 @@ const CreatedReviewSchema = z.object({
 export async function createPendingReview(
 	repoRoot: string,
 	pullRequestNodeId: string,
+	commitOid: string,
 ): Promise<string> {
 	const stdout = await ghOrThrow(
-		gqlArgs(CREATE_PENDING_REVIEW, { pullRequestId: pullRequestNodeId }),
+		gqlArgs(CREATE_PENDING_REVIEW, { pullRequestId: pullRequestNodeId, commitOID: commitOid }),
 		repoRoot,
 	);
 	return CreatedReviewSchema.parse(JSON.parse(stdout)).data.addPullRequestReview.pullRequestReview
