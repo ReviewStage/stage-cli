@@ -29,6 +29,11 @@ export { GITHUB_REVIEW_STATUS };
 
 const REVIEW_ROOT = "review";
 
+interface ReviewQueryData {
+	generation: number;
+	review: ReviewResponse;
+}
+
 export function reviewQueryKey(runId: string): readonly unknown[] {
 	return [REVIEW_ROOT, runId];
 }
@@ -120,16 +125,30 @@ export function useReview(runId: string): UseReviewResult {
 	const [localOverlay, setLocalOverlay] = useState<{
 		runId: string;
 		threads: LocalReviewThread[];
+		reviewGeneration: number;
 	} | null>(null);
 	const localRefreshGeneration = useRef(0);
+	const reviewRequestGeneration = useRef(0);
 
-	const { data, isLoading, error } = useQuery<ReviewResponse>({
+	const {
+		data: queryData,
+		isLoading,
+		error,
+	} = useQuery<ReviewQueryData>({
 		queryKey,
-		queryFn: () => fetchReview(runId),
+		queryFn: async () => {
+			const generation = ++reviewRequestGeneration.current;
+			return { generation, review: await fetchReview(runId) };
+		},
 		enabled: runId !== "",
 	});
 
-	const refreshedLocalThreads = localOverlay?.runId === runId ? localOverlay.threads : null;
+	const data = queryData?.review;
+	const completedReviewGeneration = queryData?.generation ?? 0;
+	const refreshedLocalThreads =
+		localOverlay?.runId === runId && localOverlay.reviewGeneration >= completedReviewGeneration
+			? localOverlay.threads
+			: null;
 	const threads = useMemo(() => {
 		const reviewThreads = data?.threads ?? [];
 		if (refreshedLocalThreads === null) return reviewThreads;
@@ -143,23 +162,23 @@ export function useReview(runId: string): UseReviewResult {
 	const invalidate = () => queryClient.invalidateQueries({ queryKey });
 	const updateLocalThreads = (update: (threads: LocalReviewThread[]) => LocalReviewThread[]) => {
 		const generation = ++localRefreshGeneration.current;
+		const reviewGeneration = reviewRequestGeneration.current;
 		setLocalOverlay((current) => {
+			const cachedReview = queryClient.getQueryData<ReviewQueryData>(queryKey);
 			const localThreads =
-				current?.runId === runId
+				current?.runId === runId && current.reviewGeneration >= (cachedReview?.generation ?? 0)
 					? current.threads
-					: (queryClient
-							.getQueryData<ReviewResponse>(queryKey)
-							?.threads.filter(
-								(thread): thread is LocalReviewThread => thread.source === THREAD_SOURCE.LOCAL,
-							) ?? []);
-			return { runId, threads: update(localThreads) };
+					: (cachedReview?.review.threads.filter(
+							(thread): thread is LocalReviewThread => thread.source === THREAD_SOURCE.LOCAL,
+						) ?? []);
+			return { runId, threads: update(localThreads), reviewGeneration };
 		});
 		// The mutation response above is authoritative. This best-effort read fills
 		// any rows not yet cached, but only the newest mutation may reconcile state.
 		void fetchLocalThreads(runId)
 			.then((localThreads) => {
 				if (localRefreshGeneration.current !== generation) return;
-				setLocalOverlay({ runId, threads: localThreads });
+				setLocalOverlay({ runId, threads: localThreads, reviewGeneration });
 			})
 			.catch(() => {});
 	};
@@ -182,7 +201,12 @@ export function useReview(runId: string): UseReviewResult {
 				CommentThreadSchema.parse(
 					await jsonFetch<unknown>(runPath("/comment-threads"), jsonRequest("POST", input)),
 				),
-			onSuccess: (thread) => updateLocalThreads((threads) => [...threads, toReviewThread(thread)]),
+			onSuccess: (thread) =>
+				updateLocalThreads((threads) =>
+					threads.some((current) => current.id === thread.id)
+						? threads
+						: [...threads, toReviewThread(thread)],
+				),
 		}),
 		createPendingComment: useMutation({
 			mutationFn: (input: CreateCommentThreadBody) =>
@@ -199,11 +223,15 @@ export function useReview(runId: string): UseReviewResult {
 				),
 			onSuccess: (comment, { threadId }) =>
 				updateLocalThreads((threads) =>
-					threads.map((thread) =>
-						thread.id === threadId
-							? { ...thread, comments: [...thread.comments, toReviewComment(comment)] }
-							: thread,
-					),
+					threads.map((thread) => {
+						if (
+							thread.id !== threadId ||
+							thread.comments.some((current) => current.id === comment.id)
+						) {
+							return thread;
+						}
+						return { ...thread, comments: [...thread.comments, toReviewComment(comment)] };
+					}),
 				),
 		}),
 		editLocalComment: useMutation({
