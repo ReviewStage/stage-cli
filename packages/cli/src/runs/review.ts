@@ -29,6 +29,7 @@ import {
 	updateReviewComment,
 } from "../github/review.js";
 import { DIFF_SIDE, type DiffSide, SCOPE_KIND } from "../schema.js";
+import { loadLocalThreadRecords, UNASSIGNED_REPO_ROOT } from "./local-comment-threads.js";
 import { deriveScopeKey } from "./scope-key.js";
 
 /** A review action failure with a user-facing message and the route's HTTP status. */
@@ -76,24 +77,10 @@ function assertPushable(run: ChapterRunRow, review: GitHubReview): void {
 // ─── Read: merged local + GitHub review ─────────────────────────────────────────
 
 function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
-	const threads = db
-		.select()
-		.from(commentThread)
-		.where(
-			and(
-				eq(commentThread.repoRoot, run.repoRoot),
-				eq(commentThread.scopeKey, deriveScopeKey(run)),
-			),
-		)
-		.orderBy(asc(commentThread.createdAt))
-		.all();
-	return threads.map((thread): ReviewThreadDto => {
-		const comments = db
-			.select()
-			.from(comment)
-			.where(eq(comment.threadId, thread.id))
-			.orderBy(asc(comment.createdAt))
-			.all();
+	return loadLocalThreadRecords(db, {
+		repoRoot: run.repoRoot,
+		scopeKey: deriveScopeKey(run),
+	}).map(({ thread, comments }): ReviewThreadDto => {
 		return {
 			id: thread.id,
 			source: THREAD_SOURCE.LOCAL,
@@ -121,7 +108,7 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 
 function toGitHubThreadDto(t: GitHubReviewThread): ReviewThreadDto {
 	// `line` is non-null (getReview drops anchorless threads); start defaults to line.
-	const endLine = t.line ?? t.startLine ?? 1;
+	const endLine = t.line;
 	return {
 		id: t.threadNodeId,
 		source: THREAD_SOURCE.GITHUB,
@@ -287,6 +274,11 @@ const pendingReviewActions = new ReviewActionQueue();
 // duplicate pending GitHub thread before the first deletes the local row.
 const promotingThreads = new Set<string>();
 
+/** True while the local thread is frozen for an in-flight GitHub promotion. */
+export function isLocalThreadPromoting(localThreadId: string): boolean {
+	return promotingThreads.has(localThreadId);
+}
+
 /**
  * Promote a local comment thread to the viewer's pending GitHub review: the root
  * becomes a new review thread, replies become pending replies, and the local thread
@@ -321,13 +313,26 @@ async function promoteLocalThread(
 		.limit(1)
 		.all();
 	if (!thread) throw new ReviewError(`Thread ${localThreadId} not found`, 404);
-	if (thread.repoRoot !== run.repoRoot) {
+	if (thread.repoRoot !== run.repoRoot && thread.repoRoot !== UNASSIGNED_REPO_ROOT) {
 		throw new ReviewError("This comment belongs to another repository.", 400);
 	}
 	// The thread must belong to this run's diff scope; its anchor was computed
 	// against that diff, so promoting one from another scope would mis-anchor.
 	if (thread.scopeKey !== deriveScopeKey(run)) {
 		throw new ReviewError("This comment doesn't belong to this run's diff.", 400);
+	}
+	if (thread.repoRoot === UNASSIGNED_REPO_ROOT) {
+		const [claimed] = db
+			.update(commentThread)
+			.set({ repoRoot: run.repoRoot })
+			.where(
+				and(eq(commentThread.id, localThreadId), eq(commentThread.repoRoot, UNASSIGNED_REPO_ROOT)),
+			)
+			.returning({ id: commentThread.id })
+			.all();
+		if (!claimed) {
+			throw new ReviewError("This comment belongs to another repository.", 400);
+		}
 	}
 	const comments = db
 		.select()

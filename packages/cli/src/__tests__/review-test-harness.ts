@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { closeDb, getDb, type StageDb } from "../db/client.js";
 import { chapterRun, comment, commentThread } from "../db/schema/index.js";
+import { commentRoutes } from "../routes/comments.js";
 import { reviewRoutes } from "../routes/review.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 import { LOOPBACK_HOST, type ServerHandle, startServer } from "../server.js";
@@ -113,6 +114,7 @@ export function makeAnchorlessPendingReview(): unknown {
 }
 
 interface GhShimOptions {
+	addThreadDelayMs?: number;
 	failAddThread?: boolean;
 	failAddReply?: boolean;
 	failResolve?: boolean;
@@ -202,6 +204,7 @@ if (query.includes("query GetReview")) {
   emit({ data: { addPullRequestReview: { pullRequestReview: { id: "REVIEW_new" } } } });
 } else if (query.includes("mutation AddReviewThread")) {
   fs.appendFileSync(log, "add-thread " + fields + "\\n");
+  sleep(${options.addThreadDelayMs ?? 0});
   if (${options.failAddThread ? "true" : "false"}) { process.stderr.write("gh: line not in diff\\n"); process.exit(1); }
   emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
 } else if (query.includes("mutation ResolveThread")) {
@@ -287,7 +290,7 @@ if (query.includes("query GetReview")) {
 	async start(): Promise<number> {
 		const handle = await startServer({
 			webDistPath: this.webDist,
-			routes: reviewRoutes(this.db),
+			routes: [...commentRoutes(this.db), ...reviewRoutes(this.db)],
 		});
 		this.handles.push(handle);
 		return handle.port;

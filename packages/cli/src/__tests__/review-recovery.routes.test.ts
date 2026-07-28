@@ -141,4 +141,27 @@ describe("review API — recovery and concurrency", () => {
 		).toEqual(["Root", "Reply"]);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(1);
 	});
+
+	it("rejects a local reply while its thread is being promoted", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, { addThreadDelayMs: 150 });
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread();
+		const port = await harness.start();
+
+		const promotion = harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+		await expect
+			.poll(async () => (await harness.logLines()).some((line) => line.startsWith("add-thread")))
+			.toBe(true);
+		const reply = await harness.request(
+			port,
+			"POST",
+			`/api/comment-threads/${localThreadId}/replies`,
+			{ body: "Too late" },
+		);
+
+		expect(reply.status).toBe(409);
+		expect((await promotion).status).toBe(200);
+	});
 });

@@ -124,7 +124,7 @@ export interface ReviewThread {
 	threadNodeId: string;
 	isResolved: boolean;
 	path: string;
-	line: number | null;
+	line: number;
 	startLine: number | null;
 	side: GitHubDiffSide;
 	startSide: GitHubDiffSide | null;

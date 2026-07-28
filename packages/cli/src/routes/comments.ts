@@ -5,7 +5,7 @@ import {
 	CreateCommentThreadBodySchema,
 	ResolveThreadBodySchema,
 } from "@stagereview/types/comments";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { LOCAL_USER_ID } from "../db/local-user.js";
 import {
@@ -15,6 +15,8 @@ import {
 	comment,
 	commentThread,
 } from "../db/schema/index.js";
+import { type LocalThreadScope, loadLocalThreadRecords } from "../runs/local-comment-threads.js";
+import { isLocalThreadPromoting } from "../runs/review.js";
 import { deriveScopeKey } from "../runs/scope-key.js";
 import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
@@ -80,12 +82,20 @@ export function commentRoutes(db: StageDb): Route[] {
 			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
 				const threadId = params.threadId;
-				if (!threadId || !threadExists(db, threadId)) {
-					writeJson(res, 404, { error: `Thread ${params.threadId} not found` });
+				if (!threadId) {
+					writeJson(res, 400, { error: "Missing threadId" });
 					return;
 				}
 				const body = await parseJsonBody(req, res, CommentBodySchema);
 				if (!body) return;
+				if (isLocalThreadPromoting(threadId)) {
+					writeJson(res, 409, { error: "This comment thread is being added to the review." });
+					return;
+				}
+				if (!threadExists(db, threadId)) {
+					writeJson(res, 404, { error: `Thread ${threadId} not found` });
+					return;
+				}
 
 				const created = db.transaction((tx) => {
 					const [commentRow] = tx
@@ -118,6 +128,10 @@ export function commentRoutes(db: StageDb): Route[] {
 				}
 				const body = await parseJsonBody(req, res, ResolveThreadBodySchema);
 				if (!body) return;
+				if (isLocalThreadPromoting(threadId)) {
+					writeJson(res, 409, { error: "This comment thread is being added to the review." });
+					return;
+				}
 
 				const [updated] = db
 					.update(commentThread)
@@ -142,6 +156,10 @@ export function commentRoutes(db: StageDb): Route[] {
 					writeJson(res, 400, { error: "Missing threadId" });
 					return;
 				}
+				if (isLocalThreadPromoting(threadId)) {
+					writeJson(res, 409, { error: "This comment thread is being added to the review." });
+					return;
+				}
 				// Idempotent: deleting an absent thread is a no-op. The cascade FK
 				// removes the thread's comments.
 				db.delete(commentThread).where(eq(commentThread.id, threadId)).run();
@@ -160,6 +178,20 @@ export function commentRoutes(db: StageDb): Route[] {
 				}
 				const body = await parseJsonBody(req, res, CommentBodySchema);
 				if (!body) return;
+				const [existing] = db
+					.select({ threadId: comment.threadId })
+					.from(comment)
+					.where(eq(comment.id, commentId))
+					.limit(1)
+					.all();
+				if (!existing) {
+					writeJson(res, 404, { error: `Comment ${commentId} not found` });
+					return;
+				}
+				if (isLocalThreadPromoting(existing.threadId)) {
+					writeJson(res, 409, { error: "This comment thread is being added to the review." });
+					return;
+				}
 
 				const [updated] = db
 					.update(comment)
@@ -182,6 +214,16 @@ export function commentRoutes(db: StageDb): Route[] {
 				const commentId = params.commentId;
 				if (!commentId) {
 					writeJson(res, 400, { error: "Missing commentId" });
+					return;
+				}
+				const [existing] = db
+					.select({ threadId: comment.threadId })
+					.from(comment)
+					.where(eq(comment.id, commentId))
+					.limit(1)
+					.all();
+				if (existing && isLocalThreadPromoting(existing.threadId)) {
+					writeJson(res, 409, { error: "This comment thread is being added to the review." });
 					return;
 				}
 				// Deleting the last comment removes its now-empty thread so no
@@ -211,12 +253,7 @@ export function commentRoutes(db: StageDb): Route[] {
 	];
 }
 
-interface RunScope {
-	repoRoot: string;
-	scopeKey: string;
-}
-
-function resolveRunScope(db: StageDb, runId: string | undefined): RunScope | null {
+function resolveRunScope(db: StageDb, runId: string | undefined): LocalThreadScope | null {
 	if (!runId) return null;
 	const [run] = db
 		.select({
@@ -235,36 +272,10 @@ function resolveRunScope(db: StageDb, runId: string | undefined): RunScope | nul
 	return { repoRoot: run.repoRoot, scopeKey: deriveScopeKey(run) };
 }
 
-function listThreads(db: StageDb, scope: RunScope): CommentThreadDto[] {
-	const threads = db
-		.select()
-		.from(commentThread)
-		.where(
-			and(eq(commentThread.repoRoot, scope.repoRoot), eq(commentThread.scopeKey, scope.scopeKey)),
-		)
-		.orderBy(asc(commentThread.createdAt))
-		.all();
-	if (threads.length === 0) return [];
-
-	const comments = db
-		.select()
-		.from(comment)
-		.where(
-			inArray(
-				comment.threadId,
-				threads.map((t) => t.id),
-			),
-		)
-		.orderBy(asc(comment.createdAt))
-		.all();
-
-	const byThread = new Map<string, CommentRow[]>();
-	for (const c of comments) {
-		const list = byThread.get(c.threadId);
-		if (list) list.push(c);
-		else byThread.set(c.threadId, [c]);
-	}
-	return threads.map((t) => toThreadDto(t, byThread.get(t.id) ?? []));
+function listThreads(db: StageDb, scope: LocalThreadScope): CommentThreadDto[] {
+	return loadLocalThreadRecords(db, scope).map(({ thread, comments }) =>
+		toThreadDto(thread, comments),
+	);
 }
 
 function threadComments(db: StageDb, threadId: string): CommentRow[] {

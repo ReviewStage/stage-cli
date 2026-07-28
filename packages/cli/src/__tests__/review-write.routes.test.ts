@@ -127,4 +127,22 @@ describe("review API — writes", () => {
 			error: expect.stringMatching(/repository/i),
 		});
 	});
+
+	it("keeps an ambiguous legacy thread visible and claimable", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW);
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ repoRoot: "" });
+		const port = await harness.start();
+
+		const read = await harness.request(port, "GET", `/api/runs/${runId}/review`);
+		const promote = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+
+		expect(JSON.parse(read.body).threads).toEqual([
+			expect.objectContaining({ id: localThreadId, source: "local" }),
+		]);
+		expect(promote.status).toBe(200);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
 });
