@@ -33,7 +33,7 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
       id
       viewerDidAuthor
       headRefOid
-      reviews(states: PENDING, first: 1) { nodes { id } }
+      reviews(states: PENDING, first: 1) { nodes { id body } }
       reviewThreads(first: 50, after: $cursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
@@ -82,7 +82,9 @@ const ReviewQuerySchema = z.object({
 						id: z.string(),
 						viewerDidAuthor: z.boolean(),
 						headRefOid: z.string(),
-						reviews: z.object({ nodes: z.array(z.object({ id: z.string() })) }),
+						reviews: z.object({
+							nodes: z.array(z.object({ id: z.string(), body: z.string() })),
+						}),
 						reviewThreads: z.object({
 							pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() }),
 							nodes: z.array(
@@ -140,6 +142,8 @@ export interface GitHubReview {
 	headRefOid: string;
 	/** The viewer's open pending review, or null when they have none. */
 	pendingReviewNodeId: string | null;
+	/** Existing summary text on the viewer's open pending review. */
+	pendingReviewBody: string;
 	/** Viewer's pending (draft) comments across all threads, including anchorless ones. */
 	pendingCommentCount: number;
 	pendingComments: PendingReviewComment[];
@@ -169,6 +173,7 @@ export async function getReview(
 	let viewerDidAuthor = false;
 	let headRefOid = "";
 	let pendingReviewNodeId: string | null = null;
+	let pendingReviewBody = "";
 	let pendingCommentCount = 0;
 	const pendingComments: PendingReviewComment[] = [];
 	const threads: ReviewThread[] = [];
@@ -199,6 +204,7 @@ export async function getReview(
 		viewerDidAuthor = pr.viewerDidAuthor;
 		headRefOid = pr.headRefOid;
 		pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
+		pendingReviewBody = pr.reviews.nodes[0]?.body ?? "";
 
 		for (const node of pr.reviewThreads.nodes) {
 			// Count pending (draft) comments across every thread, including outdated/whole-file
@@ -239,6 +245,7 @@ export async function getReview(
 		viewerDidAuthor,
 		headRefOid,
 		pendingReviewNodeId,
+		pendingReviewBody,
 		pendingCommentCount,
 		pendingComments,
 		threads,

@@ -15,7 +15,7 @@ import {
 	THREAD_SOURCE,
 } from "@stagereview/types/review";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { jsonFetch } from "./use-view-state";
 
 export type { CreateCommentThreadBody, GitHubReviewStatus, ReviewEvent, ReviewThread };
@@ -73,6 +73,7 @@ export interface UseReviewResult {
 	pendingComments: PendingReviewComment[];
 	pendingCommentCount: number;
 	hasPendingReview: boolean;
+	pendingReviewBody: string;
 	isOwnPullRequest: boolean;
 	canPushToReview: boolean;
 	isLoading: boolean;
@@ -105,6 +106,10 @@ export interface UseReviewResult {
 export function useReview(runId: string): UseReviewResult {
 	const queryClient = useQueryClient();
 	const queryKey = useMemo(() => reviewQueryKey(runId), [runId]);
+	const [localOverlay, setLocalOverlay] = useState<{
+		runId: string;
+		threads: ReviewThread[];
+	} | null>(null);
 
 	const { data, isLoading, error } = useQuery<ReviewResponse>({
 		queryKey,
@@ -112,22 +117,24 @@ export function useReview(runId: string): UseReviewResult {
 		enabled: runId !== "",
 	});
 
-	const threads = useMemo(() => data?.threads ?? [], [data]);
+	const refreshedLocalThreads = localOverlay?.runId === runId ? localOverlay.threads : null;
+	const threads = useMemo(() => {
+		const reviewThreads = data?.threads ?? [];
+		if (refreshedLocalThreads === null) return reviewThreads;
+		return [
+			...refreshedLocalThreads,
+			...reviewThreads.filter((thread) => thread.source !== THREAD_SOURCE.LOCAL),
+		];
+	}, [data, refreshedLocalThreads]);
 	const pendingComments = useMemo(() => data?.pendingComments ?? [], [data]);
 	const threadsByFile = useMemo(() => groupByFile(threads), [threads]);
 	const invalidate = () => queryClient.invalidateQueries({ queryKey });
-	const refreshLocal = async () => {
-		const localThreads = await fetchLocalThreads(runId);
-		queryClient.setQueryData<ReviewResponse>(queryKey, (current) => {
-			if (!current) return current;
-			return {
-				...current,
-				threads: [
-					...localThreads,
-					...current.threads.filter((thread) => thread.source !== THREAD_SOURCE.LOCAL),
-				],
-			};
-		});
+	const refreshLocal = () => {
+		// The write already succeeded. Refreshing its local projection is best-effort
+		// and must not reject mutateAsync (which could prompt a duplicate retry).
+		void fetchLocalThreads(runId)
+			.then((localThreads) => setLocalOverlay({ runId, threads: localThreads }))
+			.catch(() => {});
 	};
 	// GitHub-affecting actions (submit/resolve/reply/promote) change PR-level state —
 	// reviewer decisions, the merge button — that lives behind separate, infinitely-
@@ -185,7 +192,10 @@ export function useReview(runId: string): UseReviewResult {
 		addToReview: useMutation({
 			mutationFn: (localThreadId: string) =>
 				jsonFetch(runPath("/review/add"), jsonRequest("POST", { localThreadId })),
-			onSuccess: invalidateGitHub,
+			onSuccess: () => {
+				refreshLocal();
+				invalidateGitHub();
+			},
 		}),
 		submitReview: useMutation({
 			mutationFn: (input: { event: ReviewEvent; body: string }) =>
@@ -225,6 +235,7 @@ export function useReview(runId: string): UseReviewResult {
 		pendingComments,
 		pendingCommentCount: data?.pendingCommentCount ?? 0,
 		hasPendingReview: data?.hasPendingReview ?? false,
+		pendingReviewBody: data?.pendingReviewBody ?? "",
 		isOwnPullRequest: data?.isOwnPullRequest ?? false,
 		canPushToReview: data?.canPushToReview ?? false,
 		isLoading,

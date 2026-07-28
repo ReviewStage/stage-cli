@@ -4,6 +4,7 @@ import { comment, commentThread } from "../db/schema/index.js";
 import {
 	EMPTY_REVIEW,
 	makeAnchorlessPendingReview,
+	makeSummaryOnlyPendingReview,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
 
@@ -35,6 +36,25 @@ describe("review API — recovery and concurrency", () => {
 			{ id: "COMMENT_outdated", filePath: "src/foo.ts", line: null, body: "Outdated draft" },
 		]);
 		expect(submit.status).toBe(200);
+	});
+
+	it("preserves and submits a summary-only pending review", async () => {
+		await harness.writeGhShim(makeSummaryOnlyPendingReview());
+		const runId = harness.insertRun();
+		const port = await harness.start();
+
+		const read = await harness.request(port, "GET", `/api/runs/${runId}/review`);
+		const review = ReviewResponseSchema.parse(JSON.parse(read.body));
+		const submit = await harness.request(port, "POST", `/api/runs/${runId}/review/submit`, {
+			event: "COMMENT",
+			body: "",
+		});
+
+		expect(review.pendingReviewBody).toBe("Existing draft summary");
+		expect(submit.status).toBe(200);
+		expect((await harness.logLines()).find((line) => line.startsWith("submit"))).toContain(
+			"body=Existing draft summary",
+		);
 	});
 
 	it("serializes concurrent first comments onto one pending review", async () => {

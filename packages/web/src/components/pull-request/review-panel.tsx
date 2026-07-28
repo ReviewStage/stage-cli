@@ -4,7 +4,7 @@ import {
 	type ReviewEvent,
 } from "@stagereview/types/review";
 import { ChevronRight, CornerDownLeft, MessageSquarePlus, Trash2 } from "lucide-react";
-import { type KeyboardEvent, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { CommentMarkdownEditor } from "@/components/comments/comment-markdown-editor";
 import {
 	AlertDialog,
@@ -169,6 +169,7 @@ export function ReviewPanel() {
 		() => collectPendingByFile(review.pendingComments),
 		[review.pendingComments],
 	);
+	useEffect(() => setBody(review.pendingReviewBody), [review.pendingReviewBody]);
 
 	if (review.github !== GITHUB_REVIEW_STATUS.AVAILABLE) return null;
 

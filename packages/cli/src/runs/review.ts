@@ -146,6 +146,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		pendingComments: [],
 		pendingCommentCount: 0,
 		hasPendingReview: false,
+		pendingReviewBody: "",
 		isOwnPullRequest: false,
 		canPushToReview: false,
 	};
@@ -181,6 +182,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		pendingComments: review.pendingComments,
 		pendingCommentCount: review.pendingCommentCount,
 		hasPendingReview: review.pendingReviewNodeId !== null,
+		pendingReviewBody: review.pendingReviewBody,
 		isOwnPullRequest: review.viewerDidAuthor,
 		canPushToReview: true,
 	};
@@ -449,14 +451,19 @@ export async function submitRunReview(
 	await pendingReviewActions.run(run.repoRoot, async () => {
 		const { review } = await loadTarget(run);
 		assertPushable(run, review);
-		if (event === REVIEW_EVENT.COMMENT && body.trim() === "" && review.pendingCommentCount === 0) {
+		const submissionBody = body.trim() === "" ? review.pendingReviewBody : body;
+		if (
+			event === REVIEW_EVENT.COMMENT &&
+			submissionBody.trim() === "" &&
+			review.pendingCommentCount === 0
+		) {
 			throw new ReviewError(
 				"Add a summary or at least one pending comment to submit a review.",
 				400,
 			);
 		}
 		await withPendingReview(run, review, (reviewNodeId) =>
-			submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
+			submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, submissionBody),
 		);
 	});
 }

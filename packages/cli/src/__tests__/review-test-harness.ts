@@ -61,7 +61,11 @@ const pendingThread = {
 	},
 };
 
-function makeReview(threads: unknown[], pendingReviewId: string | null): unknown {
+function makeReview(
+	threads: unknown[],
+	pendingReviewId: string | null,
+	pendingReviewBody = "",
+): unknown {
 	return {
 		data: {
 			repository: {
@@ -69,7 +73,10 @@ function makeReview(threads: unknown[], pendingReviewId: string | null): unknown
 					id: "PR_node",
 					viewerDidAuthor: false,
 					headRefOid: HEAD,
-					reviews: { nodes: pendingReviewId === null ? [] : [{ id: pendingReviewId }] },
+					reviews: {
+						nodes:
+							pendingReviewId === null ? [] : [{ id: pendingReviewId, body: pendingReviewBody }],
+					},
 					reviewThreads: {
 						pageInfo: { hasNextPage: false, endCursor: null },
 						nodes: threads,
@@ -82,6 +89,10 @@ function makeReview(threads: unknown[], pendingReviewId: string | null): unknown
 
 export const REVIEW_QUERY_RESULT = makeReview([submittedThread, pendingThread], "REVIEW_pending");
 export const EMPTY_REVIEW = makeReview([], null);
+
+export function makeSummaryOnlyPendingReview(): unknown {
+	return makeReview([], "REVIEW_pending", "Existing draft summary");
+}
 
 export function makeAnchorlessPendingReview(): unknown {
 	return makeReview(
@@ -198,7 +209,7 @@ if (query.includes("query GetReview")) {
   fs.appendFileSync(log, "create-review\\n");
   if (${options.persistCreatedReview ? "true" : "false"}) {
     const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-    review.data.repository.pullRequest.reviews.nodes = [{ id: "REVIEW_new" }];
+    review.data.repository.pullRequest.reviews.nodes = [{ id: "REVIEW_new", body: "" }];
     fs.writeFileSync(reviewPath, JSON.stringify(review));
   }
   emit({ data: { addPullRequestReview: { pullRequestReview: { id: "REVIEW_new" } } } });

@@ -92,6 +92,8 @@ export const ReviewResponseSchema = z.object({
 	pendingComments: z.array(PendingReviewCommentSchema),
 	pendingCommentCount: z.number().int().nonnegative(),
 	hasPendingReview: z.boolean(),
+	// Existing summary text on the viewer's pending GitHub review.
+	pendingReviewBody: z.string(),
 	// The viewer opened this PR — GitHub forbids approving/requesting changes on it.
 	isOwnPullRequest: z.boolean(),
 	// Whether comments can be added to the PR right now — true when the run's diff IS

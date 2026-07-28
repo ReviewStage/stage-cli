@@ -36,6 +36,7 @@ const AVAILABLE_REVIEW: ReviewResponse = {
 	pendingComments: [],
 	pendingCommentCount: 0,
 	hasPendingReview: false,
+	pendingReviewBody: "",
 	isOwnPullRequest: false,
 	canPushToReview: true,
 };
@@ -46,6 +47,7 @@ const OFFLINE_REVIEW: ReviewResponse = {
 	pendingComments: [],
 	pendingCommentCount: 0,
 	hasPendingReview: false,
+	pendingReviewBody: "",
 	isOwnPullRequest: false,
 	canPushToReview: false,
 };
@@ -116,6 +118,71 @@ describe("useReview", () => {
 			"THREAD_github",
 		]);
 		expect(reviewReads).toBe(1);
+	});
+
+	it("does not reject a successful write when the local refresh fails", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+				const url = typeof input === "string" ? input : input.toString();
+				if (url.endsWith("/review")) return jsonResponse(AVAILABLE_REVIEW);
+				if ((init?.method ?? "GET") === "POST") return jsonResponse({});
+				return new Response("offline", { status: 500 });
+			}),
+		);
+		const { Wrapper } = makeWrapper();
+		const { result } = renderHook(() => useReview("run1"), { wrapper: Wrapper });
+		await waitFor(() => expect(result.current.github).toBe("available"));
+
+		await expect(
+			result.current.createLocalThread({
+				filePath: "src/local.ts",
+				side: "additions",
+				startLine: 3,
+				endLine: 3,
+				body: "Local comment",
+			}),
+		).resolves.toBeDefined();
+	});
+
+	it("keeps a local write visible when the initial review fetch finishes later", async () => {
+		let resolveReview!: (response: Response) => void;
+		const pendingReview = new Promise<Response>((resolve) => {
+			resolveReview = resolve;
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+				const url = typeof input === "string" ? input : input.toString();
+				const method = init?.method ?? "GET";
+				if (url.endsWith("/review")) return pendingReview;
+				if (url.endsWith("/comment-threads") && method === "POST") return jsonResponse({});
+				if (url.endsWith("/comment-threads")) return jsonResponse([LOCAL_THREAD]);
+				return new Response("not found", { status: 404 });
+			}),
+		);
+		const { Wrapper } = makeWrapper();
+		const { result } = renderHook(() => useReview("run1"), { wrapper: Wrapper });
+
+		await act(async () => {
+			await result.current.createLocalThread({
+				filePath: "src/local.ts",
+				side: "additions",
+				startLine: 3,
+				endLine: 3,
+				body: "Local comment",
+			});
+		});
+		await waitFor(() =>
+			expect(result.current.threads.map((thread) => thread.id)).toEqual(["THREAD_local"]),
+		);
+
+		resolveReview(jsonResponse(AVAILABLE_REVIEW));
+		await waitFor(() => expect(result.current.github).toBe("available"));
+		expect(result.current.threads.map((thread) => thread.id)).toEqual([
+			"THREAD_local",
+			"THREAD_github",
+		]);
 	});
 });
 
