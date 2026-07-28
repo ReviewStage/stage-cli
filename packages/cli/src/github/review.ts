@@ -38,6 +38,7 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
           diffSide
           startDiffSide
           comments(first: 100) {
+            pageInfo { hasNextPage endCursor }
             nodes {
               id
               url
@@ -48,6 +49,25 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
               pullRequestReview { state }
             }
           }
+        }
+      }
+    }
+  }
+}`;
+
+const REVIEW_THREAD_COMMENTS_QUERY = `query GetReviewThreadComments($threadId: ID!, $cursor: String) {
+  node(id: $threadId) {
+    ... on PullRequestReviewThread {
+      comments(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          url
+          body
+          bodyHTML
+          createdAt
+          author { login avatarUrl }
+          pullRequestReview { state }
         }
       }
     }
@@ -66,6 +86,16 @@ const GqlReviewCommentSchema = z.object({
 	pullRequestReview: z.object({ state: z.string() }).nullable(),
 });
 
+const GqlPageInfoSchema = z.object({
+	hasNextPage: z.boolean(),
+	endCursor: z.string().nullable(),
+});
+
+const GqlReviewCommentsPageSchema = z.object({
+	pageInfo: GqlPageInfoSchema,
+	nodes: z.array(GqlReviewCommentSchema),
+});
+
 const ReviewQuerySchema = z.object({
 	data: z.object({
 		repository: z
@@ -79,7 +109,7 @@ const ReviewQuerySchema = z.object({
 							nodes: z.array(z.object({ id: z.string(), body: z.string() })),
 						}),
 						reviewThreads: z.object({
-							pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() }),
+							pageInfo: GqlPageInfoSchema,
 							nodes: z.array(
 								z.object({
 									id: z.string(),
@@ -89,12 +119,22 @@ const ReviewQuerySchema = z.object({
 									startLine: z.number().nullable(),
 									diffSide: z.enum(GITHUB_DIFF_SIDE),
 									startDiffSide: z.enum(GITHUB_DIFF_SIDE).nullable(),
-									comments: z.object({ nodes: z.array(GqlReviewCommentSchema) }),
+									comments: GqlReviewCommentsPageSchema,
 								}),
 							),
 						}),
 					})
 					.nullable(),
+			})
+			.nullable(),
+	}),
+});
+
+const ReviewThreadCommentsQuerySchema = z.object({
+	data: z.object({
+		node: z
+			.object({
+				comments: GqlReviewCommentsPageSchema,
 			})
 			.nullable(),
 	}),
@@ -199,10 +239,16 @@ export async function getReview(
 		pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
 		pendingReviewBody = pr.reviews.nodes[0]?.body ?? "";
 
-		for (const node of pr.reviewThreads.nodes) {
+		const nodesWithComments = await Promise.all(
+			pr.reviewThreads.nodes.map(async (node) => ({
+				node,
+				comments: await loadReviewThreadComments(repoRoot, node.id, node.comments),
+			})),
+		);
+		for (const { node, comments } of nodesWithComments) {
 			// Count pending (draft) comments across every thread, including outdated/whole-file
 			// ones dropped below — so the tray count and the empty-review check don't undercount.
-			for (const c of node.comments.nodes) {
+			for (const c of comments) {
 				if (c.pullRequestReview?.state !== PENDING_STATE) continue;
 				pendingCommentCount++;
 				pendingComments.push({
@@ -212,7 +258,7 @@ export async function getReview(
 					body: c.body,
 				});
 			}
-			const root = node.comments.nodes[0];
+			const root = comments[0];
 			if (!root || node.line === null) continue;
 			threads.push({
 				threadNodeId: node.id,
@@ -222,10 +268,10 @@ export async function getReview(
 				startLine: node.startLine,
 				side: node.diffSide,
 				startSide: node.startDiffSide,
-				comments: node.comments.nodes.map(toReviewComment),
+				comments: comments.map(toReviewComment),
 			});
 		}
-		cursor = pr.reviewThreads.pageInfo.hasNextPage ? pr.reviewThreads.pageInfo.endCursor : null;
+		cursor = nextCursor(pr.reviewThreads.pageInfo);
 	} while (cursor !== null);
 
 	// No `pullRequest` in the response (stale/unknown PR number, or repo no longer
@@ -243,6 +289,45 @@ export async function getReview(
 		pendingComments,
 		threads,
 	};
+}
+
+async function loadReviewThreadComments(
+	repoRoot: string,
+	threadNodeId: string,
+	firstPage: z.infer<typeof GqlReviewCommentsPageSchema>,
+): Promise<z.infer<typeof GqlReviewCommentSchema>[]> {
+	const comments = [...firstPage.nodes];
+	let cursor = nextCursor(firstPage.pageInfo);
+	while (cursor !== null) {
+		const args = [
+			"api",
+			"graphql",
+			"-f",
+			`query=${REVIEW_THREAD_COMMENTS_QUERY}`,
+			"-f",
+			`threadId=${threadNodeId}`,
+			"-f",
+			`cursor=${cursor}`,
+		];
+		const parsed = ReviewThreadCommentsQuerySchema.safeParse(
+			JSON.parse(await ghOrThrow(args, repoRoot)),
+		);
+		if (!parsed.success || parsed.data.data.node === null) {
+			throw new Error("Unexpected response shape from GitHub review comments query");
+		}
+		const page = parsed.data.data.node.comments;
+		comments.push(...page.nodes);
+		cursor = nextCursor(page.pageInfo);
+	}
+	return comments;
+}
+
+function nextCursor(pageInfo: z.infer<typeof GqlPageInfoSchema>): string | null {
+	if (!pageInfo.hasNextPage) return null;
+	if (pageInfo.endCursor === null) {
+		throw new Error("GitHub returned a paginated review connection without a cursor");
+	}
+	return pageInfo.endCursor;
 }
 
 function toReviewComment(c: z.infer<typeof GqlReviewCommentSchema>): ReviewComment {

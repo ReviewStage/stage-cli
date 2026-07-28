@@ -1,6 +1,11 @@
 import { ReviewResponseSchema } from "@stagereview/types/review";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { HEAD, REVIEW_QUERY_RESULT, ReviewRouteHarness } from "./review-test-harness.js";
+import {
+	HEAD,
+	makePaginatedThreadReview,
+	REVIEW_QUERY_RESULT,
+	ReviewRouteHarness,
+} from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
 
@@ -59,6 +64,23 @@ describe("review API — read", () => {
 			"pending",
 			"submitted",
 		]);
+	});
+
+	it("loads later pages of comments within a GitHub thread", async () => {
+		await harness.writeGhShim(makePaginatedThreadReview());
+		const runId = harness.insertRun();
+
+		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
+		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
+		const githubThread = review.threads.find((thread) => thread.source === "github");
+
+		expect(review.pendingCommentCount).toBe(1);
+		expect(review.pendingComments.map((comment) => comment.id)).toEqual(["COMMENT_late"]);
+		expect(githubThread?.comments.map((comment) => comment.id)).toEqual([
+			"COMMENT_sub",
+			"COMMENT_late",
+		]);
+		expect(await harness.logLines()).toContain("get-thread-comments");
 	});
 
 	it("keeps local threads visible when GitHub is offline", async () => {

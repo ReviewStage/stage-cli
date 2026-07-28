@@ -31,6 +31,7 @@ const submittedThread = {
 	diffSide: "RIGHT",
 	startDiffSide: null,
 	comments: {
+		pageInfo: { hasNextPage: false, endCursor: null },
 		nodes: [
 			{
 				id: "COMMENT_sub",
@@ -54,6 +55,7 @@ const pendingThread = {
 	diffSide: "LEFT",
 	startDiffSide: null,
 	comments: {
+		pageInfo: { hasNextPage: false, endCursor: null },
 		nodes: [
 			{
 				id: "COMMENT_pending",
@@ -113,6 +115,7 @@ export function makeAnchorlessPendingReview(): unknown {
 				diffSide: "RIGHT",
 				startDiffSide: null,
 				comments: {
+					pageInfo: { hasNextPage: false, endCursor: null },
 					nodes: [
 						{
 							id: "COMMENT_outdated",
@@ -124,6 +127,21 @@ export function makeAnchorlessPendingReview(): unknown {
 							pullRequestReview: { state: "PENDING" },
 						},
 					],
+				},
+			},
+		],
+		"REVIEW_pending",
+	);
+}
+
+export function makePaginatedThreadReview(): unknown {
+	return makeReview(
+		[
+			{
+				...submittedThread,
+				comments: {
+					pageInfo: { hasNextPage: true, endCursor: "COMMENTS_cursor" },
+					nodes: submittedThread.comments.nodes,
 				},
 			},
 		],
@@ -204,7 +222,21 @@ const log = ${JSON.stringify(path.join(this.tmpDir, "gh-log.txt"))};
 const reviewPath = ${JSON.stringify(reviewPath)};
 function emit(o) { process.stdout.write(JSON.stringify(o)); }
 function sleep(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
-if (query.includes("query GetReview")) {
+if (query.includes("query GetReviewThreadComments")) {
+  fs.appendFileSync(log, "get-thread-comments\\n");
+  emit({ data: { node: { comments: {
+    pageInfo: { hasNextPage: false, endCursor: null },
+    nodes: [{
+      id: "COMMENT_late",
+      url: "https://github.com/owner/repo/pull/5#discussion_r101",
+      body: "Late draft reply",
+      bodyHTML: "<p>Late draft reply</p>",
+      createdAt: "2026-01-04T00:00:00Z",
+      author: { login: "octocat", avatarUrl: "https://x/o.png" },
+      pullRequestReview: { state: "PENDING" }
+    }]
+  } } } });
+} else if (query.includes("query GetReview")) {
   sleep(${options.reviewQueryDelayMs ?? 0});
   const commentFields = query.slice(query.indexOf("comments(first: 100)"), query.indexOf("author {"));
   const illegalCommentField = ["databaseId", "diffSide", "startDiffSide"].find((field) => commentFields.includes(field));
