@@ -13,6 +13,7 @@ import type { StageDb } from "../db/client.js";
 import { type ChapterRunRow, comment, commentThread } from "../db/schema/index.js";
 import { type GitHubRepo, getPullRequest, parseGitHubRepo } from "../github/index.js";
 import {
+	type AddedReviewThread,
 	addReviewReply,
 	addReviewThread,
 	createPendingReview,
@@ -150,6 +151,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 	const localThreads = loadLocalThreads(db, deriveScopeKey(run));
 	const base = {
 		threads: localThreads,
+		pendingComments: [],
 		pendingCommentCount: 0,
 		hasPendingReview: false,
 		isOwnPullRequest: false,
@@ -184,7 +186,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 	return {
 		github: GITHUB_REVIEW_STATUS.AVAILABLE,
 		threads: [...localThreads, ...githubThreads],
-		// Raw count from getReview includes pending drafts on anchorless threads we don't render.
+		pendingComments: review.pendingComments,
 		pendingCommentCount: review.pendingCommentCount,
 		hasPendingReview: review.pendingReviewNodeId !== null,
 		isOwnPullRequest: review.viewerDidAuthor,
@@ -250,6 +252,30 @@ async function withPendingReview<T>(
 	}
 }
 
+class ReviewActionQueue {
+	private readonly tails = new Map<string, Promise<void>>();
+
+	async run<T>(repoRoot: string, action: () => Promise<T>): Promise<T> {
+		const previous = this.tails.get(repoRoot) ?? Promise.resolve();
+		const result = previous.then(action, action);
+		const settled = result.then(
+			() => undefined,
+			() => undefined,
+		);
+		this.tails.set(repoRoot, settled);
+		try {
+			return await result;
+		} finally {
+			if (this.tails.get(repoRoot) === settled) this.tails.delete(repoRoot);
+		}
+	}
+}
+
+// GitHub permits only one pending review per viewer and PR. Serialize pending-review
+// mutations within one checkout so concurrent first writes share the review one opens,
+// and failed cleanup cannot discard a review another request has already populated.
+const pendingReviewActions = new ReviewActionQueue();
+
 // Local thread ids currently mid-promotion. The server is a single process, so this
 // in-memory set serializes concurrent /review/add calls for the same thread (e.g. a
 // double-click): the second request is rejected instead of racing to create a
@@ -272,7 +298,7 @@ export async function addLocalThreadToReview(
 	}
 	promotingThreads.add(localThreadId);
 	try {
-		await promoteLocalThread(db, run, localThreadId);
+		await pendingReviewActions.run(run.repoRoot, () => promoteLocalThread(db, run, localThreadId));
 	} finally {
 		promotingThreads.delete(localThreadId);
 	}
@@ -310,9 +336,9 @@ async function promoteLocalThread(
 	const side = toGitHubSide(thread.side);
 	const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
 
-	let threadNodeId: string;
+	let addedThread: AddedReviewThread | null = null;
 	try {
-		threadNodeId = await addReviewThread(run.repoRoot, {
+		addedThread = await addReviewThread(run.repoRoot, {
 			pullRequestNodeId: review.pullRequestNodeId,
 			reviewNodeId,
 			path: thread.filePath,
@@ -322,8 +348,14 @@ async function promoteLocalThread(
 			startLine,
 			startSide: startLine !== null ? side : null,
 		});
+		if (thread.resolvedAt !== null) {
+			await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
+		}
 	} catch (err) {
-		// Don't leave an empty review behind if the root couldn't be posted.
+		// Roll back a newly-created remote root if preserving its resolved state failed.
+		if (addedThread !== null) {
+			await deleteReviewComment(run.repoRoot, addedThread.rootCommentNodeId).catch(() => {});
+		}
 		if (created) await discardReview(run.repoRoot, reviewNodeId).catch(() => {});
 		throw err;
 	}
@@ -332,7 +364,7 @@ async function promoteLocalThread(
 	// never leaves the already-promoted root behind to be re-promoted as a duplicate.
 	db.delete(comment).where(eq(comment.id, root.id)).run();
 	for (const reply of comments.slice(1)) {
-		await addReviewReply(run.repoRoot, threadNodeId, reply.body, reviewNodeId);
+		await addReviewReply(run.repoRoot, addedThread.threadNodeId, reply.body, reviewNodeId);
 		db.delete(comment).where(eq(comment.id, reply.id)).run();
 	}
 	// Every comment promoted — drop the now-empty local thread.
@@ -357,22 +389,24 @@ export async function addPendingComment(
 	run: ChapterRunRow,
 	anchor: PendingCommentAnchor,
 ): Promise<void> {
-	const { review } = await loadTarget(run);
-	assertPushable(run, review);
-	const side = toGitHubSide(anchor.side);
-	const startLine = anchor.endLine !== anchor.startLine ? anchor.startLine : null;
-	await withPendingReview(run, review, (reviewNodeId) =>
-		addReviewThread(run.repoRoot, {
-			pullRequestNodeId: review.pullRequestNodeId,
-			reviewNodeId,
-			path: anchor.filePath,
-			body: anchor.body,
-			line: anchor.endLine,
-			side,
-			startLine,
-			startSide: startLine !== null ? side : null,
-		}),
-	);
+	await pendingReviewActions.run(run.repoRoot, async () => {
+		const { review } = await loadTarget(run);
+		assertPushable(run, review);
+		const side = toGitHubSide(anchor.side);
+		const startLine = anchor.endLine !== anchor.startLine ? anchor.startLine : null;
+		await withPendingReview(run, review, (reviewNodeId) =>
+			addReviewThread(run.repoRoot, {
+				pullRequestNodeId: review.pullRequestNodeId,
+				reviewNodeId,
+				path: anchor.filePath,
+				body: anchor.body,
+				line: anchor.endLine,
+				side,
+				startLine,
+				startSide: startLine !== null ? side : null,
+			}),
+		);
+	});
 }
 
 /** Reply to a GitHub thread, adding to the viewer's pending review (or as a single comment). */
@@ -382,17 +416,19 @@ export async function replyToGitHubThread(
 	body: string,
 	pending: boolean,
 ): Promise<void> {
-	const { review } = await loadTarget(run);
-	// Same guard as the comment paths: don't act on the PR from a run whose diff
-	// isn't the PR's current diff (the thread on screen may not be what's live).
-	assertPushable(run, review);
 	if (!pending) {
+		const { review } = await loadTarget(run);
+		assertPushable(run, review);
 		await addReviewReply(run.repoRoot, threadNodeId, body, null);
 		return;
 	}
-	await withPendingReview(run, review, (reviewNodeId) =>
-		addReviewReply(run.repoRoot, threadNodeId, body, reviewNodeId),
-	);
+	await pendingReviewActions.run(run.repoRoot, async () => {
+		const { review } = await loadTarget(run);
+		assertPushable(run, review);
+		await withPendingReview(run, review, (reviewNodeId) =>
+			addReviewReply(run.repoRoot, threadNodeId, body, reviewNodeId),
+		);
+	});
 }
 
 /** Submit the viewer's pending review with the chosen event, opening one if needed (e.g. a bare approval). */
@@ -401,28 +437,30 @@ export async function submitRunReview(
 	event: ReviewEvent,
 	body: string,
 ): Promise<void> {
-	const { review } = await loadTarget(run);
-	// A review approves/comments on the PR's current diff; block submitting from a run
-	// whose diff isn't that, even via the API (the UI already hides the tray then).
-	assertPushable(run, review);
-	// Mirror the tray's rule at the API boundary: a Comment review needs a summary or
-	// at least one pending comment, else we'd open and submit an empty review. Uses the
-	// raw pending count (includes anchorless drafts getReview drops) to avoid a false reject.
-	if (event === REVIEW_EVENT.COMMENT && body.trim() === "" && review.pendingCommentCount === 0) {
-		throw new ReviewError("Add a summary or at least one pending comment to submit a review.", 400);
-	}
-	await withPendingReview(run, review, (reviewNodeId) =>
-		submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
-	);
+	await pendingReviewActions.run(run.repoRoot, async () => {
+		const { review } = await loadTarget(run);
+		assertPushable(run, review);
+		if (event === REVIEW_EVENT.COMMENT && body.trim() === "" && review.pendingCommentCount === 0) {
+			throw new ReviewError(
+				"Add a summary or at least one pending comment to submit a review.",
+				400,
+			);
+		}
+		await withPendingReview(run, review, (reviewNodeId) =>
+			submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
+		);
+	});
 }
 
 /** Discard the viewer's pending review and all its draft comments. */
 export async function discardRunReview(run: ChapterRunRow): Promise<void> {
-	const { review } = await loadTarget(run);
-	if (review.pendingReviewNodeId === null) {
-		throw new ReviewError("There's no pending review to discard.", 409);
-	}
-	await discardReview(run.repoRoot, review.pendingReviewNodeId);
+	await pendingReviewActions.run(run.repoRoot, async () => {
+		const { review } = await loadTarget(run);
+		if (review.pendingReviewNodeId === null) {
+			throw new ReviewError("There's no pending review to discard.", 409);
+		}
+		await discardReview(run.repoRoot, review.pendingReviewNodeId);
+	});
 }
 
 /** Edit a GitHub review comment by node id (used for pending comments). */

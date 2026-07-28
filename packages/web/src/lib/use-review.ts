@@ -2,6 +2,7 @@ import type { CreateCommentThreadBody } from "@stagereview/types/comments";
 import {
 	GITHUB_REVIEW_STATUS,
 	type GitHubReviewStatus,
+	type PendingReviewComment,
 	type ReviewEvent,
 	type ReviewResponse,
 	ReviewResponseSchema,
@@ -35,6 +36,7 @@ export interface UseReviewResult {
 	threads: ReviewThread[];
 	threadsByFile: ReadonlyMap<string, ReviewThread[]>;
 	github: GitHubReviewStatus;
+	pendingComments: PendingReviewComment[];
 	pendingCommentCount: number;
 	hasPendingReview: boolean;
 	isOwnPullRequest: boolean;
@@ -77,6 +79,7 @@ export function useReview(runId: string): UseReviewResult {
 	});
 
 	const threads = useMemo(() => data?.threads ?? [], [data]);
+	const pendingComments = useMemo(() => data?.pendingComments ?? [], [data]);
 	const threadsByFile = useMemo(() => groupByFile(threads), [threads]);
 	const invalidate = () => queryClient.invalidateQueries({ queryKey });
 	// GitHub-affecting actions (submit/resolve/reply/promote) change PR-level state —
@@ -172,6 +175,7 @@ export function useReview(runId: string): UseReviewResult {
 		threads,
 		threadsByFile,
 		github: data?.github ?? GITHUB_REVIEW_STATUS.NONE,
+		pendingComments,
 		pendingCommentCount: data?.pendingCommentCount ?? 0,
 		hasPendingReview: data?.hasPendingReview ?? false,
 		isOwnPullRequest: data?.isOwnPullRequest ?? false,

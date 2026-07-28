@@ -142,7 +142,15 @@ export interface GitHubReview {
 	pendingReviewNodeId: string | null;
 	/** Viewer's pending (draft) comments across all threads, including anchorless ones. */
 	pendingCommentCount: number;
+	pendingComments: PendingReviewComment[];
 	threads: ReviewThread[];
+}
+
+export interface PendingReviewComment {
+	id: string;
+	filePath: string;
+	line: number | null;
+	body: string;
 }
 
 const PENDING_STATE = "PENDING";
@@ -162,6 +170,7 @@ export async function getReview(
 	let headRefOid = "";
 	let pendingReviewNodeId: string | null = null;
 	let pendingCommentCount = 0;
+	const pendingComments: PendingReviewComment[] = [];
 	const threads: ReviewThread[] = [];
 	let cursor: string | null = null;
 
@@ -195,7 +204,14 @@ export async function getReview(
 			// Count pending (draft) comments across every thread, including outdated/whole-file
 			// ones dropped below — so the tray count and the empty-review check don't undercount.
 			for (const c of node.comments.nodes) {
-				if (c.pullRequestReview?.state === PENDING_STATE) pendingCommentCount++;
+				if (c.pullRequestReview?.state !== PENDING_STATE) continue;
+				pendingCommentCount++;
+				pendingComments.push({
+					id: c.id,
+					filePath: node.path,
+					line: node.line,
+					body: c.body,
+				});
 			}
 			const root = node.comments.nodes[0];
 			if (!root || node.line === null) continue;
@@ -224,6 +240,7 @@ export async function getReview(
 		headRefOid,
 		pendingReviewNodeId,
 		pendingCommentCount,
+		pendingComments,
 		threads,
 	};
 }
@@ -251,7 +268,7 @@ const CREATE_PENDING_REVIEW = `mutation CreatePendingReview($pullRequestId: ID!)
 
 const ADD_REVIEW_THREAD = `mutation AddReviewThread($pullRequestId: ID!, $reviewId: ID!, $path: String!, $body: String!, $line: Int!, $startLine: Int, $side: DiffSide!, $startSide: DiffSide) {
   addPullRequestReviewThread(input: { pullRequestId: $pullRequestId, pullRequestReviewId: $reviewId, path: $path, body: $body, line: $line, startLine: $startLine, side: $side, startSide: $startSide }) {
-    thread { id }
+    thread { id comments(first: 1) { nodes { id } } }
   }
 }`;
 
@@ -337,15 +354,25 @@ export interface AddReviewThreadInput {
 
 const AddedThreadSchema = z.object({
 	data: z.object({
-		addPullRequestReviewThread: z.object({ thread: z.object({ id: z.string() }) }),
+		addPullRequestReviewThread: z.object({
+			thread: z.object({
+				id: z.string(),
+				comments: z.object({ nodes: z.array(z.object({ id: z.string() })) }),
+			}),
+		}),
 	}),
 });
 
-/** Add a line-anchored comment (a new thread) to a pending review, returning the thread's node id. */
+export interface AddedReviewThread {
+	threadNodeId: string;
+	rootCommentNodeId: string;
+}
+
+/** Add a line-anchored comment (a new thread) to a pending review. */
 export async function addReviewThread(
 	repoRoot: string,
 	input: AddReviewThreadInput,
-): Promise<string> {
+): Promise<AddedReviewThread> {
 	const stdout = await ghOrThrow(
 		gqlArgs(ADD_REVIEW_THREAD, {
 			pullRequestId: input.pullRequestNodeId,
@@ -359,7 +386,10 @@ export async function addReviewThread(
 		}),
 		repoRoot,
 	);
-	return AddedThreadSchema.parse(JSON.parse(stdout)).data.addPullRequestReviewThread.thread.id;
+	const thread = AddedThreadSchema.parse(JSON.parse(stdout)).data.addPullRequestReviewThread.thread;
+	const root = thread.comments.nodes[0];
+	if (!root) throw new Error("GitHub returned a review thread without its root comment");
+	return { threadNodeId: thread.id, rootCommentNodeId: root.id };
 }
 
 /** Reply to an existing thread, attaching the reply to a pending review when one is open. */

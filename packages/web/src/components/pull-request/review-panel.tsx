@@ -1,8 +1,7 @@
 import {
-	COMMENT_STATE,
+	type PendingReviewComment,
 	REVIEW_EVENT,
 	type ReviewEvent,
-	type ReviewThread,
 } from "@stagereview/types/review";
 import { ChevronRight, CornerDownLeft, MessageSquarePlus, Trash2 } from "lucide-react";
 import { type KeyboardEvent, useMemo, useRef, useState } from "react";
@@ -40,24 +39,16 @@ const ACTION_OPTIONS: { event: ReviewEvent; label: string; description: string }
 	},
 ];
 
-interface PendingComment {
-	id: string;
-	filePath: string;
-	line: number;
-	body: string;
-}
-
 // Flatten the viewer's pending comments, grouped by file, for the "what you're
 // about to submit" list.
-function collectPendingByFile(threads: ReviewThread[]): Map<string, PendingComment[]> {
-	const byFile = new Map<string, PendingComment[]>();
-	for (const thread of threads) {
-		for (const c of thread.comments) {
-			if (c.state !== COMMENT_STATE.PENDING) continue;
-			const list = byFile.get(thread.filePath) ?? [];
-			if (!byFile.has(thread.filePath)) byFile.set(thread.filePath, list);
-			list.push({ id: c.id, filePath: thread.filePath, line: thread.endLine, body: c.body });
-		}
+function collectPendingByFile(
+	comments: PendingReviewComment[],
+): Map<string, PendingReviewComment[]> {
+	const byFile = new Map<string, PendingReviewComment[]>();
+	for (const comment of comments) {
+		const list = byFile.get(comment.filePath) ?? [];
+		if (!byFile.has(comment.filePath)) byFile.set(comment.filePath, list);
+		list.push(comment);
 	}
 	return byFile;
 }
@@ -118,7 +109,7 @@ function PendingCommentsList({
 	byFile,
 	count,
 }: {
-	byFile: Map<string, PendingComment[]>;
+	byFile: Map<string, PendingReviewComment[]>;
 	count: number;
 }) {
 	const [open, setOpen] = useState(false);
@@ -142,7 +133,7 @@ function PendingCommentsList({
 									{comments.map((c) => (
 										<div key={c.id} className="flex items-baseline gap-2 pl-2 text-xs">
 											<span className="inline-block w-10 shrink-0 text-right font-mono text-muted-foreground">
-												L{c.line}
+												{c.line === null ? "Outdated" : `L${c.line}`}
 											</span>
 											<span className="line-clamp-1 text-muted-foreground">{c.body}</span>
 										</div>
@@ -174,7 +165,10 @@ export function ReviewPanel() {
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 
 	const { pendingCommentCount, hasPendingReview, isOwnPullRequest } = review;
-	const pendingByFile = useMemo(() => collectPendingByFile(review.threads), [review.threads]);
+	const pendingByFile = useMemo(
+		() => collectPendingByFile(review.pendingComments),
+		[review.pendingComments],
+	);
 
 	if (review.github !== GITHUB_REVIEW_STATUS.AVAILABLE) return null;
 

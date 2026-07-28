@@ -77,10 +77,19 @@ export const ReviewThreadSchema = z.object({
 });
 export type ReviewThread = z.infer<typeof ReviewThreadSchema>;
 
+export const PendingReviewCommentSchema = z.object({
+	id: z.string(),
+	filePath: z.string(),
+	line: z.number().int().positive().nullable(),
+	body: z.string(),
+});
+export type PendingReviewComment = z.infer<typeof PendingReviewCommentSchema>;
+
 export const ReviewResponseSchema = z.object({
 	github: z.enum(GITHUB_REVIEW_STATUS),
 	threads: z.array(ReviewThreadSchema),
-	// Count of the viewer's pending (draft) comments, for the review tray badge.
+	// Includes anchorless/outdated drafts that cannot be placed in `threads`.
+	pendingComments: z.array(PendingReviewCommentSchema),
 	pendingCommentCount: z.number().int().nonnegative(),
 	hasPendingReview: z.boolean(),
 	// The viewer opened this PR — GitHub forbids approving/requesting changes on it.
