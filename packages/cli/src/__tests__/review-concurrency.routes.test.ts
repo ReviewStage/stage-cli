@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { commentThread } from "../db/schema/index.js";
-import { REVIEW_ACTION_SCOPE, ReviewActionQueue } from "../runs/review-action-queue.js";
+import { chapterRun, comment } from "../db/schema/index.js";
+import { addLocalThreadToReview, isLocalThreadPromoting } from "../runs/review.js";
+import { REVIEW_ACTION_SCOPE, reviewActions } from "../runs/review-action-queue.js";
 import { EMPTY_REVIEW, ReviewRouteHarness } from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
@@ -67,48 +68,38 @@ describe("review API — concurrency", () => {
 		expect((await promotion).status).toBe(200);
 	});
 
-	it("serializes a local reply with a lock held by another queue instance", async () => {
+	it("promotes an edit that wins the checkout lock before promotion", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW);
+		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread();
-		const [thread] = harness.db
-			.select({ repoRoot: commentThread.repoRoot })
-			.from(commentThread)
-			.where(eq(commentThread.id, localThreadId))
+		const [run] = harness.db
+			.select()
+			.from(chapterRun)
+			.where(eq(chapterRun.id, runId))
 			.limit(1)
 			.all();
-		if (!thread) throw new Error("seeded thread was not found");
+		if (!run) throw new Error("seeded run was not found");
 
-		let releaseLock: () => void = () => {
-			throw new Error("Local mutation gate was not initialized");
-		};
-		const gate = new Promise<void>((resolve) => {
-			releaseLock = resolve;
-		});
-		let lockHeld = false;
-		const blocker = new ReviewActionQueue().run(
-			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: thread.repoRoot },
+		const edit = reviewActions.run(
+			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot },
 			async () => {
-				lockHeld = true;
-				await gate;
+				if (isLocalThreadPromoting(localThreadId)) {
+					throw new Error("Winning edit was incorrectly rejected as mid-promotion");
+				}
+				harness.db
+					.update(comment)
+					.set({ body: "Edited before promotion" })
+					.where(eq(comment.threadId, localThreadId))
+					.run();
 			},
 		);
-		await expect.poll(() => lockHeld).toBe(true);
+		const promotion = addLocalThreadToReview(harness.db, run, localThreadId);
 
-		const reply = harness.request(
-			await harness.start(),
-			"POST",
-			`/api/comment-threads/${localThreadId}/replies`,
-			{ body: "Wait for the promotion lock" },
+		const [editResult, promotionResult] = await Promise.allSettled([edit, promotion]);
+		expect(editResult.status).toBe("fulfilled");
+		expect(promotionResult.status).toBe("fulfilled");
+		expect((await harness.logLines()).find((line) => line.startsWith("add-thread"))).toContain(
+			"body=Edited before promotion",
 		);
-		let replySettled = false;
-		void reply.then(() => {
-			replySettled = true;
-		});
-		await new Promise((resolve) => setTimeout(resolve, 100));
-		expect(replySettled).toBe(false);
-
-		releaseLock();
-		expect((await reply).status).toBe(201);
-		await blocker;
 	});
 });

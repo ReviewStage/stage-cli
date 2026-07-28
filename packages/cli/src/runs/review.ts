@@ -282,9 +282,9 @@ async function withPendingReview<T>(
 	}
 }
 
-// Local thread ids currently mid-promotion in this server process. This rejects a
-// double-click immediately; another process serializes through the checkout lock and
-// then observes the local row already removed by the first successful promotion.
+// Queued ids reject duplicate promotion requests immediately. The active set starts
+// only after promotion owns the checkout lock, so an earlier local mutation wins.
+const queuedPromotions = new Set<string>();
 const promotingThreads = new Set<string>();
 
 /** True while the local thread is frozen for an in-flight GitHub promotion. */
@@ -303,16 +303,24 @@ export async function addLocalThreadToReview(
 	run: ChapterRunRow,
 	localThreadId: string,
 ): Promise<void> {
-	if (promotingThreads.has(localThreadId)) {
+	if (queuedPromotions.has(localThreadId)) {
 		throw new ReviewError("This comment is already being added to the review.", 409);
 	}
-	promotingThreads.add(localThreadId);
+	queuedPromotions.add(localThreadId);
 	try {
-		await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot }, () =>
-			promoteLocalThread(db, run, localThreadId),
+		await reviewActions.run(
+			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot },
+			async () => {
+				promotingThreads.add(localThreadId);
+				try {
+					await promoteLocalThread(db, run, localThreadId);
+				} finally {
+					promotingThreads.delete(localThreadId);
+				}
+			},
 		);
 	} finally {
-		promotingThreads.delete(localThreadId);
+		queuedPromotions.delete(localThreadId);
 	}
 }
 
