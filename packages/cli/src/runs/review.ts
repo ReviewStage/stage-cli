@@ -13,7 +13,12 @@ import {
 } from "@stagereview/types/review";
 import { and, asc, eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
-import { type ChapterRunRow, comment, commentThread } from "../db/schema/index.js";
+import {
+	type ChapterRunRow,
+	comment,
+	commentInsertionOrder,
+	commentThread,
+} from "../db/schema/index.js";
 import { type GitHubRepo, getPullRequestOrThrow, parseGitHubRepo } from "../github/index.js";
 import {
 	type AddedReviewThread,
@@ -112,6 +117,7 @@ function requireReviewThread(review: GitHubReview, threadNodeId: string): void {
 }
 
 function requirePendingComment(review: GitHubReview, nodeId: string): void {
+	if (review.pendingComments.some((candidate) => candidate.id === nodeId)) return;
 	const comment = review.threads
 		.flatMap((thread) => thread.comments)
 		.find((candidate) => candidate.nodeId === nodeId);
@@ -343,7 +349,16 @@ async function withPendingReview<T>(
 	try {
 		return await action(reviewNodeId);
 	} catch (err) {
-		if (created) await discardReview(run.repoRoot, reviewNodeId).catch(() => {});
+		if (created) {
+			try {
+				await discardReview(run.repoRoot, reviewNodeId);
+			} catch (discardError) {
+				const message = discardError instanceof Error ? discardError.message : String(discardError);
+				process.stderr.write(
+					`Failed to discard newly created GitHub review after action failure: ${message}\n`,
+				);
+			}
+		}
 		throw err;
 	}
 }
@@ -431,7 +446,7 @@ async function promoteLocalThread(
 		.select()
 		.from(comment)
 		.where(eq(comment.threadId, localThreadId))
-		.orderBy(asc(comment.createdAt))
+		.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
 		.all();
 	const root = comments[0];
 	if (!root) throw new ReviewError("Thread has no comments to add to the review.", 400);

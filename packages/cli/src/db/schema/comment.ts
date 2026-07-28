@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { LOCAL_USER_ID } from "../local-user.js";
 import { baseColumns } from "./columns.js";
@@ -20,3 +21,6 @@ export const comment = sqliteTable(
 
 export type CommentRow = typeof comment.$inferSelect;
 export type CommentInsert = typeof comment.$inferInsert;
+
+/** Stable insertion order for comments that share the same millisecond timestamp. */
+export const commentInsertionOrder = sql<number>`${comment}.rowid`;

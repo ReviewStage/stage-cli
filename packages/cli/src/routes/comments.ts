@@ -13,6 +13,7 @@ import {
 	type CommentThreadRow,
 	chapterRun,
 	comment,
+	commentInsertionOrder,
 	commentThread,
 } from "../db/schema/index.js";
 import { type LocalThreadScope, loadLocalThreadRecords } from "../runs/local-comment-threads.js";
@@ -307,7 +308,7 @@ function threadComments(db: StageDb, threadId: string): CommentRow[] {
 		.select()
 		.from(comment)
 		.where(eq(comment.threadId, threadId))
-		.orderBy(asc(comment.createdAt))
+		.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
 		.all();
 }
 

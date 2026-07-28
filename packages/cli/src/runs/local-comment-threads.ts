@@ -4,6 +4,7 @@ import {
 	type CommentRow,
 	type CommentThreadRow,
 	comment,
+	commentInsertionOrder,
 	commentThread,
 } from "../db/schema/index.js";
 
@@ -51,7 +52,7 @@ export function loadLocalThreadRecords(db: StageDb, scope: LocalThreadScope): Lo
 				threads.map((thread) => thread.id),
 			),
 		)
-		.orderBy(asc(comment.createdAt))
+		.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
 		.all();
 	const commentsByThread = new Map<string, CommentRow[]>();
 	for (const row of comments) {
