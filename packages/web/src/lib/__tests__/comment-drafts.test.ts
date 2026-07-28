@@ -152,10 +152,10 @@ describe("getDraftGitHubDestination", () => {
 		});
 	});
 
-	it("keeps GitHub selected when the composer opened with it available", () => {
+	it("withdraws GitHub when it becomes unavailable after opening", () => {
 		expect(getDraftGitHubDestination(draftState("additions", 5, 5, true), false)).toEqual({
-			available: true,
-			defaultOn: true,
+			available: false,
+			defaultOn: false,
 		});
 	});
 });

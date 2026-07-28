@@ -483,6 +483,9 @@ export async function submitRunReview(
 ): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
 		assertPushable(run, review);
+		if (event === REVIEW_EVENT.REQUEST_CHANGES && body.trim() === "") {
+			throw new ReviewError("Add a summary to request changes.", 400);
+		}
 		if (event === REVIEW_EVENT.COMMENT && body.trim() === "" && review.pendingCommentCount === 0) {
 			throw new ReviewError(
 				"Add a summary or at least one pending comment to submit a review.",

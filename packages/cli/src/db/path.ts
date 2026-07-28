@@ -15,9 +15,7 @@ export function getDbPath(): string {
 
 /** Writable per-user directory shared by every Stage checkout. */
 export function getStageDataDir(): string {
-	const dir = path.join(homedir(), STAGE_HOME);
-	mkdirSync(dir, { recursive: true });
-	return dir;
+	return path.join(homedir(), STAGE_HOME);
 }
 
 function ensureRepoDir(repoRoot: string): string {

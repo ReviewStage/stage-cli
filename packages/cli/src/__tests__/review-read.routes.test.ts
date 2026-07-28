@@ -84,7 +84,7 @@ describe("review API — read", () => {
 		expect(await harness.logLines()).toContain("get-thread-comments");
 	});
 
-	it("keeps first-page threads available when a follow-up comment page fails", async () => {
+	it("reports offline when a follow-up comment page fails", async () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 		await harness.writeGhShim(makePaginatedThreadReview(), { failThreadComments: true });
 		const runId = harness.insertRun();
@@ -92,8 +92,8 @@ describe("review API — read", () => {
 		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
 		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
 
-		expect(review.github).toBe("available");
-		expect(review.threads[0]?.comments.map((comment) => comment.id)).toEqual(["COMMENT_sub"]);
+		expect(review.github).toBe("offline");
+		expect(review.threads).toEqual([]);
 		expect(stderr).toHaveBeenCalledWith(expect.stringContaining("gh: follow-up page failed"));
 	});
 

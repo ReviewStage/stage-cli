@@ -369,10 +369,9 @@ async function loadReviewThreadComments(
 			cursor = nextCursor(page.pageInfo);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			process.stderr.write(
-				`Failed to load all comments for GitHub review thread ${threadNodeId}: ${message}\n`,
+			throw new Error(
+				`Failed to load all comments for GitHub review thread ${threadNodeId}: ${message}`,
 			);
-			break;
 		}
 	}
 	return comments;

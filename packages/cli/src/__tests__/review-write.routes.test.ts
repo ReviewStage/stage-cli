@@ -92,6 +92,24 @@ describe("review API — writes", () => {
 		expect((await harness.logLines()).join("\n")).not.toMatch(/create-review|submit/);
 	});
 
+	it("rejects a request for changes without a summary", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT);
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/submit`,
+			{ event: "REQUEST_CHANGES", body: "   " },
+		);
+
+		expect(res.status).toBe(400);
+		expect(JSON.parse(res.body)).toEqual({
+			error: expect.stringMatching(/summary.*request changes/i),
+		});
+		expect((await harness.logLines()).join("\n")).not.toMatch(/submit/);
+	});
+
 	it("allows an existing pending summary to be cleared", async () => {
 		await harness.writeGhShim(makeSummaryOnlyPendingReview());
 		const runId = harness.insertRun();

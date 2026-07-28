@@ -42,7 +42,6 @@ export class ReviewActionQueue {
 
 	constructor(lockDirectory = path.join(getStageDataDir(), "review-locks")) {
 		this.lockDirectory = lockDirectory;
-		mkdirSync(this.lockDirectory, { recursive: true });
 	}
 
 	async run<T>(scope: ReviewActionScope, action: () => Promise<T>): Promise<T> {
@@ -65,6 +64,7 @@ export class ReviewActionQueue {
 	}
 
 	private async runLocked<T>(key: string, action: () => Promise<T>): Promise<T> {
+		mkdirSync(this.lockDirectory, { recursive: true });
 		const lockTargetPath = path.join(
 			this.lockDirectory,
 			createHash("sha256").update(key).digest("hex"),

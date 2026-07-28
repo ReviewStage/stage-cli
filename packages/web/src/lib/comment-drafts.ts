@@ -68,8 +68,8 @@ export function getDraftGitHubDestination(
 	canPushToReview: boolean,
 ): { available: boolean; defaultOn: boolean } {
 	return {
-		available: draft.defaultToGitHub || canPushToReview,
-		defaultOn: draft.defaultToGitHub,
+		available: canPushToReview,
+		defaultOn: canPushToReview && draft.defaultToGitHub,
 	};
 }
 

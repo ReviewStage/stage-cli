@@ -22,6 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useReviewContext } from "@/lib/review-context";
+import { canSubmitReview } from "@/lib/review-submission";
 import { GITHUB_REVIEW_STATUS } from "@/lib/use-review";
 import { cn } from "@/lib/utils";
 
@@ -173,16 +174,17 @@ export function ReviewPanel() {
 
 	if (review.github !== GITHUB_REVIEW_STATUS.AVAILABLE) return null;
 
-	const hasContent = body.trim().length > 0;
 	// On your own PR only "Comment" is allowed; coerce the effective event so a stale
 	// Approve/Request-changes selection can never be submitted (the radios are disabled,
 	// but the prior `selected` state would otherwise persist).
 	const effectiveEvent =
 		isOwnPullRequest && selected !== REVIEW_EVENT.COMMENT ? REVIEW_EVENT.COMMENT : selected;
-	// A bare "Comment" submit with neither body nor pending comments is a no-op.
-	const canSubmit =
-		!isSubmitting &&
-		(effectiveEvent !== REVIEW_EVENT.COMMENT || hasContent || pendingCommentCount > 0);
+	const canSubmit = canSubmitReview({
+		event: effectiveEvent,
+		body,
+		pendingCommentCount,
+		isSubmitting,
+	});
 
 	function selectAction(event: ReviewEvent) {
 		if (isOwnPullRequest && event !== REVIEW_EVENT.COMMENT) return;
@@ -256,7 +258,11 @@ export function ReviewPanel() {
 						onChange={setBody}
 						textareaRef={textareaRef}
 						disabled={isSubmitting}
-						placeholder="Leave a summary comment (optional)…"
+						placeholder={
+							effectiveEvent === REVIEW_EVENT.REQUEST_CHANGES
+								? "Summarize the requested changes…"
+								: "Leave a summary comment (optional)…"
+						}
 						onKeyDown={handleKeyDown}
 						minRows={3}
 						maxRows={10}
