@@ -10,6 +10,7 @@ import {
 	getDraftGitHubDestination,
 	isSameAnchor,
 	readDraftBody,
+	setDraftGitHubPreference,
 	upsertDraft,
 	writeDraftBody,
 } from "../comment-drafts";
@@ -33,9 +34,9 @@ function draftState(
 	side: CommentDraft["side"],
 	startLine: number,
 	endLine: number,
-	defaultToGitHub = false,
+	toGitHub = false,
 ): DraftState {
-	return { side, startLine, endLine, error: null, defaultToGitHub };
+	return { side, startLine, endLine, error: null, toGitHub };
 }
 
 function rowFor(
@@ -109,7 +110,7 @@ describe("upsertDraft", () => {
 		);
 		expect(result).toHaveLength(2);
 		expect(findDraftAt(result, "deletions", 10)?.startLine).toBe(8);
-		expect(findDraftAt(result, "deletions", 10)?.defaultToGitHub).toBe(true);
+		expect(findDraftAt(result, "deletions", 10)?.toGitHub).toBe(true);
 	});
 
 	it("adopts the new startLine when re-opening the same (side, endLine) row", () => {
@@ -120,7 +121,7 @@ describe("upsertDraft", () => {
 		// A re-drag clears any stale submit error.
 		expect(result[0]?.error).toBeNull();
 		// GitHub becoming available must not change an already-open local-only composer.
-		expect(result[0]?.defaultToGitHub).toBe(false);
+		expect(result[0]?.toGitHub).toBe(false);
 	});
 
 	it("leaves other open drafts untouched when updating one", () => {
@@ -155,6 +156,21 @@ describe("getDraftGitHubDestination", () => {
 	it("withdraws GitHub when it becomes unavailable after opening", () => {
 		expect(getDraftGitHubDestination(draftState("additions", 5, 5, true), false)).toEqual({
 			available: false,
+			defaultOn: false,
+		});
+	});
+
+	it("restores the user's local choice when GitHub returns", () => {
+		const opened = [draftState("additions", 5, 5, true)];
+		const switchedLocal = setDraftGitHubPreference(opened, "additions", 5, false);
+		const draft = switchedLocal[0];
+
+		expect(draft && getDraftGitHubDestination(draft, false)).toEqual({
+			available: false,
+			defaultOn: false,
+		});
+		expect(draft && getDraftGitHubDestination(draft, true)).toEqual({
+			available: true,
 			defaultOn: false,
 		});
 	});

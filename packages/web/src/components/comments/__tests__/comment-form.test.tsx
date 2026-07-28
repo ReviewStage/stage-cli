@@ -26,6 +26,7 @@ describe("comment destination", () => {
 	});
 
 	it("updates the explanation when the GitHub review toggle changes", () => {
+		const onToggleChange = vi.fn();
 		render(
 			<CommentForm
 				label="Comment"
@@ -42,6 +43,7 @@ describe("comment destination", () => {
 						isGitHub: false,
 					},
 				}}
+				onToggleChange={onToggleChange}
 				onSubmit={vi.fn()}
 				onCancel={vi.fn()}
 			/>,
@@ -52,5 +54,6 @@ describe("comment destination", () => {
 		fireEvent.click(screen.getByRole("checkbox", { name: "Add to GitHub review" }));
 		expect(screen.getByText("Local only")).toBeTruthy();
 		expect(screen.queryByRole("button", { name: "Suggestion" })).toBeNull();
+		expect(onToggleChange).toHaveBeenCalledWith(false);
 	});
 });

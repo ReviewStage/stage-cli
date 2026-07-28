@@ -30,6 +30,8 @@ interface CommentFormProps {
 	initialBody?: string;
 	/** Reports each edit so a parent can persist an in-progress draft across remounts. */
 	onBodyChange?: (body: string) => void;
+	/** Reports destination changes so a parent can preserve them across remounts. */
+	onToggleChange?: (toggleOn: boolean) => void;
 	autoFocus?: boolean;
 	/** Explains where a new comment goes, with an optional checkbox to switch destinations. */
 	destination?: CommentDestination;
@@ -43,6 +45,7 @@ export function CommentForm({
 	error,
 	initialBody,
 	onBodyChange,
+	onToggleChange,
 	autoFocus = true,
 	destination,
 }: CommentFormProps) {
@@ -139,7 +142,11 @@ export function CommentForm({
 							<Checkbox
 								id={toggleId}
 								checked={toggleOn}
-								onCheckedChange={(checked) => setToggleOn(checked === true)}
+								onCheckedChange={(checked) => {
+									const next = checked === true;
+									setToggleOn(next);
+									onToggleChange?.(next);
+								}}
 								disabled={isSubmitting}
 							/>
 							<span className="text-muted-foreground text-xs">{destination.toggleLabel}</span>

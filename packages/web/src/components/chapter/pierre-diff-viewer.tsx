@@ -30,6 +30,7 @@ import {
 	getDraftGitHubDestination,
 	isSameAnchor,
 	readDraftBody,
+	setDraftGitHubPreference,
 	upsertDraft,
 	writeDraftBody,
 } from "@/lib/comment-drafts";
@@ -313,6 +314,11 @@ export function PierreDiffViewer({
 							initialBody={readDraftBody(draftBodiesRef.current, draft.side, draft.endLine)}
 							onBodyChange={(body) =>
 								writeDraftBody(draftBodiesRef.current, draft.side, draft.endLine, body)
+							}
+							onToggleChange={(toGitHub) =>
+								setDrafts((prev) =>
+									setDraftGitHubPreference(prev, draft.side, draft.endLine, toGitHub),
+								)
 							}
 							destination={
 								githubDestination?.available

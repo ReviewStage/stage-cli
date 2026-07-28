@@ -12,8 +12,8 @@ export interface CommentDraft {
 /** A draft plus the last submit error for its composer (null while clean). */
 export interface DraftState extends CommentDraft {
 	error: string | null;
-	/** Whether GitHub was available when the composer opened, which controls its default. */
-	defaultToGitHub: boolean;
+	/** The user's current destination preference, initialized from availability when opened. */
+	toGitHub: boolean;
 }
 
 /**
@@ -69,8 +69,19 @@ export function getDraftGitHubDestination(
 ): { available: boolean; defaultOn: boolean } {
 	return {
 		available: canPushToReview,
-		defaultOn: canPushToReview && draft.defaultToGitHub,
+		defaultOn: canPushToReview && draft.toGitHub,
 	};
+}
+
+export function setDraftGitHubPreference(
+	drafts: readonly DraftState[],
+	side: DiffSide,
+	endLine: number,
+	toGitHub: boolean,
+): DraftState[] {
+	return drafts.map((draft) =>
+		isSameAnchor(draft, side, endLine) ? { ...draft, toGitHub } : draft,
+	);
 }
 
 /**
@@ -82,10 +93,10 @@ export function getDraftGitHubDestination(
 export function upsertDraft(
 	drafts: readonly DraftState[],
 	anchor: CommentDraft,
-	defaultToGitHub: boolean,
+	toGitHub: boolean,
 ): DraftState[] {
 	if (!findDraftAt(drafts, anchor.side, anchor.endLine)) {
-		return [...drafts, { ...anchor, error: null, defaultToGitHub }];
+		return [...drafts, { ...anchor, error: null, toGitHub }];
 	}
 	return drafts.map((draft) =>
 		isSameAnchor(draft, anchor.side, anchor.endLine)
