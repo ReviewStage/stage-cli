@@ -45,7 +45,7 @@ function errorBodyMessage(text: string): string | null {
 	try {
 		const parsed: unknown = JSON.parse(text);
 		if (typeof parsed === "object" && parsed !== null && "error" in parsed) {
-			return String((parsed as { error: unknown }).error);
+			return String(parsed.error);
 		}
 	} catch {
 		// Non-JSON error body — let the caller fall back to the status code.

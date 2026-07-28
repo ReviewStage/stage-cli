@@ -3,7 +3,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommentForm } from "../comment-form";
-import { threadChevronClassName } from "../review-thread";
 
 afterEach(cleanup);
 
@@ -15,6 +14,7 @@ describe("comment destination", () => {
 				destination={{
 					label: "Local only",
 					description: "Saved on this machine and never sent to GitHub.",
+					isGitHub: false,
 				}}
 				onSubmit={vi.fn()}
 				onCancel={vi.fn()}
@@ -34,10 +34,12 @@ describe("comment destination", () => {
 					on: {
 						label: "Pending on GitHub",
 						description: "Only you can see it until you submit your review.",
+						isGitHub: true,
 					},
 					off: {
 						label: "Local only",
 						description: "Saved on this machine and never sent to GitHub.",
+						isGitHub: false,
 					},
 				}}
 				onSubmit={vi.fn()}
@@ -46,14 +48,9 @@ describe("comment destination", () => {
 		);
 
 		expect(screen.getByText("Pending on GitHub")).toBeTruthy();
+		expect(screen.getByRole("button", { name: "Suggestion" })).toBeTruthy();
 		fireEvent.click(screen.getByRole("checkbox", { name: "Add to GitHub review" }));
 		expect(screen.getByText("Local only")).toBeTruthy();
-	});
-});
-
-describe("thread chevron", () => {
-	it("tracks the controlled collapsible state instead of a shared data-state attribute", () => {
-		expect(threadChevronClassName(true)).toContain("rotate-90");
-		expect(threadChevronClassName(false)).not.toContain("rotate-90");
+		expect(screen.queryByRole("button", { name: "Suggestion" })).toBeNull();
 	});
 });

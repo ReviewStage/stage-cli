@@ -25,6 +25,7 @@ interface CommentMarkdownEditorProps {
 	className?: string;
 	textareaClassName?: string;
 	previewClassName?: string;
+	showSuggestion?: boolean;
 	onKeyDown?: (event: KeyboardEvent) => void;
 	children?: ReactNode;
 }
@@ -40,6 +41,7 @@ export function CommentMarkdownEditor({
 	className,
 	textareaClassName,
 	previewClassName,
+	showSuggestion = false,
 	onKeyDown,
 	children,
 }: CommentMarkdownEditorProps) {
@@ -69,10 +71,9 @@ export function CommentMarkdownEditor({
 						);
 					})}
 				</div>
-				{/* Suggestion blocks only apply on a PR, so omit that toolbar item for local comments. */}
 				<MarkdownToolbar
 					textareaRef={textareaRef}
-					showSuggestion={false}
+					showSuggestion={showSuggestion}
 					disabled={disabled || mode === EDITOR_MODE.PREVIEW}
 					onChange={onChange}
 					className="min-w-0 flex-1 justify-end border-b-0 py-1 pr-1 pl-0"

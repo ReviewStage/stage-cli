@@ -6,6 +6,7 @@ import { CommentMarkdownEditor } from "./comment-markdown-editor";
 type DestinationDetails = {
 	label: string;
 	description: string;
+	isGitHub: boolean;
 };
 
 type CommentDestination =
@@ -117,6 +118,7 @@ export function CommentForm({
 				className="rounded-xl border border-border bg-card transition-shadow has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring/20"
 				textareaClassName="max-h-[12rem] overflow-y-auto"
 				previewClassName="max-h-[12rem] overflow-y-auto"
+				showSuggestion={activeDestination?.isGitHub === true}
 			>
 				{error && <p className="mt-2 text-destructive text-xs">{error}</p>}
 				{activeDestination && (

@@ -305,15 +305,18 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 											on: {
 												label: "Pending on GitHub",
 												description: "Only you can see it until you submit your review.",
+												isGitHub: true,
 											},
 											off: {
 												label: "Published on GitHub",
 												description: "Everyone viewing the pull request can see it immediately.",
+												isGitHub: true,
 											},
 										}
 									: {
 											label: "Local only",
 											description: "Saved on this machine and never sent to GitHub.",
+											isGitHub: false,
 										}
 							}
 							onSubmit={submitReply}

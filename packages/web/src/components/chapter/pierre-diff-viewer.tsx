@@ -315,15 +315,18 @@ export function PierreDiffViewer({
 											on: {
 												label: "Pending on GitHub",
 												description: "Only you can see it until you submit your review.",
+												isGitHub: true,
 											},
 											off: {
 												label: "Local only",
 												description: "Saved on this machine and never sent to GitHub.",
+												isGitHub: false,
 											},
 										}
 									: {
 											label: "Local only",
 											description: "Saved on this machine and never sent to GitHub.",
+											isGitHub: false,
 										}
 							}
 							onSubmit={(body, onPr) => handleCreateComment(draft, body, onPr)}
