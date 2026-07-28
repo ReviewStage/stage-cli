@@ -11,7 +11,7 @@ function RunLayout() {
 	const { runId } = Route.useParams();
 	return (
 		<CommentThreadsProvider runId={runId}>
-			<Topbar runId={runId} />
+			<Topbar />
 			<PullRequestLayout runId={runId} />
 		</CommentThreadsProvider>
 	);
