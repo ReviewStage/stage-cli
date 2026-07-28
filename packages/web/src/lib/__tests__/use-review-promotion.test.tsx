@@ -44,7 +44,7 @@ const REMOTE_THREAD: ReviewThread = {
 			bodyHtml: "<p>Promote me</p>",
 			author: { login: "octocat", avatarUrl: null },
 			nodeId: "COMMENT_remote",
-			htmlUrl: null,
+			htmlUrl: "https://github.com/owner/repo/pull/1#discussion_r1",
 			createdAt: "2026-01-01T00:00:00Z",
 		},
 	],

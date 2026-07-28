@@ -16,6 +16,7 @@ import {
 } from "@stagereview/types/review";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useInvalidatePullRequest } from "./pull-request-mutations";
 import { jsonFetch } from "./use-view-state";
 
 export type { CreateCommentThreadBody, GitHubReviewStatus, ReviewEvent, ReviewThread };
@@ -105,6 +106,7 @@ export interface UseReviewResult {
  */
 export function useReview(runId: string): UseReviewResult {
 	const queryClient = useQueryClient();
+	const invalidatePullRequest = useInvalidatePullRequest(runId);
 	const queryKey = useMemo(() => reviewQueryKey(runId), [runId]);
 	const [localOverlay, setLocalOverlay] = useState<{
 		runId: string;
@@ -155,8 +157,7 @@ export function useReview(runId: string): UseReviewResult {
 	// stale query keys. Refresh those too so the PR header doesn't go stale until reload.
 	const invalidateGitHub = () => {
 		invalidate();
-		queryClient.invalidateQueries({ queryKey: ["pull-request-reviews", runId] });
-		queryClient.invalidateQueries({ queryKey: ["pull-request-merge-status", runId] });
+		void invalidatePullRequest();
 	};
 
 	const runPath = (suffix: string) => `/api/runs/${encodeURIComponent(runId)}${suffix}`;

@@ -1,8 +1,11 @@
 import {
 	COMMENT_STATE,
 	GITHUB_REVIEW_STATUS,
+	type GitHubReviewComment as GitHubReviewCommentDto,
+	type GitHubReviewThread as GitHubReviewThreadDto,
+	type LocalReviewComment as LocalReviewCommentDto,
+	type LocalReviewThread as LocalReviewThreadDto,
 	REVIEW_EVENT,
-	type ReviewComment as ReviewCommentDto,
 	type ReviewEvent,
 	type ReviewResponse,
 	type ReviewThread as ReviewThreadDto,
@@ -20,9 +23,9 @@ import {
 	deleteReviewComment,
 	discardReview,
 	GITHUB_DIFF_SIDE,
+	type ReviewThread as GitHubApiReviewThread,
 	type GitHubDiffSide,
 	type GitHubReview,
-	type ReviewThread as GitHubReviewThread,
 	getReview,
 	setThreadResolved,
 	submitReview,
@@ -80,7 +83,7 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 	return loadLocalThreadRecords(db, {
 		repoRoot: run.repoRoot,
 		scopeKey: deriveScopeKey(run),
-	}).map(({ thread, comments }): ReviewThreadDto => {
+	}).map(({ thread, comments }): LocalReviewThreadDto => {
 		return {
 			id: thread.id,
 			source: THREAD_SOURCE.LOCAL,
@@ -91,7 +94,7 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 			endLine: thread.endLine,
 			isResolved: thread.resolvedAt !== null,
 			comments: comments.map(
-				(c): ReviewCommentDto => ({
+				(c): LocalReviewCommentDto => ({
 					id: c.id,
 					state: COMMENT_STATE.LOCAL,
 					body: c.body,
@@ -106,7 +109,7 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 	});
 }
 
-function toGitHubThreadDto(t: GitHubReviewThread): ReviewThreadDto {
+function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
 	// `line` is non-null (getReview drops anchorless threads); start defaults to line.
 	const endLine = t.line;
 	return {
@@ -119,7 +122,7 @@ function toGitHubThreadDto(t: GitHubReviewThread): ReviewThreadDto {
 		endLine,
 		isResolved: t.isResolved,
 		comments: t.comments.map(
-			(c): ReviewCommentDto => ({
+			(c): GitHubReviewCommentDto => ({
 				id: c.nodeId,
 				state: c.isPending ? COMMENT_STATE.PENDING : COMMENT_STATE.SUBMITTED,
 				body: c.body,

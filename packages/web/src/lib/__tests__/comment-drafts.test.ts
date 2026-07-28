@@ -1,3 +1,4 @@
+import type { LocalReviewThread as CommentThread } from "@stagereview/types/review";
 import { describe, expect, it } from "vitest";
 import {
 	buildCommentAnnotations,
@@ -11,7 +12,6 @@ import {
 	upsertDraft,
 	writeDraftBody,
 } from "../comment-drafts";
-import type { ReviewThread as CommentThread } from "../use-review";
 
 function makeThread(
 	over: Partial<CommentThread> & Pick<CommentThread, "side" | "endLine">,

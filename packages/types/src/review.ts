@@ -43,38 +43,63 @@ export const ReviewCommentAuthorSchema = z.object({
 });
 export type ReviewCommentAuthor = z.infer<typeof ReviewCommentAuthorSchema>;
 
-// A single comment in a thread. `author` is null for local comments (the local
-// reviewer, "You"). `nodeId` is the GitHub GraphQL id, present for github comments
-// (needed to edit/delete pending ones). `commentId` is the local row id for local
-// comments.
-export const ReviewCommentSchema = z.object({
+const ReviewCommentBaseSchema = z.object({
 	id: z.string(),
-	state: z.enum(COMMENT_STATE),
 	body: z.string(),
-	// GitHub's server-rendered HTML (resolves @mentions/#refs/emoji); null for local comments.
-	bodyHtml: z.string().nullable(),
-	author: ReviewCommentAuthorSchema.nullable(),
-	nodeId: z.string().nullable(),
-	// Permalink to the comment on GitHub; null for local comments.
-	htmlUrl: z.string().nullable(),
 	createdAt: z.string(),
 });
+
+export const LocalReviewCommentSchema = ReviewCommentBaseSchema.extend({
+	state: z.literal(COMMENT_STATE.LOCAL),
+	bodyHtml: z.null(),
+	author: z.null(),
+	nodeId: z.null(),
+	htmlUrl: z.null(),
+});
+export type LocalReviewComment = z.infer<typeof LocalReviewCommentSchema>;
+
+export const GitHubReviewCommentSchema = ReviewCommentBaseSchema.extend({
+	state: z.union([z.literal(COMMENT_STATE.PENDING), z.literal(COMMENT_STATE.SUBMITTED)]),
+	// GitHub's server-rendered HTML resolves @mentions, issue references, and emoji.
+	bodyHtml: z.string(),
+	author: ReviewCommentAuthorSchema,
+	nodeId: z.string().min(1),
+	htmlUrl: z.string(),
+});
+export type GitHubReviewComment = z.infer<typeof GitHubReviewCommentSchema>;
+
+/** A local-only comment or a GitHub-backed pending/submitted comment. */
+export const ReviewCommentSchema = z.union([LocalReviewCommentSchema, GitHubReviewCommentSchema]);
 export type ReviewComment = z.infer<typeof ReviewCommentSchema>;
 
-// A line-anchored thread. Local and github threads share this shape so the diff
-// viewer can place both uniformly; `side`/`startLine`/`endLine` are normalized to
-// the local diff convention. `threadNodeId` is set for github threads (resolve/reply).
-export const ReviewThreadSchema = z.object({
+const ReviewThreadBaseSchema = z.object({
 	id: z.string(),
-	source: z.enum(THREAD_SOURCE),
-	threadNodeId: z.string().nullable(),
 	filePath: z.string(),
 	side: z.enum(DIFF_SIDE),
 	startLine: z.number().int().positive(),
 	endLine: z.number().int().positive(),
 	isResolved: z.boolean(),
-	comments: z.array(ReviewCommentSchema),
 });
+
+export const LocalReviewThreadSchema = ReviewThreadBaseSchema.extend({
+	source: z.literal(THREAD_SOURCE.LOCAL),
+	threadNodeId: z.null(),
+	comments: z.array(LocalReviewCommentSchema),
+});
+export type LocalReviewThread = z.infer<typeof LocalReviewThreadSchema>;
+
+export const GitHubReviewThreadSchema = ReviewThreadBaseSchema.extend({
+	source: z.literal(THREAD_SOURCE.GITHUB),
+	threadNodeId: z.string().min(1),
+	comments: z.array(GitHubReviewCommentSchema),
+});
+export type GitHubReviewThread = z.infer<typeof GitHubReviewThreadSchema>;
+
+/** A line-anchored local or GitHub thread with source-specific identifier invariants. */
+export const ReviewThreadSchema = z.discriminatedUnion("source", [
+	LocalReviewThreadSchema,
+	GitHubReviewThreadSchema,
+]);
 export type ReviewThread = z.infer<typeof ReviewThreadSchema>;
 
 export const PendingReviewCommentSchema = z.object({

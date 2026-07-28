@@ -6,13 +6,20 @@ import { closeDb, getDb, type StageDb } from "../db/client.js";
 import { chapterRun, comment, commentThread } from "../db/schema/index.js";
 import { commentRoutes } from "../routes/comments.js";
 import { reviewRoutes } from "../routes/review.js";
+import { deriveScopeKey } from "../runs/scope-key.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 import { LOOPBACK_HOST, type ServerHandle, startServer } from "../server.js";
 
 export const BASE = "b".repeat(40);
 export const HEAD = "a".repeat(40);
 export const MERGE_BASE = "c".repeat(40);
-export const SCOPE_KEY = `committed:${BASE}:${HEAD}:${MERGE_BASE}`;
+export const SCOPE_KEY = deriveScopeKey({
+	scopeKind: SCOPE_KIND.COMMITTED,
+	workingTreeRef: null,
+	baseSha: BASE,
+	headSha: HEAD,
+	mergeBaseSha: MERGE_BASE,
+});
 export const GITHUB_ORIGIN = "git@github.com:owner/repo.git";
 
 const submittedThread = {

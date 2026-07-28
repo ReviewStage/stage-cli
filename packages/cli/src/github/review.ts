@@ -1,3 +1,4 @@
+import type { ReviewEvent } from "@stagereview/types/review";
 import { z } from "zod";
 import { ghOrThrow } from "./exec.js";
 import type { GitHubRepo } from "./repo.js";
@@ -11,14 +12,6 @@ export const GITHUB_DIFF_SIDE = {
 	RIGHT: "RIGHT",
 } as const;
 export type GitHubDiffSide = (typeof GITHUB_DIFF_SIDE)[keyof typeof GITHUB_DIFF_SIDE];
-
-/** The three events a review can be submitted with, mirroring GitHub's own model. */
-export const REVIEW_EVENT = {
-	COMMENT: "COMMENT",
-	APPROVE: "APPROVE",
-	REQUEST_CHANGES: "REQUEST_CHANGES",
-} as const;
-export type ReviewEvent = (typeof REVIEW_EVENT)[keyof typeof REVIEW_EVENT];
 
 // ─── Read: the PR's review state in one paginated query ─────────────────────────
 

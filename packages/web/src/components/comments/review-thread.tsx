@@ -106,7 +106,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 		const hasActiveForm = isReplying || editingId !== null || deleteTarget !== null;
 		if (!next || !hasActiveForm) setIsOpen(!next);
 		try {
-			if (isGitHub && thread.threadNodeId) {
+			if (thread.source === THREAD_SOURCE.GITHUB) {
 				await review.resolveGitHub({ threadNodeId: thread.threadNodeId, resolved: next });
 			} else {
 				await review.resolveLocalThread({ threadId: thread.id, resolved: next });
@@ -125,7 +125,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	async function submitReply(body: string, startReview: boolean) {
 		setOpenError(null);
 		try {
-			if (isGitHub && thread.threadNodeId) {
+			if (thread.source === THREAD_SOURCE.GITHUB) {
 				// Published threads may choose pending vs immediate; draft-only threads
 				// always pass true because CommentForm has no destination toggle.
 				await review.replyGitHub({ threadNodeId: thread.threadNodeId, body, pending: startReview });
@@ -144,7 +144,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 		try {
 			if (comment.state === COMMENT_STATE.LOCAL) {
 				await review.editLocalComment({ commentId: comment.id, body });
-			} else if (comment.nodeId) {
+			} else {
 				await review.editGitHubComment({ nodeId: comment.nodeId, body });
 			}
 			setEditingId(null);
@@ -163,7 +163,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 				// Deleting a local root removes the whole thread; a reply removes just itself.
 				if (comment.id === root?.id) await review.deleteLocalThread(thread.id);
 				else await review.deleteLocalComment(comment.id);
-			} else if (comment.nodeId) {
+			} else {
 				await review.deleteGitHubComment(comment.nodeId);
 			}
 		} catch (err) {

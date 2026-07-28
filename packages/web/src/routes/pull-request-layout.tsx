@@ -280,7 +280,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 					</div>
 					<div className="flex shrink-0 items-center gap-3 text-sm @xl:gap-6">
 						<CollapseExpandAllButton />
-						<ReviewPanel />
+						<ReviewPanel key={runId} />
 						<Popover>
 							<Tooltip>
 								<TooltipTrigger asChild>

@@ -1,4 +1,10 @@
-import { COMMENT_STATE, type ReviewThread, THREAD_SOURCE } from "@stagereview/types/review";
+import {
+	COMMENT_STATE,
+	type GitHubReviewComment,
+	type GitHubReviewThread,
+	ReviewThreadSchema,
+	THREAD_SOURCE,
+} from "@stagereview/types/review";
 import { describe, expect, it } from "vitest";
 import { canPublishReplyImmediately, threadChevronClassName } from "../review-thread";
 
@@ -21,7 +27,39 @@ describe("GitHub reply destination", () => {
 	});
 });
 
-function makeThread(states: ReviewThread["comments"][number]["state"][]): ReviewThread {
+describe("review thread source invariants", () => {
+	const base = {
+		id: "thread",
+		filePath: "src/file.ts",
+		side: "additions",
+		startLine: 1,
+		endLine: 1,
+		isResolved: false,
+		comments: [],
+	};
+
+	it("rejects a GitHub thread without a node id", () => {
+		expect(
+			ReviewThreadSchema.safeParse({
+				...base,
+				source: THREAD_SOURCE.GITHUB,
+				threadNodeId: null,
+			}).success,
+		).toBe(false);
+	});
+
+	it("rejects a local thread with a GitHub node id", () => {
+		expect(
+			ReviewThreadSchema.safeParse({
+				...base,
+				source: THREAD_SOURCE.LOCAL,
+				threadNodeId: "THREAD_github",
+			}).success,
+		).toBe(false);
+	});
+});
+
+function makeThread(states: GitHubReviewComment["state"][]): GitHubReviewThread {
 	return {
 		id: "thread",
 		source: THREAD_SOURCE.GITHUB,
@@ -35,10 +73,10 @@ function makeThread(states: ReviewThread["comments"][number]["state"][]): Review
 			id: `comment-${index}`,
 			state,
 			body: "Comment",
-			bodyHtml: null,
-			author: null,
+			bodyHtml: "<p>Comment</p>",
+			author: { login: "octocat", avatarUrl: null },
 			nodeId: `comment-${index}`,
-			htmlUrl: null,
+			htmlUrl: `https://github.com/owner/repo/pull/1#discussion_r${index}`,
 			createdAt: "2026-01-01T00:00:00Z",
 		})),
 	};
