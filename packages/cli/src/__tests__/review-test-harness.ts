@@ -83,6 +83,7 @@ function makeReview(
 ): unknown {
 	return {
 		data: {
+			viewer: { login: "octocat" },
 			repository: {
 				pullRequest: {
 					id: "PR_node",
@@ -202,6 +203,35 @@ export function makePublishedInterruptedPromotionReview(): unknown {
 			},
 		],
 		null,
+	);
+}
+
+export function makeInterruptedPromotionReviewWithForeignMatchingReply(): unknown {
+	const root = {
+		...pendingThread.comments.nodes[0],
+		id: "COMMENT_new",
+		body: "Root",
+		bodyHTML: "<p>Root</p>",
+	};
+	const foreignReply = {
+		...submittedThread.comments.nodes[0],
+		id: "COMMENT_foreign",
+		body: "Reply",
+		bodyHTML: "<p>Reply</p>",
+		author: { login: "collaborator", avatarUrl: "https://x/c.png" },
+	};
+	return makeReview(
+		[
+			{
+				...pendingThread,
+				id: "THREAD_new",
+				path: "src/foo.ts",
+				line: 3,
+				diffSide: "RIGHT",
+				comments: { ...pendingThread.comments, nodes: [root, foreignReply] },
+			},
+		],
+		"REVIEW_pending",
 	);
 }
 

@@ -234,21 +234,23 @@ export function ReviewPanel() {
 			<Popover open={open} onOpenChange={setOpen}>
 				<Tooltip>
 					<TooltipTrigger asChild>
-						<PopoverTrigger asChild>
-							<Button
-								size="sm"
-								className="h-7 cursor-pointer px-2"
-								disabled={!canPushToReview && !hasPendingReview}
-							>
-								<MessageSquarePlus className="size-3.5" />
-								<span className="ml-1 hidden text-xs @7xl:inline">Review</span>
-								{pendingCommentCount > 0 && (
-									<Badge className="ml-1 h-4 min-w-4 border-0 bg-primary-foreground/20 px-1 text-[10px] leading-none text-primary-foreground">
-										{pendingCommentCount}
-									</Badge>
-								)}
-							</Button>
-						</PopoverTrigger>
+						<span className="inline-flex">
+							<PopoverTrigger asChild>
+								<Button
+									size="sm"
+									className="h-7 cursor-pointer px-2"
+									disabled={!canPushToReview && !hasPendingReview}
+								>
+									<MessageSquarePlus className="size-3.5" />
+									<span className="ml-1 hidden text-xs @7xl:inline">Review</span>
+									{pendingCommentCount > 0 && (
+										<Badge className="ml-1 h-4 min-w-4 border-0 bg-primary-foreground/20 px-1 text-[10px] leading-none text-primary-foreground">
+											{pendingCommentCount}
+										</Badge>
+									)}
+								</Button>
+							</PopoverTrigger>
+						</span>
 					</TooltipTrigger>
 					<TooltipContent>
 						{canPushToReview ? "Submit your review" : "This GitHub review is read-only"}

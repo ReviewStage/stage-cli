@@ -5,6 +5,7 @@ import {
 	EMPTY_REVIEW,
 	makeAnchorlessPendingReview,
 	makeInterruptedPromotionReview,
+	makeInterruptedPromotionReviewWithForeignMatchingReply,
 	makePublishedInterruptedPromotionReview,
 	makeSummaryOnlyPendingReview,
 	ReviewRouteHarness,
@@ -192,6 +193,30 @@ describe("review API — recovery", () => {
 
 		expect(promotion.status, promotion.body).toBe(200);
 		expect(log.filter((line) => line === "reply")).toHaveLength(0);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("does not mistake another participant's matching reply for the local reply", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReviewWithForeignMatchingReply());
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true });
+		harness.db
+			.update(commentThread)
+			.set({
+				promotionThreadNodeId: "THREAD_new",
+				promotionRootCommentNodeId: "COMMENT_new",
+			})
+			.run();
+
+		const promotion = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/add`,
+			{ localThreadId },
+		);
+
+		expect(promotion.status, promotion.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(1);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 

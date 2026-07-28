@@ -493,6 +493,8 @@ async function promoteLocalThread(
 					// Reconcile the matching remote prefix before sending anything again.
 					while (
 						promotedReplyCount < replies.length &&
+						remoteThread.comments[promotedReplyCount + 1]?.isPending &&
+						remoteThread.comments[promotedReplyCount + 1]?.authorLogin === review.viewerLogin &&
 						remoteThread.comments[promotedReplyCount + 1]?.body ===
 							replies[promotedReplyCount]?.body
 					) {

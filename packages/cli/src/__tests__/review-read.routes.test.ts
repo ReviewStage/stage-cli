@@ -125,7 +125,9 @@ describe("review API — read", () => {
 
 	it("reports offline when the PR cannot be resolved", async () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-		await harness.writeGhShim({ data: { repository: { pullRequest: null } } });
+		await harness.writeGhShim({
+			data: { viewer: { login: "octocat" }, repository: { pullRequest: null } },
+		});
 		const runId = harness.insertRun();
 
 		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);

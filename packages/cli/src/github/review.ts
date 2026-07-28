@@ -21,6 +21,7 @@ export type GitHubDiffSide = (typeof GITHUB_DIFF_SIDE)[keyof typeof GITHUB_DIFF_
 // PENDING (draft, viewer-only) comment from a submitted one — no REST list or
 // local mirror required.
 const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+  viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       id
@@ -111,6 +112,7 @@ const GqlReviewThreadSchema = z.object({
 
 const ReviewQuerySchema = z.object({
 	data: z.object({
+		viewer: z.object({ login: z.string() }),
 		repository: z
 			.object({
 				pullRequest: z
@@ -177,6 +179,8 @@ export interface ReviewThread {
 }
 
 export interface GitHubReview {
+	/** Authenticated viewer, used to distinguish their draft comments during recovery. */
+	viewerLogin: string;
 	/** GraphQL node id of the PR, required by the write mutations. */
 	pullRequestNodeId: string;
 	/** GitHub lifecycle state; only an open PR accepts review writes. */
@@ -220,6 +224,7 @@ export async function getReview(
 	prNumber: number,
 ): Promise<GitHubReview> {
 	let pullRequestNodeId = "";
+	let viewerLogin = "";
 	let state: GitHubReview["state"] = "OPEN";
 	let viewerDidAuthor = false;
 	let headRefOid = "";
@@ -251,6 +256,7 @@ export async function getReview(
 		if (cursor !== null) args.push("-f", `cursor=${cursor}`);
 		const parsed = ReviewQuerySchema.safeParse(JSON.parse(await ghReadOrThrow(args, repoRoot)));
 		if (!parsed.success) throw new Error("Unexpected response shape from GitHub review query");
+		viewerLogin = parsed.data.data.viewer.login;
 		const pr = parsed.data.data.repository?.pullRequest;
 		if (!pr) break;
 		pullRequestNodeId = pr.id;
@@ -299,6 +305,7 @@ export async function getReview(
 	const mergeBaseOid = await getPullRequestMergeBase(repoRoot, repo, baseRefOid, headRefOid);
 
 	return {
+		viewerLogin,
 		pullRequestNodeId,
 		state,
 		viewerDidAuthor,
