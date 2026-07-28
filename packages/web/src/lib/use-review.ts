@@ -1,5 +1,10 @@
-import type { CreateCommentThreadBody } from "@stagereview/types/comments";
 import {
+	CommentThreadsResponseSchema,
+	type CreateCommentThreadBody,
+	type CommentThread as LocalCommentThread,
+} from "@stagereview/types/comments";
+import {
+	COMMENT_STATE,
 	GITHUB_REVIEW_STATUS,
 	type GitHubReviewStatus,
 	type PendingReviewComment,
@@ -7,6 +12,7 @@ import {
 	type ReviewResponse,
 	ReviewResponseSchema,
 	type ReviewThread,
+	THREAD_SOURCE,
 } from "@stagereview/types/review";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -24,6 +30,34 @@ export function reviewQueryKey(runId: string): readonly unknown[] {
 async function fetchReview(runId: string): Promise<ReviewResponse> {
 	const raw = await jsonFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}/review`);
 	return ReviewResponseSchema.parse(raw);
+}
+
+async function fetchLocalThreads(runId: string): Promise<ReviewThread[]> {
+	const raw = await jsonFetch<unknown>(`/api/runs/${encodeURIComponent(runId)}/comment-threads`);
+	return CommentThreadsResponseSchema.parse(raw).map(toReviewThread);
+}
+
+function toReviewThread(thread: LocalCommentThread): ReviewThread {
+	return {
+		id: thread.id,
+		source: THREAD_SOURCE.LOCAL,
+		threadNodeId: null,
+		filePath: thread.filePath,
+		side: thread.side,
+		startLine: thread.startLine,
+		endLine: thread.endLine,
+		isResolved: thread.resolvedAt !== null,
+		comments: thread.comments.map((comment) => ({
+			id: comment.id,
+			state: COMMENT_STATE.LOCAL,
+			body: comment.body,
+			bodyHtml: null,
+			author: null,
+			nodeId: null,
+			htmlUrl: null,
+			createdAt: comment.createdAt,
+		})),
+	};
 }
 
 const jsonRequest = (method: string, body?: unknown): RequestInit => ({
@@ -64,9 +98,9 @@ export interface UseReviewResult {
 
 /**
  * The run's merged review — local threads plus the PR's live pending/submitted
- * GitHub threads — and the mutations that act on each. Every mutation invalidates
- * the review query so the merged view refetches (the local server commits
- * synchronously and GitHub round-trips are quick), keeping local and GitHub in step.
+ * GitHub threads — and the mutations that act on each. Local mutations refresh only
+ * the local endpoint and merge those rows into the cache, so a transient GitHub
+ * outage cannot evict cached PR threads. GitHub mutations refetch the merged review.
  */
 export function useReview(runId: string): UseReviewResult {
 	const queryClient = useQueryClient();
@@ -82,6 +116,19 @@ export function useReview(runId: string): UseReviewResult {
 	const pendingComments = useMemo(() => data?.pendingComments ?? [], [data]);
 	const threadsByFile = useMemo(() => groupByFile(threads), [threads]);
 	const invalidate = () => queryClient.invalidateQueries({ queryKey });
+	const refreshLocal = async () => {
+		const localThreads = await fetchLocalThreads(runId);
+		queryClient.setQueryData<ReviewResponse>(queryKey, (current) => {
+			if (!current) return current;
+			return {
+				...current,
+				threads: [
+					...localThreads,
+					...current.threads.filter((thread) => thread.source !== THREAD_SOURCE.LOCAL),
+				],
+			};
+		});
+	};
 	// GitHub-affecting actions (submit/resolve/reply/promote) change PR-level state —
 	// reviewer decisions, the merge button — that lives behind separate, infinitely-
 	// stale query keys. Refresh those too so the PR header doesn't go stale until reload.
@@ -97,7 +144,7 @@ export function useReview(runId: string): UseReviewResult {
 		createLocalThread: useMutation({
 			mutationFn: (input: CreateCommentThreadBody) =>
 				jsonFetch<unknown>(runPath("/comment-threads"), jsonRequest("POST", input)),
-			onSuccess: invalidate,
+			onSuccess: refreshLocal,
 		}),
 		createPendingComment: useMutation({
 			mutationFn: (input: CreateCommentThreadBody) =>
@@ -110,22 +157,22 @@ export function useReview(runId: string): UseReviewResult {
 					`/api/comment-threads/${encodeURIComponent(threadId)}/replies`,
 					jsonRequest("POST", { body }),
 				),
-			onSuccess: invalidate,
+			onSuccess: refreshLocal,
 		}),
 		editLocalComment: useMutation({
 			mutationFn: ({ commentId, body }: { commentId: string; body: string }) =>
 				jsonFetch(`/api/comments/${encodeURIComponent(commentId)}`, jsonRequest("PATCH", { body })),
-			onSuccess: invalidate,
+			onSuccess: refreshLocal,
 		}),
 		deleteLocalThread: useMutation({
 			mutationFn: (threadId: string) =>
 				jsonFetch(`/api/comment-threads/${encodeURIComponent(threadId)}`, jsonRequest("DELETE")),
-			onSuccess: invalidate,
+			onSuccess: refreshLocal,
 		}),
 		deleteLocalComment: useMutation({
 			mutationFn: (commentId: string) =>
 				jsonFetch(`/api/comments/${encodeURIComponent(commentId)}`, jsonRequest("DELETE")),
-			onSuccess: invalidate,
+			onSuccess: refreshLocal,
 		}),
 		resolveLocalThread: useMutation({
 			mutationFn: ({ threadId, resolved }: { threadId: string; resolved: boolean }) =>
@@ -133,7 +180,7 @@ export function useReview(runId: string): UseReviewResult {
 					`/api/comment-threads/${encodeURIComponent(threadId)}`,
 					jsonRequest("PATCH", { resolved }),
 				),
-			onSuccess: invalidate,
+			onSuccess: refreshLocal,
 		}),
 		addToReview: useMutation({
 			mutationFn: (localThreadId: string) =>

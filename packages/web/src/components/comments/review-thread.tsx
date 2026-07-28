@@ -75,6 +75,10 @@ export function threadChevronClassName(isOpen: boolean): string {
 	return cn("size-3.5 transition-transform duration-200", isOpen && "rotate-90");
 }
 
+export function canPublishReplyImmediately(thread: ReviewThread): boolean {
+	return thread.comments.some((comment) => comment.state === COMMENT_STATE.SUBMITTED);
+}
+
 export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	const review = useReviewContext();
 	const isGitHub = thread.source === THREAD_SOURCE.GITHUB;
@@ -122,7 +126,8 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 		setOpenError(null);
 		try {
 			if (isGitHub && thread.threadNodeId) {
-				// "Start a review" → add the reply to the pending review; otherwise post it now.
+				// Published threads may choose pending vs immediate; draft-only threads
+				// always pass true because CommentForm has no destination toggle.
 				await review.replyGitHub({ threadNodeId: thread.threadNodeId, body, pending: startReview });
 			} else {
 				await review.replyLocal({ threadId: thread.id, body });
@@ -300,19 +305,26 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 							error={error}
 							destination={
 								isGitHub
-									? {
-											toggleLabel: "Start a review",
-											on: {
+									? canPublishReplyImmediately(thread)
+										? {
+												toggleLabel: "Start a review",
+												on: {
+													label: "Pending on GitHub",
+													description: "Only you can see it until you submit your review.",
+													isGitHub: true,
+												},
+												off: {
+													label: "Published on GitHub",
+													description: "Everyone viewing the pull request can see it immediately.",
+													isGitHub: true,
+												},
+											}
+										: {
 												label: "Pending on GitHub",
-												description: "Only you can see it until you submit your review.",
+												description:
+													"This thread is still a draft. Your reply will publish with the review.",
 												isGitHub: true,
-											},
-											off: {
-												label: "Published on GitHub",
-												description: "Everyone viewing the pull request can see it immediately.",
-												isGitHub: true,
-											},
-										}
+											}
 									: {
 											label: "Local only",
 											description: "Saved on this machine and never sent to GitHub.",
