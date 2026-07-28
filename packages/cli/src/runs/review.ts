@@ -33,6 +33,7 @@ import {
 } from "../github/review.js";
 import { DIFF_SIDE, type DiffSide, SCOPE_KIND } from "../schema.js";
 import { loadLocalThreadRecords, UNASSIGNED_REPO_ROOT } from "./local-comment-threads.js";
+import { ReviewActionQueue } from "./review-action-queue.js";
 import { deriveScopeKey } from "./scope-key.js";
 
 /** A review action failure with a user-facing message and the route's HTTP status. */
@@ -249,34 +250,14 @@ async function withPendingReview<T>(
 	}
 }
 
-class ReviewActionQueue {
-	private readonly tails = new Map<string, Promise<void>>();
-
-	async run<T>(repoRoot: string, action: () => Promise<T>): Promise<T> {
-		const previous = this.tails.get(repoRoot) ?? Promise.resolve();
-		const result = previous.then(action, action);
-		const settled = result.then(
-			() => undefined,
-			() => undefined,
-		);
-		this.tails.set(repoRoot, settled);
-		try {
-			return await result;
-		} finally {
-			if (this.tails.get(repoRoot) === settled) this.tails.delete(repoRoot);
-		}
-	}
-}
-
 // GitHub permits only one pending review per viewer and PR. Serialize pending-review
-// mutations within one checkout so concurrent first writes share the review one opens,
-// and failed cleanup cannot discard a review another request has already populated.
+// mutations across every server process for one checkout so concurrent first writes
+// share the review one opens, and failed cleanup cannot discard another action's draft.
 const pendingReviewActions = new ReviewActionQueue();
 
-// Local thread ids currently mid-promotion. The server is a single process, so this
-// in-memory set serializes concurrent /review/add calls for the same thread (e.g. a
-// double-click): the second request is rejected instead of racing to create a
-// duplicate pending GitHub thread before the first deletes the local row.
+// Local thread ids currently mid-promotion in this server process. This rejects a
+// double-click immediately; another process serializes through ReviewActionQueue and
+// then observes the local row already removed by the first successful promotion.
 const promotingThreads = new Set<string>();
 
 /** True while the local thread is frozen for an in-flight GitHub promotion. */
