@@ -439,7 +439,7 @@ export async function submitReview(
 			pullRequestId: pullRequestNodeId,
 			reviewId: reviewNodeId,
 			event,
-			body: body.length > 0 ? body : null,
+			body,
 		}),
 		repoRoot,
 	);

@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { commentThread } from "../db/schema/index.js";
-import { EMPTY_REVIEW, REVIEW_QUERY_RESULT, ReviewRouteHarness } from "./review-test-harness.js";
+import {
+	EMPTY_REVIEW,
+	makeSummaryOnlyPendingReview,
+	REVIEW_QUERY_RESULT,
+	ReviewRouteHarness,
+} from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
 
@@ -87,6 +92,23 @@ describe("review API — writes", () => {
 		expect((await harness.logLines()).join("\n")).not.toMatch(/create-review|submit/);
 	});
 
+	it("allows an existing pending summary to be cleared", async () => {
+		await harness.writeGhShim(makeSummaryOnlyPendingReview());
+		const runId = harness.insertRun();
+
+		const submit = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/submit`,
+			{ event: "APPROVE", body: "" },
+		);
+		const log = (await harness.logLines()).find((line) => line.startsWith("submit")) ?? "";
+
+		expect(submit.status).toBe(200);
+		expect(log).toContain("body=");
+		expect(log).not.toContain("Existing draft summary");
+	});
+
 	it("rejects PR comments from a working-tree run", async () => {
 		await harness.writeGhShim(REVIEW_QUERY_RESULT);
 		const runId = harness.insertRun({ committed: false });
@@ -144,5 +166,22 @@ describe("review API — writes", () => {
 		]);
 		expect(promote.status).toBe(200);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("restores an ambiguous legacy claim when the remote write fails", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, { failAddThread: true });
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ repoRoot: "" });
+
+		const promote = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/add`,
+			{ localThreadId },
+		);
+		const [thread] = harness.db.select().from(commentThread).all();
+
+		expect(promote.status).toBe(500);
+		expect(thread?.repoRoot).toBe("");
 	});
 });

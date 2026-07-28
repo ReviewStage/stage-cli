@@ -121,6 +121,19 @@ describe("comment threads API", () => {
 		expect(res.status).toBe(403);
 	});
 
+	it("rejects a cross-origin read of local comment bodies", async () => {
+		const runId = seedRun();
+		const { port } = await startWithRoutes();
+		await createThread(port, runId);
+
+		const res = await send(port, "GET", `/api/runs/${runId}/comment-threads`, undefined, {
+			Origin: "http://evil.example",
+		});
+
+		expect(res.status).toBe(403);
+		expect(res.body).toEqual({ error: "Cross-origin request rejected" });
+	});
+
 	it("POST creates a thread with its root comment and the anchor", async () => {
 		const runId = seedRun();
 		const { port } = await startWithRoutes();

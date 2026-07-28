@@ -136,6 +136,20 @@ export function useReview(runId: string): UseReviewResult {
 			.then((localThreads) => setLocalOverlay({ runId, threads: localThreads }))
 			.catch(() => {});
 	};
+	const removePromotedLocalThread = (localThreadId: string) => {
+		setLocalOverlay((current) => {
+			const localThreads =
+				current?.runId === runId
+					? current.threads
+					: (queryClient
+							.getQueryData<ReviewResponse>(queryKey)
+							?.threads.filter((thread) => thread.source === THREAD_SOURCE.LOCAL) ?? []);
+			return {
+				runId,
+				threads: localThreads.filter((thread) => thread.id !== localThreadId),
+			};
+		});
+	};
 	// GitHub-affecting actions (submit/resolve/reply/promote) change PR-level state —
 	// reviewer decisions, the merge button — that lives behind separate, infinitely-
 	// stale query keys. Refresh those too so the PR header doesn't go stale until reload.
@@ -192,7 +206,8 @@ export function useReview(runId: string): UseReviewResult {
 		addToReview: useMutation({
 			mutationFn: (localThreadId: string) =>
 				jsonFetch(runPath("/review/add"), jsonRequest("POST", { localThreadId })),
-			onSuccess: () => {
+			onSuccess: (_data, localThreadId) => {
+				removePromotedLocalThread(localThreadId);
 				refreshLocal();
 				invalidateGitHub();
 			},

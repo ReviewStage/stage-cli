@@ -47,7 +47,7 @@ describe("review API — recovery and concurrency", () => {
 		const review = ReviewResponseSchema.parse(JSON.parse(read.body));
 		const submit = await harness.request(port, "POST", `/api/runs/${runId}/review/submit`, {
 			event: "COMMENT",
-			body: "",
+			body: "Existing draft summary",
 		});
 
 		expect(review.pendingReviewBody).toBe("Existing draft summary");

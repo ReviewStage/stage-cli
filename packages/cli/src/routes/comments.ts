@@ -29,7 +29,8 @@ export function commentRoutes(db: StageDb): Route[] {
 		{
 			method: "GET",
 			pattern: "/api/runs/:runId/comment-threads",
-			handler: (_req, res, params) => {
+			handler: (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const scope = resolveRunScope(db, params.runId);
 				if (scope === null) {
 					writeJson(res, 404, { error: `Run ${params.runId} not found` });

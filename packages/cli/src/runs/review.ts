@@ -323,7 +323,21 @@ async function promoteLocalThread(
 	if (thread.scopeKey !== deriveScopeKey(run)) {
 		throw new ReviewError("This comment doesn't belong to this run's diff.", 400);
 	}
-	if (thread.repoRoot === UNASSIGNED_REPO_ROOT) {
+	const comments = db
+		.select()
+		.from(comment)
+		.where(eq(comment.threadId, localThreadId))
+		.orderBy(asc(comment.createdAt))
+		.all();
+	const root = comments[0];
+	if (!root) throw new ReviewError("Thread has no comments to add to the review.", 400);
+
+	const { review } = await loadTarget(run);
+	assertPushable(run, review);
+	const side = toGitHubSide(thread.side);
+	const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
+	const wasUnassigned = thread.repoRoot === UNASSIGNED_REPO_ROOT;
+	if (wasUnassigned) {
 		const [claimed] = db
 			.update(commentThread)
 			.set({ repoRoot: run.repoRoot })
@@ -336,23 +350,14 @@ async function promoteLocalThread(
 			throw new ReviewError("This comment belongs to another repository.", 400);
 		}
 	}
-	const comments = db
-		.select()
-		.from(comment)
-		.where(eq(comment.threadId, localThreadId))
-		.orderBy(asc(comment.createdAt))
-		.all();
-	const root = comments[0];
-	if (!root) throw new ReviewError("Thread has no comments to add to the review.", 400);
-
-	const { review } = await loadTarget(run);
-	assertPushable(run, review);
-	const { reviewNodeId, created } = await openPendingReview(run, review);
-	const side = toGitHubSide(thread.side);
-	const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
 
 	let addedThread: AddedReviewThread | null = null;
+	let reviewNodeId: string | null = null;
+	let created = false;
 	try {
+		const pendingReview = await openPendingReview(run, review);
+		reviewNodeId = pendingReview.reviewNodeId;
+		created = pendingReview.created;
 		addedThread = await addReviewThread(run.repoRoot, {
 			pullRequestNodeId: review.pullRequestNodeId,
 			reviewNodeId,
@@ -372,10 +377,22 @@ async function promoteLocalThread(
 	} catch (err) {
 		// Deleting the remote root removes the partially-promoted GitHub thread,
 		// including replies, while the complete local thread remains available to retry.
+		let remoteRolledBack = addedThread === null;
 		if (addedThread !== null) {
-			await deleteReviewComment(run.repoRoot, addedThread.rootCommentNodeId).catch(() => {});
+			try {
+				await deleteReviewComment(run.repoRoot, addedThread.rootCommentNodeId);
+				remoteRolledBack = true;
+			} catch {}
 		}
-		if (created) await discardReview(run.repoRoot, reviewNodeId).catch(() => {});
+		if (created && reviewNodeId !== null) {
+			await discardReview(run.repoRoot, reviewNodeId).catch(() => {});
+		}
+		if (wasUnassigned && remoteRolledBack) {
+			db.update(commentThread)
+				.set({ repoRoot: UNASSIGNED_REPO_ROOT })
+				.where(and(eq(commentThread.id, localThreadId), eq(commentThread.repoRoot, run.repoRoot)))
+				.run();
+		}
 		throw err;
 	}
 	// Every comment landed remotely; the cascade removes all local comment rows.
@@ -451,19 +468,14 @@ export async function submitRunReview(
 	await pendingReviewActions.run(run.repoRoot, async () => {
 		const { review } = await loadTarget(run);
 		assertPushable(run, review);
-		const submissionBody = body.trim() === "" ? review.pendingReviewBody : body;
-		if (
-			event === REVIEW_EVENT.COMMENT &&
-			submissionBody.trim() === "" &&
-			review.pendingCommentCount === 0
-		) {
+		if (event === REVIEW_EVENT.COMMENT && body.trim() === "" && review.pendingCommentCount === 0) {
 			throw new ReviewError(
 				"Add a summary or at least one pending comment to submit a review.",
 				400,
 			);
 		}
 		await withPendingReview(run, review, (reviewNodeId) =>
-			submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, submissionBody),
+			submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
 		);
 	});
 }
