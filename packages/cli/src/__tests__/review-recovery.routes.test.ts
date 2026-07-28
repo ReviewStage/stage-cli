@@ -5,6 +5,7 @@ import {
 	EMPTY_REVIEW,
 	makeAnchorlessPendingReview,
 	makeInterruptedPromotionReview,
+	makePublishedInterruptedPromotionReview,
 	makeSummaryOnlyPendingReview,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -192,5 +193,31 @@ describe("review API — recovery", () => {
 		expect(promotion.status, promotion.body).toBe(200);
 		expect(log.filter((line) => line === "reply")).toHaveLength(0);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("never deletes a published root when a resumed promotion fails", async () => {
+		await harness.writeGhShim(makePublishedInterruptedPromotionReview(), { failResolve: true });
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ resolved: true });
+		harness.db
+			.update(commentThread)
+			.set({
+				promotionThreadNodeId: "THREAD_new",
+				promotionRootCommentNodeId: "COMMENT_new",
+			})
+			.run();
+
+		const promotion = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/add`,
+			{ localThreadId },
+		);
+		const [savedThread] = harness.db.select().from(commentThread).all();
+
+		expect(promotion.status).toBe(500);
+		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(0);
+		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
+		expect(savedThread?.promotionRootCommentNodeId).toBe("COMMENT_new");
 	});
 });

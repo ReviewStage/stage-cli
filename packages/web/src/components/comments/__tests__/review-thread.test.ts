@@ -7,6 +7,7 @@ import {
 } from "@stagereview/types/review";
 import { describe, expect, it } from "vitest";
 import {
+	activeEditingCommentId,
 	canEditReviewComment,
 	canPublishReplyImmediately,
 	canReplyToGitHubThread,
@@ -52,10 +53,16 @@ describe("GitHub pending comment actions", () => {
 	});
 
 	it("closes the editor after a pending comment is submitted", () => {
-		const [comment] = makeThread([COMMENT_STATE.SUBMITTED]).comments;
-		if (!comment) throw new Error("Expected a submitted comment");
+		const pendingThread = makeThread([COMMENT_STATE.PENDING]);
+		const [pendingComment] = pendingThread.comments;
+		if (!pendingComment) throw new Error("Expected a pending comment");
 
-		expect(canEditReviewComment(comment, true)).toBe(false);
+		expect(activeEditingCommentId(pendingThread.comments, pendingComment.id, true)).toBe(
+			pendingComment.id,
+		);
+
+		const submittedThread = makeThread([COMMENT_STATE.SUBMITTED]);
+		expect(activeEditingCommentId(submittedThread.comments, pendingComment.id, true)).toBeNull();
 	});
 });
 

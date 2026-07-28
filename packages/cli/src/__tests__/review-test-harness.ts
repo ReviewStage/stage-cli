@@ -182,6 +182,29 @@ export function makeInterruptedPromotionReview(promotedReplyBody?: string): unkn
 	);
 }
 
+export function makePublishedInterruptedPromotionReview(): unknown {
+	const root = {
+		...pendingThread.comments.nodes[0],
+		id: "COMMENT_new",
+		body: "Root",
+		bodyHTML: "<p>Root</p>",
+		pullRequestReview: { state: "COMMENTED" },
+	};
+	return makeReview(
+		[
+			{
+				...pendingThread,
+				id: "THREAD_new",
+				path: "src/foo.ts",
+				line: 3,
+				diffSide: "RIGHT",
+				comments: { ...pendingThread.comments, nodes: [root] },
+			},
+		],
+		null,
+	);
+}
+
 export function makeAnchorlessPendingReview(): unknown {
 	return makeReview(
 		[

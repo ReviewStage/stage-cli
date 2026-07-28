@@ -12,7 +12,7 @@ import {
 	MessageSquare,
 	User,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
 	AlertDialog,
 	AlertDialogCancel,
@@ -51,6 +51,16 @@ export function canEditReviewComment(comment: ReviewComment, canPushToReview: bo
 		comment.state === COMMENT_STATE.LOCAL ||
 		(comment.state === COMMENT_STATE.PENDING && canPushToReview)
 	);
+}
+
+export function activeEditingCommentId(
+	comments: ReviewComment[],
+	editingId: string | null,
+	canPushToReview: boolean,
+): string | null {
+	if (editingId === null) return null;
+	const comment = comments.find((candidate) => candidate.id === editingId);
+	return comment && canEditReviewComment(comment, canPushToReview) ? editingId : null;
 }
 
 function StateBadge({ state }: { state: ReviewComment["state"] }) {
@@ -107,10 +117,18 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	const [deleteTarget, setDeleteTarget] = useState<ReviewComment | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
+	const activeEditingId = activeEditingCommentId(thread.comments, editingId, canPushToReview);
+	useEffect(() => {
+		if (editingId !== null && activeEditingId === null) {
+			setEditingId(null);
+			setError(null);
+		}
+	}, [editingId, activeEditingId]);
+
 	const root = thread.comments[0];
 	if (!root) return null;
 	const replies = thread.comments.slice(1);
-	const idle = !isReplying && editingId === null;
+	const idle = !isReplying && activeEditingId === null;
 	const canReply = !isGitHub || canReplyToGitHubThread(thread, canWriteToGitHub, canPushToReview);
 	const publishesImmediately = isGitHub && canPublishReplyImmediately(thread);
 	const forceImmediateReply = publishesImmediately && !canPushToReview;
@@ -122,7 +140,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	async function handleResolveToggle() {
 		const next = !thread.isResolved;
 		const wasOpen = isOpen;
-		const hasActiveForm = isReplying || editingId !== null || deleteTarget !== null;
+		const hasActiveForm = isReplying || activeEditingId !== null || deleteTarget !== null;
 		if (!next || !hasActiveForm) setIsOpen(!next);
 		try {
 			if (thread.source === THREAD_SOURCE.GITHUB) {
@@ -137,7 +155,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 	}
 
 	function handleOpenChange(open: boolean) {
-		if (!open && (isReplying || editingId !== null || deleteTarget !== null)) return;
+		if (!open && (isReplying || activeEditingId !== null || deleteTarget !== null)) return;
 		setIsOpen(open);
 	}
 
@@ -281,7 +299,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 				</div>
 
 				<CollapsibleContent className="space-y-3 px-3 pb-3">
-					{editingId === root.id && canEditReviewComment(root, canPushToReview) ? (
+					{activeEditingId === root.id ? (
 						<CommentForm
 							label="Update"
 							initialBody={root.body}
@@ -304,8 +322,8 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 									key={reply.id}
 									reply={reply}
 									idle={idle}
-									isEditing={editingId === reply.id}
-									error={editingId === reply.id ? error : null}
+									isEditing={activeEditingId === reply.id}
+									error={activeEditingId === reply.id ? error : null}
 									onEdit={() => {
 										setOpenError(null);
 										setEditingId(reply.id);

@@ -145,8 +145,11 @@ describe("review API — read", () => {
 		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
 
 		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
-		expect(review.github).toBe("none");
+		expect(review.github).toBe("available");
 		expect(review.threads.every((t) => t.source === "local")).toBe(true);
+		expect(review.hasPendingReview).toBe(true);
+		expect(review.canPushToReview).toBe(false);
+		expect(review.canWriteToGitHub).toBe(false);
 	});
 
 	it("hides GitHub threads when the run does not match the PR merge base", async () => {
@@ -156,7 +159,10 @@ describe("review API — read", () => {
 		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
 
 		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
-		expect(review.github).toBe("none");
+		expect(review.github).toBe("available");
 		expect(review.threads.every((t) => t.source === "local")).toBe(true);
+		expect(review.hasPendingReview).toBe(true);
+		expect(review.canPushToReview).toBe(false);
+		expect(review.canWriteToGitHub).toBe(false);
 	});
 });

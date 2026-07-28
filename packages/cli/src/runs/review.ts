@@ -220,9 +220,18 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 
 	// The PR's live threads anchor to its head-commit diff. If this run isn't that
 	// exact diff, overlaying them would mis-anchor comments on unrelated lines, so we
-	// surface only local comments — the GitHub review isn't meaningful for this diff.
+	// surface only local line threads. Keep the pending-review lifecycle visible so
+	// the viewer can inspect and discard drafts even though this run is read-only.
 	if (!runMatchesPrDiff(run, review)) {
-		return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
+		return {
+			...base,
+			github: GITHUB_REVIEW_STATUS.AVAILABLE,
+			pendingComments: review.pendingComments,
+			pendingCommentCount: review.pendingCommentCount,
+			hasPendingReview: review.pendingReviewNodeId !== null,
+			pendingReviewBody: review.pendingReviewBody,
+			isOwnPullRequest: review.viewerDidAuthor,
+		};
 	}
 
 	const githubThreads = review.threads.map(toGitHubThreadDto);
@@ -462,20 +471,24 @@ async function promoteLocalThread(
 		let promotedReplyCount = thread.promotionReplyCount;
 		let reviewNodeId: string | null = null;
 		let created = false;
+		let remoteRootIsPending = false;
+		let rootCreatedThisAttempt = false;
+		let rollbackReplyCount = promotedReplyCount;
 		try {
 			if (addedThread !== null) {
 				const remoteThread = review.threads.find(
 					(candidate) => candidate.threadNodeId === addedThread?.threadNodeId,
 				);
-				const hasPersistedRoot = remoteThread?.comments.some(
+				const persistedRoot = remoteThread?.comments.find(
 					(candidate) => candidate.nodeId === addedThread?.rootCommentNodeId,
 				);
 				// If the persisted remote root was removed manually, restart cleanly.
-				if (!remoteThread || !hasPersistedRoot) {
+				if (!remoteThread || !persistedRoot) {
 					clearPromotionProgress(db, localThreadId);
 					addedThread = null;
 					promotedReplyCount = 0;
 				} else {
+					remoteRootIsPending = persistedRoot.isPending;
 					// A crash can land a reply immediately before its local checkpoint.
 					// Reconcile the matching remote prefix before sending anything again.
 					while (
@@ -491,6 +504,7 @@ async function promoteLocalThread(
 						.run();
 				}
 			}
+			rollbackReplyCount = promotedReplyCount;
 
 			if (addedThread === null || promotedReplyCount < replies.length) {
 				const pendingReview = await openPendingReview(run, review);
@@ -509,6 +523,8 @@ async function promoteLocalThread(
 					startLine,
 					startSide: startLine !== null ? side : null,
 				});
+				rootCreatedThisAttempt = true;
+				remoteRootIsPending = true;
 				const persisted = db
 					.update(commentThread)
 					.set({
@@ -535,23 +551,31 @@ async function promoteLocalThread(
 				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
 			}
 		} catch (err) {
-			// Deleting the remote root removes the partially-promoted GitHub thread,
-			// including replies, while the complete local thread remains available to retry.
-			let remoteRolledBack = addedThread === null;
-			if (addedThread !== null) {
+			// A pending root can be deleted to roll back its whole partial thread. A
+			// published root must never be deleted: it may have been submitted on
+			// GitHub while this process was interrupted.
+			let remoteRootRolledBack = addedThread === null;
+			if (addedThread !== null && remoteRootIsPending) {
 				try {
 					await deleteReviewComment(run.repoRoot, addedThread.rootCommentNodeId);
-					remoteRolledBack = true;
+					remoteRootRolledBack = true;
 				} catch {}
 			}
 			if (created && reviewNodeId !== null) {
 				try {
 					await discardReview(run.repoRoot, reviewNodeId);
-					remoteRolledBack = true;
+					if (rootCreatedThisAttempt) {
+						remoteRootRolledBack = true;
+					} else if (!remoteRootRolledBack) {
+						db.update(commentThread)
+							.set({ promotionReplyCount: rollbackReplyCount })
+							.where(eq(commentThread.id, localThreadId))
+							.run();
+					}
 				} catch {}
 			}
-			if (remoteRolledBack) clearPromotionProgress(db, localThreadId);
-			if (wasUnassigned && remoteRolledBack) {
+			if (remoteRootRolledBack) clearPromotionProgress(db, localThreadId);
+			if (wasUnassigned && remoteRootRolledBack) {
 				db.update(commentThread)
 					.set({ repoRoot: UNASSIGNED_REPO_ROOT })
 					.where(and(eq(commentThread.id, localThreadId), eq(commentThread.repoRoot, run.repoRoot)))

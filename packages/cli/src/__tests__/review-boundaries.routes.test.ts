@@ -71,6 +71,23 @@ describe("review API — GitHub boundaries", () => {
 		expect(await harness.logLines()).toEqual(expect.arrayContaining(["reply", "resolve-thread"]));
 	});
 
+	it("keeps stale-run pending review controls available in read-only mode", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT);
+		const runId = harness.insertRun({ headSha: "d".repeat(40) });
+
+		const read = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
+		const review = JSON.parse(read.body);
+
+		expect(read.status).toBe(200);
+		expect(review.github).toBe("available");
+		expect(review.threads).toHaveLength(0);
+		expect(review.pendingCommentCount).toBe(1);
+		expect(review.pendingComments).toHaveLength(1);
+		expect(review.hasPendingReview).toBe(true);
+		expect(review.canPushToReview).toBe(false);
+		expect(review.canWriteToGitHub).toBe(false);
+	});
+
 	it("treats a pending review with no commit as stale instead of offline", async () => {
 		await harness.writeGhShim(makeMissingPendingCommitReview());
 		const runId = harness.insertRun();
