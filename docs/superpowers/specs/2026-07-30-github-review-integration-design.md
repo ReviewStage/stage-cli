@@ -107,8 +107,8 @@ they get `null`.
 - **Review toolbar** in the PR header area: pending-comment count plus a "Finish your
   review" button opening a popover with a summary markdown box, verdict radio group,
   and Submit — mirroring GitHub's.
-- Thread components: author avatars/names on GitHub comments (viewer type already has
-  `avatarUrl`), a "Pending" badge, and edit/delete disabled on other people's GitHub
+- Thread components: author avatars/names on GitHub comments (from
+  `GitHubCommentSchema.author`), a "Pending" badge, and edit/delete disabled on other people's GitHub
   comments.
 - Two React Query queries: the existing local threads query (invalidated on local
   CRUD, stays instant) and the github-threads query (long staleTime, invalidated on
