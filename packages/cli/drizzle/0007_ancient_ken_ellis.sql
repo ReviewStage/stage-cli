@@ -1,0 +1,1 @@
+ALTER TABLE `comment_thread` ADD `prNumber` integer;
