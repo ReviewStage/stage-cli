@@ -28,15 +28,27 @@ same workflow GitHub's own PR UI offers.
 
 ## Data model
 
-Extend existing tables (one Drizzle migration):
+`comment_thread` is keyed by `scopeKey`, not run id, and a scope key deliberately
+survives re-imports — so two runs of the same diff (one with `--pr`, one without)
+share threads. The PR association must therefore live on the thread itself, not be
+inferred from the run.
 
-- `comment_thread`: add nullable `githubThreadId` (GitHub review-thread / root-comment
-  ID for threads published to GitHub) and `pendingReview` boolean (true for
-  unpublished PR comments).
-- `comment`: add nullable `githubCommentId`.
+One Drizzle migration:
 
-On a PR run (`chapter_run.prNumber` set), new threads are created with
-`pendingReview = true`. Non-PR runs are unchanged.
+- `comment_thread`: add nullable `prNumber`. `null` = local note (today's behavior);
+  set = a pending review comment destined for that PR.
+
+That's the whole schema change. No `githubThreadId`, no `pendingReview` flag, no
+`comment.githubCommentId` — GitHub-published threads are never mirrored locally (see
+"Submit review" below), so local rows only ever represent notes or pending comments.
+
+**Visibility rule:** a run shows local-note threads (`prNumber` null) matching its
+scopeKey, plus — only when the run has a matching `chapter_run.prNumber` — pending
+threads with that `prNumber`. A pending comment created in a PR run never appears as
+a local note in a non-PR run of the same diff, and vice versa.
+
+**Creation rule:** new threads on a PR run get the run's `prNumber`; on non-PR runs
+they get `null`.
 
 ## Reading GitHub threads (live fetch)
 
@@ -44,34 +56,50 @@ On a PR run (`chapter_run.prNumber` set), new threads are created with
   wrapper: `gh api repos/:o/:r/pulls/:n/comments` (plus review summaries). Thread
   resolution state requires the GraphQL `reviewThreads` API via `gh api graphql` —
   REST does not expose it.
-- `GET /api/runs/:runId/comment-threads` merges three sources into one response, all
-  mapped to the existing wire `CommentThreadSchema` shape with a new `source` tag:
-  - `source: "github"` — live-fetched GitHub threads
-  - `source: "pending"` — local unpublished threads on a PR run
-  - `source: "local"` — local notes on non-PR runs
-- **Line mapping:** GitHub's `side: RIGHT/LEFT` + `line`/`start_line` maps directly to
-  Stage's `DIFF_SIDE.ADDITIONS/DELETIONS` + `startLine`/`endLine` (both are line
-  numbers in the new/old file). No diff-position math needed while the run's `headSha`
-  matches the comment's commit. If the PR head moved since import, mismatched threads
-  are listed in an "outdated — re-import to view inline" section instead of being
-  anchored by guesswork.
+- **Separate endpoint**, not merged into the local route:
+  `GET /api/runs/:runId/github-threads`. The existing
+  `GET /api/runs/:runId/comment-threads` stays a cheap SQLite read that the UI
+  refetches after every comment edit; the GitHub endpoint is its own React Query
+  query with a long `staleTime` (matching the PR-header pattern), refetched only on
+  demand (submit, reply, resolve, manual refresh). The web client merges the two
+  sources for display.
+- **Wire types:** GitHub threads get their own schemas in `packages/types`
+  (`GitHubThreadSchema` / `GitHubCommentSchema`) rather than reusing
+  `CommentSchema` — GitHub comments carry `author: { login, name, avatarUrl }`,
+  `githubCommentId`, resolution state, and `viewerCanEdit`/`viewerDidAuthor`, none of
+  which local comments have. Local `CommentSchema` gains only a derived
+  `pending: boolean` (from the thread's `prNumber`).
+- **Line mapping:** GitHub's `side` + `line`/`start_line` translates to Stage's
+  `DIFF_SIDE.ADDITIONS/DELETIONS` + `startLine`/`endLine` (both are line numbers in
+  the new/old file) — but GitHub ranges carry a per-end side (`side` for the end
+  line, `start_side` for the start) and can span LEFT and RIGHT; Stage threads have
+  one side. Rules:
+  - Same-side range, comment commit matches the run's `headSha`: anchor inline.
+  - Mixed-side range, or the PR head moved since import: treat as unanchorable and
+    list in an "outdated / not viewable inline — re-import to update" section.
 
 ## Writing back
 
 - **Compose:** existing composers unchanged; pending threads render with a "Pending"
   badge and stay fully editable/deletable locally.
 - **Reply to a GitHub thread:** posts immediately via
-  `gh api repos/:o/:r/pulls/:n/comments/:id/replies` through the existing `ghWrite()`
-  wrapper. (GitHub's atomic review call cannot batch replies to existing threads;
-  immediate replies match GitHub UI's default behavior.)
+  `gh api repos/:o/:r/pulls/:n/comments/:id/replies` through `ghWrite()` — currently
+  module-private in `github/mutations.ts`, so export it as part of this work.
+  (GitHub's atomic review call cannot batch replies to existing threads; immediate
+  replies match GitHub UI's default behavior.)
 - **Resolve/unresolve a GitHub thread:** GraphQL `resolveReviewThread` /
   `unresolveReviewThread` mutations.
 - **Submit review:** new route `POST /api/runs/:runId/review` with
-  `{ event: APPROVE | REQUEST_CHANGES | COMMENT, body }`. Gathers all `pendingReview`
-  threads, translates them to GitHub's `comments[]` format, and makes one
-  `POST /repos/:o/:r/pulls/:n/reviews` call. On success, the returned GitHub IDs are
-  stamped onto local threads and `pendingReview` flips off. On failure nothing is
-  lost — comments stay pending and the error surfaces as a toast.
+  `{ event: APPROVE | REQUEST_CHANGES | COMMENT, body }`. Gathers all threads with
+  the run's `prNumber` and matching scopeKey, translates them to GitHub's
+  `comments[]` format, and makes one `POST /repos/:o/:r/pulls/:n/reviews` call.
+  - **On success, the local pending threads are deleted.** GitHub becomes the source
+    of truth and the live `github-threads` fetch shows them from then on. This
+    avoids both the dedup problem (local copy + live copy of the same thread) and
+    the ID-stamping problem (the reviews endpoint doesn't return a per-input comment
+    ID mapping — matching IDs back by path+line would be fragile busywork).
+  - On failure nothing is deleted — comments stay pending and the error surfaces as
+    a toast.
 - All writes pass the existing `enforceSameOrigin` guard.
 
 ## UI
@@ -82,7 +110,9 @@ On a PR run (`chapter_run.prNumber` set), new threads are created with
 - Thread components: author avatars/names on GitHub comments (viewer type already has
   `avatarUrl`), a "Pending" badge, and edit/delete disabled on other people's GitHub
   comments.
-- React Query invalidation after submit/reply/resolve refetches the merged list.
+- Two React Query queries: the existing local threads query (invalidated on local
+  CRUD, stays instant) and the github-threads query (long staleTime, invalidated on
+  submit/reply/resolve or manual refresh). The client merges them for display.
 
 ## Error handling
 
@@ -92,12 +122,15 @@ On a PR run (`chapter_run.prNumber` set), new threads are created with
 
 ## Testing (per TESTING.md)
 
-Vitest coverage for: line-mapping translation (GitHub ↔ Stage coordinates), the
-three-source merge logic in the threads route, submit-review payload construction, and
-the pending-flag lifecycle. `gh` calls are mocked at the `gh()` / `ghWrite()` seam.
+Vitest coverage for: line-mapping translation (GitHub ↔ Stage coordinates, including
+mixed-side and stale-head unanchorable cases), the thread visibility rule
+(prNumber × run type), submit-review payload construction, and the
+delete-on-successful-submit lifecycle. `gh` becomes the codebase's first
+external-service boundary; mock at the `gh()` / `ghWrite()` seam.
 
 ## Estimated shape
 
-One migration, ~2 new modules under `packages/cli/src/github/`, edits to the
-comment-threads route plus one new review route, and moderate web-UI work. Single
-implementation plan.
+One migration (a single nullable column), ~2 new modules under
+`packages/cli/src/github/`, one new github-threads route plus one new review route
+(local comment-threads route only gains the visibility filter), and moderate web-UI
+work. Single implementation plan.
