@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import type { ReviewEvent } from "@stagereview/types/github-threads";
 import {
 	PULL_REQUEST_MERGE_METHOD,
 	type PullRequestMergeMethod,
@@ -14,12 +15,35 @@ const execFileAsync = promisify(execFile);
  * pull-request.ts (which swallow errors to null), writes surface failures so
  * the UI can toast them — the user explicitly asked to mutate their PR.
  */
-async function ghWrite(args: string[], repoRoot: string): Promise<void> {
+export async function ghWrite(args: string[], repoRoot: string): Promise<void> {
 	try {
 		await execFileAsync("gh", args, { cwd: repoRoot, encoding: "utf8" });
 	} catch (err: unknown) {
 		throw new Error(ghErrorMessage(err));
 	}
+}
+
+/**
+ * Run a `gh api` write with a JSON request body fed over stdin (`--input -`).
+ * Used where flag-per-field encoding can't express the payload (e.g. the
+ * review submit call's nested comments array). Returns parsed stdout.
+ */
+export function ghWriteJson(args: string[], repoRoot: string, input: unknown): Promise<unknown> {
+	return new Promise((resolve, reject) => {
+		const child = execFile(
+			"gh",
+			[...args, "--input", "-"],
+			{ cwd: repoRoot, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 },
+			(err, stdout) => {
+				if (err) {
+					reject(new Error(ghErrorMessage(err)));
+					return;
+				}
+				resolve(stdout.trim() ? JSON.parse(stdout) : null);
+			},
+		);
+		child.stdin?.end(JSON.stringify(input));
+	});
 }
 
 const MERGE_METHOD_FLAG: Record<PullRequestMergeMethod, string> = {
@@ -133,4 +157,72 @@ export async function listCollaborators(
 	} catch {
 		return [];
 	}
+}
+
+/** Reply to an existing review thread (REST addresses the root comment's database id). */
+export function replyToReviewComment(
+	repoRoot: string,
+	repo: GitHubRepo,
+	prNumber: number,
+	commentId: string,
+	body: string,
+): Promise<void> {
+	return ghWrite(
+		[
+			"api",
+			"--method",
+			"POST",
+			`repos/${repo.owner}/${repo.repo}/pulls/${prNumber}/comments/${commentId}/replies`,
+			"-f",
+			`body=${body}`,
+		],
+		repoRoot,
+	);
+}
+
+/** Resolve/unresolve a review thread. Only GraphQL exposes resolution. */
+export function setReviewThreadResolved(
+	repoRoot: string,
+	threadNodeId: string,
+	resolved: boolean,
+): Promise<void> {
+	const mutation = resolved
+		? "mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { id } } }"
+		: "mutation($id: ID!) { unresolveReviewThread(input: { threadId: $id }) { thread { id } } }";
+	return ghWrite(
+		["api", "graphql", "-f", `query=${mutation}`, "-F", `id=${threadNodeId}`],
+		repoRoot,
+	);
+}
+
+export interface ReviewCommentInput {
+	path: string;
+	body: string;
+	line: number;
+	side: "LEFT" | "RIGHT";
+	start_line?: number;
+	start_side?: "LEFT" | "RIGHT";
+}
+
+/**
+ * Submit a review in one atomic call: verdict + summary + all pending
+ * comments. `commit_id` pins the review to the head the user actually
+ * reviewed. Throws (with gh's stderr) on failure so callers keep local state.
+ */
+export function submitReview(
+	repoRoot: string,
+	repo: GitHubRepo,
+	prNumber: number,
+	payload: {
+		commit_id: string;
+		event: ReviewEvent;
+		body: string;
+		comments: ReviewCommentInput[];
+	},
+): Promise<unknown> {
+	return ghWriteJson(
+		["api", "--method", "POST", `repos/${repo.owner}/${repo.repo}/pulls/${prNumber}/reviews`],
+		repoRoot,
+		payload,
+	);
 }
