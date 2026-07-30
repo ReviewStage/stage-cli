@@ -2,9 +2,16 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach } from "vitest";
-import { closeDb } from "../db/client.js";
+import { closeDb, getDb } from "../db/client.js";
+import { chapterRun } from "../db/schema/index.js";
+import { insertChaptersFile } from "../runs/import-chapters.js";
 import { LOOPBACK_HOST, type Route, type ServerHandle, startServer } from "../server.js";
+import { makeFixture, makeRepoContext } from "./fixtures.js";
+
+/** Origin used by every gh-backed route test that needs a real GitHub remote. */
+export const GITHUB_ORIGIN = "git@github.com:owner/repo.git";
 
 export interface JsonResponse {
 	status: number;
@@ -30,6 +37,47 @@ export function request(port: number, requestPath: string): Promise<JsonResponse
 	});
 }
 
+/**
+ * Fires a raw HTTP request with an optional JSON body at a running route-harness
+ * server. Mirrors `send` in comment-routes-harness.ts — every gh-backed mutation
+ * test file needs POST/PATCH with bodies and custom headers, not just GET.
+ */
+export function send(
+	port: number,
+	method: string,
+	requestPath: string,
+	body?: unknown,
+	extraHeaders?: Record<string, string>,
+): Promise<JsonResponse> {
+	const payload = body === undefined ? "" : JSON.stringify(body);
+	return new Promise((resolve, reject) => {
+		const req = http.request(
+			{
+				hostname: LOOPBACK_HOST,
+				port,
+				method,
+				path: requestPath,
+				agent: false,
+				headers: {
+					"Content-Type": "application/json",
+					"Content-Length": Buffer.byteLength(payload).toString(),
+					...extraHeaders,
+				},
+			},
+			(res) => {
+				const chunks: Buffer[] = [];
+				res.on("data", (c: Buffer) => chunks.push(c));
+				res.on("end", () =>
+					resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString("utf8") }),
+				);
+			},
+		);
+		req.on("error", reject);
+		if (payload) req.write(payload);
+		req.end();
+	});
+}
+
 export interface GhRouteTestEnv {
 	/** Path of the current test's temp SQLite file. Live-updates every `beforeEach`. */
 	readonly dbPath: string;
@@ -41,6 +89,11 @@ export interface GhRouteTestEnv {
 	writeFakeGh(script: string): Promise<void>;
 	/** Start a server for these routes against the temp web-dist; closed in `afterEach`. */
 	startWithRoutes(routes: Route[]): Promise<number>;
+	/**
+	 * Seed a run against a GitHub remote (`GITHUB_ORIGIN`, the fixture's repoRoot),
+	 * optionally stamping `prNumber` afterward. `null` leaves the run without a PR.
+	 */
+	seedRun(prNumber: number | null): string;
 }
 
 // Registers the beforeEach/afterEach lifecycle every gh-backed route test file needs
@@ -94,6 +147,19 @@ export function setupGhRouteTest(tmpPrefix: string): GhRouteTestEnv {
 		return handle.port;
 	}
 
+	function seedRun(prNumber: number | null): string {
+		const db = getDb({ dbPath });
+		const { runId } = insertChaptersFile(
+			db,
+			makeFixture(),
+			makeRepoContext({ root: repoRoot, originUrl: GITHUB_ORIGIN }),
+		);
+		if (prNumber !== null) {
+			db.update(chapterRun).set({ prNumber }).where(eq(chapterRun.id, runId)).run();
+		}
+		return runId;
+	}
+
 	return {
 		get dbPath() {
 			return dbPath;
@@ -106,5 +172,6 @@ export function setupGhRouteTest(tmpPrefix: string): GhRouteTestEnv {
 		},
 		writeFakeGh,
 		startWithRoutes,
+		seedRun,
 	};
 }
