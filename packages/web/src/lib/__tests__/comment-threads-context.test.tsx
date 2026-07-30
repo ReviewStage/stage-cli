@@ -13,13 +13,32 @@ afterEach(() => {
 	vi.clearAllMocks();
 });
 
-function stubFetch(status: number, body: string): void {
+const JSON_HEADERS = { "Content-Type": "application/json" };
+// The provider also loads GitHub threads; those are irrelevant here, so every
+// stub answers that endpoint with "gh unavailable" and varies only the local one.
+const GITHUB_UNAVAILABLE = JSON.stringify({ available: false, threads: [] });
+
+function isCommentThreadsRequest(input: unknown): boolean {
+	return String(input).includes("/comment-threads");
+}
+
+function stubCommentThreadsFetch(respond: () => Response): void {
 	vi.stubGlobal(
 		"fetch",
-		vi.fn(
-			async () => new Response(body, { status, headers: { "Content-Type": "application/json" } }),
+		vi.fn(async (input: unknown) =>
+			isCommentThreadsRequest(input)
+				? respond()
+				: new Response(GITHUB_UNAVAILABLE, { status: 200, headers: JSON_HEADERS }),
 		),
 	);
+}
+
+function stubFetch(status: number, body: string): void {
+	stubCommentThreadsFetch(() => new Response(body, { status, headers: JSON_HEADERS }));
+}
+
+function commentThreadsCallCount(): number {
+	return vi.mocked(fetch).mock.calls.filter((call) => isCommentThreadsRequest(call[0])).length;
 }
 
 describe("CommentThreadsProvider", () => {
@@ -53,21 +72,18 @@ describe("CommentThreadsProvider", () => {
 			{ wrapper: Wrapper },
 		);
 
-		await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(commentThreadsCallCount()).toBe(1));
 		expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
 	});
 
 	it("dismisses the error toast once a later fetch recovers", async () => {
 		let calls = 0;
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => {
-				calls += 1;
-				return calls === 1
-					? new Response("boom", { status: 500 })
-					: new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } });
-			}),
-		);
+		stubCommentThreadsFetch(() => {
+			calls += 1;
+			return calls === 1
+				? new Response("boom", { status: 500 })
+				: new Response("[]", { status: 200, headers: JSON_HEADERS });
+		});
 		const { client, Wrapper } = makeWrapper();
 
 		render(

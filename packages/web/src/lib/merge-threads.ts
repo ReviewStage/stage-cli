@@ -3,7 +3,7 @@ import type { GitHubThread } from "@stagereview/types/github-threads";
 
 // An anchorable GitHub thread — same as GitHubThread but with `anchor` narrowed
 // to non-null, since that's the only kind that lands in `byFile`.
-type AnchoredGitHubThread = GitHubThread & { anchor: NonNullable<GitHubThread["anchor"]> };
+export type AnchoredGitHubThread = GitHubThread & { anchor: NonNullable<GitHubThread["anchor"]> };
 
 // One entry in the diff's annotation stream: either a local thread (note or
 // pending) or an anchorable GitHub thread. The discriminant lets thread
@@ -18,8 +18,24 @@ export interface MergedThreads {
 	outdated: GitHubThread[];
 }
 
-function startLine(entry: DisplayThread): number {
-	return entry.kind === "local" ? entry.thread.startLine : entry.thread.anchor.startLine;
+/** Where a display thread hangs in the diff, whatever its source. */
+export interface DisplayThreadAnchor {
+	side: CommentThread["side"];
+	startLine: number;
+	endLine: number;
+}
+
+export function displayThreadAnchor(entry: DisplayThread): DisplayThreadAnchor {
+	if (entry.kind === "local") {
+		const { side, startLine, endLine } = entry.thread;
+		return { side, startLine, endLine };
+	}
+	return entry.thread.anchor;
+}
+
+/** Identity for React keys — local ids and GitHub node ids never collide. */
+export function displayThreadKey(entry: DisplayThread): string {
+	return entry.kind === "local" ? entry.thread.id : entry.thread.githubThreadId;
 }
 
 export function mergeThreads(local: CommentThread[], github: GitHubThread[]): MergedThreads {
@@ -35,6 +51,8 @@ export function mergeThreads(local: CommentThread[], github: GitHubThread[]): Me
 		if (thread.anchor === null) outdated.push(thread);
 		else push(thread.filePath, { kind: "github", thread: { ...thread, anchor: thread.anchor } });
 	}
-	for (const list of byFile.values()) list.sort((a, b) => startLine(a) - startLine(b));
+	for (const list of byFile.values()) {
+		list.sort((a, b) => displayThreadAnchor(a).startLine - displayThreadAnchor(b).startLine);
+	}
 	return { byFile, outdated };
 }

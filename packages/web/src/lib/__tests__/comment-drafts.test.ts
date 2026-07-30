@@ -11,21 +11,25 @@ import {
 	upsertDraft,
 	writeDraftBody,
 } from "../comment-drafts";
+import type { DisplayThread } from "../merge-threads";
 import type { CommentThread } from "../use-comment-threads";
 
 function makeThread(
 	over: Partial<CommentThread> & Pick<CommentThread, "side" | "endLine">,
-): CommentThread {
+): DisplayThread {
 	return {
-		id: `t-${over.side}-${over.endLine}`,
-		filePath: "a.ts",
-		startLine: over.endLine,
-		pending: false,
-		resolvedAt: null,
-		createdAt: "2026-06-08T00:00:00.000Z",
-		updatedAt: "2026-06-08T00:00:00.000Z",
-		comments: [],
-		...over,
+		kind: "local",
+		thread: {
+			id: `t-${over.side}-${over.endLine}`,
+			filePath: "a.ts",
+			startLine: over.endLine,
+			pending: false,
+			resolvedAt: null,
+			createdAt: "2026-06-08T00:00:00.000Z",
+			updatedAt: "2026-06-08T00:00:00.000Z",
+			comments: [],
+			...over,
+		},
 	};
 }
 

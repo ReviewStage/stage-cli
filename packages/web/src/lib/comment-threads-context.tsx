@@ -1,8 +1,17 @@
-import { createContext, type ReactNode, useContext, useEffect } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
 import { toast } from "@/components/ui/sonner";
+import { type MergedThreads, mergeThreads } from "./merge-threads";
 import { type UseCommentThreadsResult, useCommentThreads } from "./use-comment-threads";
+import { type UseGitHubThreadsResult, useGitHubThreads } from "./use-github-threads";
 
-const CommentThreadsContext = createContext<UseCommentThreadsResult | null>(null);
+export interface CommentThreadsContextValue extends UseCommentThreadsResult {
+	/** GitHub review threads for the run's PR, plus their mutations. */
+	github: UseGitHubThreadsResult;
+	/** Local + GitHub threads combined into what the diff should render. */
+	merged: MergedThreads;
+}
+
+const CommentThreadsContext = createContext<CommentThreadsContextValue | null>(null);
 
 const LOAD_ERROR_TOAST_ID = "comment-threads-error";
 
@@ -17,7 +26,19 @@ export function CommentThreadsProvider({
 	runId: string;
 	children: ReactNode;
 }) {
-	const value = useCommentThreads(runId);
+	const local = useCommentThreads(runId);
+	const github = useGitHubThreads(runId);
+	const { threads } = local;
+	// `available: false` means gh is missing or the run has no PR — its (empty)
+	// thread list is meaningless then, so don't merge it.
+	const merged = useMemo(
+		() => mergeThreads(threads, github.available ? github.threads : []),
+		[threads, github.available, github.threads],
+	);
+	const value = useMemo<CommentThreadsContextValue>(
+		() => ({ ...local, github, merged }),
+		[local, github, merged],
+	);
 
 	// A failed threads fetch is otherwise indistinguishable from "no comments" —
 	// the diff still renders, but the overlay is silently empty. Surface it as a
@@ -39,7 +60,7 @@ export function CommentThreadsProvider({
 	return <CommentThreadsContext.Provider value={value}>{children}</CommentThreadsContext.Provider>;
 }
 
-export function useCommentThreadsContext(): UseCommentThreadsResult {
+export function useCommentThreadsContext(): CommentThreadsContextValue {
 	const ctx = useContext(CommentThreadsContext);
 	if (!ctx) {
 		throw new Error("useCommentThreadsContext must be used within a CommentThreadsProvider");

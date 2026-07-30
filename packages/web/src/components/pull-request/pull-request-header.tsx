@@ -10,6 +10,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Check, GitBranch, Github, Pencil, ScanSearch, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { ReviewToolbar } from "@/components/comments/review-toolbar";
 import { CIChecks } from "@/components/pull-request/ci-checks";
 import { MergeStatus } from "@/components/pull-request/merge-status";
 import { PullRequestStatus } from "@/components/pull-request/pull-request-status";
@@ -329,6 +330,7 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 						</>
 					)}
 					<Reviewers />
+					<ReviewToolbar />
 				</div>
 			</header>
 

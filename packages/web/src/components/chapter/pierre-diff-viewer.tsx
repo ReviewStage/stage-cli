@@ -19,7 +19,7 @@ import {
 	useState,
 } from "react";
 import { CommentForm } from "@/components/comments/comment-form";
-import { CommentThreadView } from "@/components/comments/comment-thread";
+import { DisplayThreadView } from "@/components/comments/comment-thread";
 import {
 	buildCommentAnnotations,
 	type CommentDraft,
@@ -40,8 +40,13 @@ import {
 	type LineRef,
 	SIDE_TO_DIFF,
 } from "@/lib/diff-types";
+import {
+	type DisplayThread,
+	type DisplayThreadAnchor,
+	displayThreadAnchor,
+	displayThreadKey,
+} from "@/lib/merge-threads";
 import { resolveSyntaxTheme } from "@/lib/syntax-themes";
-import type { CommentThread } from "@/lib/use-comment-threads";
 import { useDiffSettings } from "@/lib/use-diff-settings";
 import { toSingleSideSelection, useTextSelection } from "@/lib/use-text-selection";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
@@ -197,8 +202,8 @@ export function PierreDiffViewer({
 	const comments = useCommentThreadsContext();
 	const { createThread } = comments;
 	const fileThreads = useMemo(
-		() => (filePath ? (comments.threadsByFile.get(filePath) ?? []) : []),
-		[comments.threadsByFile, filePath],
+		() => (filePath ? (comments.merged.byFile.get(filePath) ?? []) : []),
+		[comments.merged, filePath],
 	);
 	// In-progress comment composers, one per anchor row — several can be open at once.
 	const [drafts, setDrafts] = useState<DraftState[]>([]);
@@ -255,13 +260,13 @@ export function PierreDiffViewer({
 		[filePath, createThread, closeDraft],
 	);
 
-	const handleThreadMouseEnter = useCallback((thread: CommentThread) => {
+	const handleThreadMouseEnter = useCallback((anchor: DisplayThreadAnchor) => {
 		isHoveringRef.current = true;
 		setHoverLines({
-			start: thread.startLine,
-			side: thread.side,
-			end: thread.endLine,
-			endSide: thread.side,
+			start: anchor.startLine,
+			side: anchor.side,
+			end: anchor.endLine,
+			endSide: anchor.side,
 		});
 	}, []);
 
@@ -271,7 +276,7 @@ export function PierreDiffViewer({
 	}, []);
 
 	const renderAnnotation = useCallback(
-		(annotation: DiffLineAnnotation<CommentThread[]>): ReactNode => {
+		(annotation: DiffLineAnnotation<DisplayThread[]>): ReactNode => {
 			const threads = annotation.metadata ?? [];
 			const draft = findDraftAt(drafts, annotation.side, annotation.lineNumber);
 			if (threads.length === 0 && !draft) return null;
@@ -280,14 +285,14 @@ export function PierreDiffViewer({
 					className="space-y-2 px-3 py-2 font-sans"
 					style={{ maxWidth: "min(48rem, 90cqw)", whiteSpace: "normal" }}
 				>
-					{threads.map((thread) => (
+					{threads.map((entry) => (
 						// biome-ignore lint/a11y/noStaticElementInteractions: hover only highlights the anchored lines, it's not an interactive control
 						<div
-							key={thread.id}
-							onMouseEnter={() => handleThreadMouseEnter(thread)}
+							key={displayThreadKey(entry)}
+							onMouseEnter={() => handleThreadMouseEnter(displayThreadAnchor(entry))}
 							onMouseLeave={handleThreadMouseLeave}
 						>
-							<CommentThreadView thread={thread} />
+							<DisplayThreadView entry={entry} />
 						</div>
 					))}
 					{draft && (
@@ -444,7 +449,7 @@ export function PierreDiffViewer({
 				className="@container/diff relative isolate overflow-hidden rounded-b-lg border-x border-b border-border"
 				ref={diffContainerRef}
 			>
-				<FileDiff<CommentThread[]> fileDiff={fileDiff} {...sharedProps} />
+				<FileDiff<DisplayThread[]> fileDiff={fileDiff} {...sharedProps} />
 				{overlay}
 				{textSelectionPopup}
 			</div>
@@ -456,7 +461,7 @@ export function PierreDiffViewer({
 			className="@container/diff relative isolate overflow-hidden rounded-b-lg border-x border-b border-border"
 			ref={diffContainerRef}
 		>
-			<PatchDiff<CommentThread[]> patch={patch} {...sharedProps} />
+			<PatchDiff<DisplayThread[]> patch={patch} {...sharedProps} />
 			{overlay}
 			{textSelectionPopup}
 		</div>

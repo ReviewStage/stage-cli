@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { OutdatedThreads } from "@/components/comments/outdated-threads";
 import { FileDiffList, FilePicker, SidebarLayout, type ViewedConfig } from "@/components/files";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProvideCollapseActions } from "@/lib/collapse-actions-context";
@@ -95,6 +96,7 @@ export function FilesPage({ runId }: FilesPageProps) {
 				collapseState={collapseState}
 				focusedFilePath={keyboardFocusedFilePath}
 			/>
+			<OutdatedThreads />
 		</SidebarLayout>
 	);
 }

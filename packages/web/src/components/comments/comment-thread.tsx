@@ -1,4 +1,5 @@
-import { ChevronRight, Circle, CircleCheck, MessageSquare, User } from "lucide-react";
+import type { GitHubComment } from "@stagereview/types/github-threads";
+import { ChevronRight, Circle, CircleCheck, Github, MessageSquare, User } from "lucide-react";
 import { useState } from "react";
 import {
 	AlertDialog,
@@ -10,12 +11,15 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Markdown } from "@/components/ui/markdown";
+import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCommentThreadsContext } from "@/lib/comment-threads-context";
 import { formatTimeAgo } from "@/lib/format";
+import type { AnchoredGitHubThread, DisplayThread } from "@/lib/merge-threads";
 import type { Comment, CommentThread } from "@/lib/use-comment-threads";
 import { useViewer } from "@/lib/use-viewer";
 import { cn } from "@/lib/utils";
@@ -28,6 +32,15 @@ type DeleteTarget =
 
 function errorMessage(err: unknown, fallback: string): string {
 	return err instanceof Error ? err.message : fallback;
+}
+
+/** Renders whichever thread kind the diff row holds — local note or GitHub thread. */
+export function DisplayThreadView({ entry }: { entry: DisplayThread }) {
+	return entry.kind === "local" ? (
+		<CommentThreadView thread={entry.thread} />
+	) : (
+		<GitHubThreadView thread={entry.thread} />
+	);
 }
 
 export function CommentThreadView({ thread }: { thread: CommentThread }) {
@@ -115,7 +128,8 @@ export function CommentThreadView({ thread }: { thread: CommentThread }) {
 						<TooltipContent>{isOpen ? "Collapse thread" : "Expand thread"}</TooltipContent>
 					</Tooltip>
 					<ResolveButton isResolved={isResolved} onToggle={handleResolveToggle} />
-					<CommentByline createdAt={root.createdAt} />
+					<ViewerByline createdAt={root.createdAt} />
+					{thread.pending && <PendingBadge />}
 					{idle && (
 						<div className="flex shrink-0 items-center gap-0.5">
 							<Tooltip>
@@ -236,21 +250,209 @@ function ResolveButton({ isResolved, onToggle }: { isResolved: boolean; onToggle
 	);
 }
 
-function CommentByline({ createdAt }: { createdAt: string }) {
+/** Who wrote a comment, however it reached us — the local viewer or a GitHub account. */
+interface CommentAuthor {
+	name: string;
+	avatarUrl: string | null;
+}
+
+function ViewerByline({ createdAt }: { createdAt: string }) {
 	const viewer = useViewer();
+	return <CommentByline author={viewer} createdAt={createdAt} />;
+}
+
+function CommentByline({
+	author,
+	createdAt,
+	url,
+}: {
+	author: CommentAuthor;
+	createdAt: string;
+	/** Links the timestamp out to the comment on GitHub. */
+	url?: string;
+}) {
+	const initial = author.name.trim()[0]?.toUpperCase();
+	const timestamp = (
+		<time dateTime={createdAt} title={new Date(createdAt).toLocaleString()}>
+			{formatTimeAgo(createdAt)}
+		</time>
+	);
 	return (
 		<p className="flex min-w-0 flex-1 items-center gap-1.5 text-muted-foreground text-sm">
 			<Avatar className="size-5 shrink-0">
-				{viewer.avatarUrl && <AvatarImage src={viewer.avatarUrl} alt={viewer.name} />}
+				{author.avatarUrl && <AvatarImage src={author.avatarUrl} alt={author.name} />}
 				<AvatarFallback className="text-[10px]">
-					<User className="size-3" />
+					{initial ?? <User className="size-3" />}
 				</AvatarFallback>
 			</Avatar>
-			<span className="font-medium text-foreground">{viewer.name}</span>
-			<time dateTime={createdAt} title={new Date(createdAt).toLocaleString()}>
-				{formatTimeAgo(createdAt)}
-			</time>
+			<span className="truncate font-medium text-foreground">{author.name}</span>
+			{url ? (
+				<a
+					href={url}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="shrink-0 rounded-sm transition-colors hover:text-foreground hover:underline"
+				>
+					{timestamp}
+				</a>
+			) : (
+				timestamp
+			)}
 		</p>
+	);
+}
+
+/** Marks a local thread that will be posted to the PR when the review is submitted. */
+function PendingBadge() {
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<Badge
+					variant="outline"
+					className="shrink-0 border-amber-600/30 px-2 py-0 text-[11px] text-amber-700 dark:border-amber-500/30 dark:text-amber-500"
+				>
+					Pending
+				</Badge>
+			</TooltipTrigger>
+			<TooltipContent>Posts to the pull request when you finish your review</TooltipContent>
+		</Tooltip>
+	);
+}
+
+function githubAuthor(comment: GitHubComment): CommentAuthor {
+	return { name: comment.author.name ?? comment.author.login, avatarUrl: comment.author.avatarUrl };
+}
+
+/**
+ * A review thread that lives on GitHub. It supports replying and resolving —
+ * editing and deleting stay on GitHub, so this variant has no action menu.
+ */
+function GitHubThreadView({ thread }: { thread: AnchoredGitHubThread }) {
+	const { github } = useCommentThreadsContext();
+	const [isOpen, setIsOpen] = useState(!thread.isResolved);
+	const [isReplying, setIsReplying] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	const root = thread.comments[0];
+	// GitHub always returns a thread with at least its root comment; the empty
+	// case only exists because noUncheckedIndexedAccess types the lookup that way.
+	if (!root) return null;
+	const replies = thread.comments.slice(1);
+
+	async function toggleResolved() {
+		const resolved = !thread.isResolved;
+		if (!resolved || !isReplying) setIsOpen(!resolved);
+		try {
+			await github.setGitHubThreadResolved({
+				threadNodeId: thread.githubThreadId,
+				resolved,
+			});
+		} catch (err) {
+			toast.error(errorMessage(err, "Failed to update the thread on GitHub"));
+		}
+	}
+
+	// An arrow declared after the root guard, so its narrowing holds inside.
+	const submitReply = async (body: string) => {
+		setError(null);
+		try {
+			await github.replyToGitHubThread({ commentId: root.githubCommentId, body });
+			setIsReplying(false);
+		} catch (err) {
+			setError(errorMessage(err, "Failed to post the reply to GitHub"));
+			throw err;
+		}
+	};
+
+	return (
+		<Collapsible
+			open={isOpen}
+			onOpenChange={(open) => {
+				if (!open && isReplying) return;
+				setIsOpen(open);
+			}}
+		>
+			<div
+				className={cn(
+					"rounded-xl border bg-card",
+					thread.isResolved ? "border-border/60" : "border-border",
+				)}
+			>
+				<div className="flex items-center gap-2 p-1.5">
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<CollapsibleTrigger
+								aria-label={isOpen ? "Collapse thread" : "Expand thread"}
+								className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+							>
+								<ChevronRight className="size-3.5 transition-transform duration-200 [[data-state=open]>&]:rotate-90" />
+							</CollapsibleTrigger>
+						</TooltipTrigger>
+						<TooltipContent>{isOpen ? "Collapse thread" : "Expand thread"}</TooltipContent>
+					</Tooltip>
+					<ResolveButton isResolved={thread.isResolved} onToggle={() => void toggleResolved()} />
+					<CommentByline author={githubAuthor(root)} createdAt={root.createdAt} url={root.url} />
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Github className="size-3.5 shrink-0 text-muted-foreground" aria-label="On GitHub" />
+						</TooltipTrigger>
+						<TooltipContent>This conversation lives on GitHub</TooltipContent>
+					</Tooltip>
+					{!isReplying && (
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									aria-label="Reply"
+									className="rounded-md text-muted-foreground"
+									onClick={() => {
+										setIsOpen(true);
+										setError(null);
+										setIsReplying(true);
+									}}
+								>
+									<MessageSquare className="size-3.5" />
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>Reply</TooltipContent>
+						</Tooltip>
+					)}
+				</div>
+
+				<CollapsibleContent className="space-y-3 px-3 pb-3">
+					<Markdown content={root.body} />
+
+					{replies.length > 0 && (
+						<div className="space-y-3 border-border/50 border-l-2 pl-4">
+							{replies.map((reply) => (
+								<div key={reply.githubCommentId} className="space-y-1.5">
+									<CommentByline
+										author={githubAuthor(reply)}
+										createdAt={reply.createdAt}
+										url={reply.url}
+									/>
+									<Markdown content={reply.body} />
+								</div>
+							))}
+						</div>
+					)}
+
+					{isReplying && (
+						<CommentForm
+							label="Reply"
+							placeholder="Write a reply…"
+							error={error}
+							onSubmit={submitReply}
+							onCancel={() => {
+								setIsReplying(false);
+								setError(null);
+							}}
+						/>
+					)}
+				</CollapsibleContent>
+			</div>
+		</Collapsible>
 	);
 }
 
@@ -276,7 +478,7 @@ function ReplyItem({
 	return (
 		<div className="space-y-1.5">
 			<div className="flex items-center gap-2">
-				<CommentByline createdAt={reply.createdAt} />
+				<ViewerByline createdAt={reply.createdAt} />
 				{/* Only when the whole thread is idle, so opening this reply's editor can't
 				    discard another in-progress edit or reply (matches the root comment). */}
 				{idle && <CommentActions onEdit={onEdit} onDelete={onDelete} />}
