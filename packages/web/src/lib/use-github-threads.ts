@@ -31,8 +31,13 @@ export interface UseGitHubThreadsResult {
 	available: boolean;
 	threads: GitHubThreadsResponse["threads"];
 	isLoading: boolean;
+	/** Covers the github-threads fetch only — see the mutation functions below. */
 	error: unknown;
 	refresh: () => Promise<void>;
+	// submitReview/replyToGitHubThread/setGitHubThreadResolved surface no error
+	// state of their own: each rejects on failure, so callers must `try`/`catch`
+	// (or handle the rejection) around the call to detect and surface it — e.g.
+	// as a toast. This mirrors the standard TanStack `mutateAsync` pattern.
 	submitReview: (input: SubmitReviewBody) => Promise<void>;
 	replyToGitHubThread: (input: { commentId: string; body: string }) => Promise<void>;
 	setGitHubThreadResolved: (input: { threadNodeId: string; resolved: boolean }) => Promise<void>;

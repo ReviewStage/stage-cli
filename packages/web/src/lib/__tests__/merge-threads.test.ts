@@ -31,7 +31,7 @@ function makeGitHub(over: Partial<GitHubThread> = {}): GitHubThread {
 }
 
 describe("mergeThreads", () => {
-	it("groups local and anchored GitHub threads by file", () => {
+	it("combines local and anchored GitHub threads into a single per-file group", () => {
 		const { byFile, outdated } = mergeThreads([makeLocal()], [makeGitHub()]);
 		const threads = byFile.get("src/foo.ts") ?? [];
 		expect(threads).toHaveLength(2);
@@ -52,5 +52,32 @@ describe("mergeThreads", () => {
 		);
 		const threads = byFile.get("src/foo.ts") ?? [];
 		expect(threads[0]?.kind).toBe("github");
+	});
+
+	it("keys threads by file path across multiple files", () => {
+		const { byFile } = mergeThreads(
+			[makeLocal({ id: "t-a", filePath: "src/a.ts" })],
+			[makeGitHub({ githubThreadId: "RT_b", filePath: "src/b.ts" })],
+		);
+		expect(byFile.size).toBe(2);
+		expect(byFile.get("src/a.ts")).toHaveLength(1);
+		expect(byFile.get("src/b.ts")).toHaveLength(1);
+		expect(byFile.get("src/a.ts")?.[0]?.kind).toBe("local");
+		expect(byFile.get("src/b.ts")?.[0]?.kind).toBe("github");
+	});
+
+	it("returns empty results for empty input without throwing", () => {
+		const { byFile, outdated } = mergeThreads([], []);
+		expect(byFile.size).toBe(0);
+		expect(outdated).toHaveLength(0);
+	});
+
+	it("preserves local-before-github order for threads tied on start line", () => {
+		const { byFile } = mergeThreads(
+			[makeLocal({ startLine: 10, endLine: 10 })],
+			[makeGitHub({ anchor: { side: "additions", startLine: 10, endLine: 10 } })],
+		);
+		const threads = byFile.get("src/foo.ts") ?? [];
+		expect(threads.map((t) => t.kind)).toEqual(["local", "github"]);
 	});
 });
