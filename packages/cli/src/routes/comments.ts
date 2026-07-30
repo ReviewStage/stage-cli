@@ -5,7 +5,7 @@ import {
 	CreateCommentThreadBodySchema,
 	ResolveThreadBodySchema,
 } from "@stagereview/types/comments";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { LOCAL_USER_ID } from "../db/local-user.js";
 import {
@@ -28,12 +28,12 @@ export function commentRoutes(db: StageDb): Route[] {
 			method: "GET",
 			pattern: "/api/runs/:runId/comment-threads",
 			handler: (_req, res, params) => {
-				const scopeKey = resolveRunScopeKey(db, params.runId);
-				if (scopeKey === null) {
+				const scope = resolveRunCommentScope(db, params.runId);
+				if (scope === null) {
 					writeJson(res, 404, { error: `Run ${params.runId} not found` });
 					return;
 				}
-				writeJson(res, 200, listThreads(db, scopeKey));
+				writeJson(res, 200, listThreads(db, scope));
 			},
 		},
 		{
@@ -41,8 +41,8 @@ export function commentRoutes(db: StageDb): Route[] {
 			pattern: "/api/runs/:runId/comment-threads",
 			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
-				const scopeKey = resolveRunScopeKey(db, params.runId);
-				if (scopeKey === null) {
+				const scope = resolveRunCommentScope(db, params.runId);
+				if (scope === null) {
 					writeJson(res, 404, { error: `Run ${params.runId} not found` });
 					return;
 				}
@@ -53,7 +53,8 @@ export function commentRoutes(db: StageDb): Route[] {
 					const [threadRow] = tx
 						.insert(commentThread)
 						.values({
-							scopeKey,
+							scopeKey: scope.scopeKey,
+							prNumber: scope.prNumber,
 							filePath: body.filePath,
 							side: body.side,
 							startLine: body.startLine,
@@ -208,7 +209,19 @@ export function commentRoutes(db: StageDb): Route[] {
 	];
 }
 
-function resolveRunScopeKey(db: StageDb, runId: string | undefined): string | null {
+export interface RunCommentScope {
+	scopeKey: string;
+	prNumber: number | null;
+}
+
+// Threads are anchored to a diff scope, not a run, so pending review comments and
+// local notes both survive re-imports of the same diff. Visibility then narrows by
+// the requesting run's PR: local notes (prNumber null) are always visible, but a
+// pending comment for PR N is only visible from a run that targets PR N.
+export function resolveRunCommentScope(
+	db: StageDb,
+	runId: string | undefined,
+): RunCommentScope | null {
 	if (!runId) return null;
 	const [run] = db
 		.select({
@@ -217,20 +230,25 @@ function resolveRunScopeKey(db: StageDb, runId: string | undefined): string | nu
 			baseSha: chapterRun.baseSha,
 			headSha: chapterRun.headSha,
 			mergeBaseSha: chapterRun.mergeBaseSha,
+			prNumber: chapterRun.prNumber,
 		})
 		.from(chapterRun)
 		.where(eq(chapterRun.id, runId))
 		.limit(1)
 		.all();
 	if (!run) return null;
-	return deriveScopeKey(run);
+	return { scopeKey: deriveScopeKey(run), prNumber: run.prNumber };
 }
 
-function listThreads(db: StageDb, scopeKey: string): CommentThreadDto[] {
+function listThreads(db: StageDb, scope: RunCommentScope): CommentThreadDto[] {
+	const visible =
+		scope.prNumber === null
+			? isNull(commentThread.prNumber)
+			: or(isNull(commentThread.prNumber), eq(commentThread.prNumber, scope.prNumber));
 	const threads = db
 		.select()
 		.from(commentThread)
-		.where(eq(commentThread.scopeKey, scopeKey))
+		.where(and(eq(commentThread.scopeKey, scope.scopeKey), visible))
 		.orderBy(asc(commentThread.createdAt))
 		.all();
 	if (threads.length === 0) return [];
@@ -283,6 +301,7 @@ function toThreadDto(thread: CommentThreadRow, comments: CommentRow[]): CommentT
 		side: thread.side,
 		startLine: thread.startLine,
 		endLine: thread.endLine,
+		pending: thread.prNumber !== null,
 		resolvedAt: thread.resolvedAt?.toISOString() ?? null,
 		createdAt: thread.createdAt.toISOString(),
 		updatedAt: thread.updatedAt.toISOString(),
