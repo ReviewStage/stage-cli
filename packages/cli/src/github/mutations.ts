@@ -42,6 +42,12 @@ export function ghWriteJson(args: string[], repoRoot: string, input: unknown): P
 				resolve(stdout.trim() ? JSON.parse(stdout) : null);
 			},
 		);
+		// The real failure surfaces through execFile's callback above (spawn
+		// error, or non-zero exit with gh's stderr via ghErrorMessage). This
+		// listener only exists to swallow the duplicate stream-level 'error'
+		// (e.g. EPIPE if gh exits before reading stdin) so it doesn't crash
+		// the process as an unhandled exception.
+		child.stdin?.on("error", () => {});
 		child.stdin?.end(JSON.stringify(input));
 	});
 }
