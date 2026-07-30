@@ -8,6 +8,7 @@ import { filterFilesForLlm, loadStageIgnore } from "./filter-files.js";
 import { readRepoContext, readRepoRoot } from "./git.js";
 import { commentRoutes } from "./routes/comments.js";
 import { diffRoutes } from "./routes/diff.js";
+import { gitHubThreadRoutes } from "./routes/github-threads.js";
 import { pullRequestRoutes } from "./routes/pull-request.js";
 import { pullRequestMutationRoutes } from "./routes/pull-request-mutations.js";
 import { runRoutes } from "./routes/runs.js";
@@ -40,6 +41,7 @@ export async function show(jsonPath: string, options: DiffScopeOptions): Promise
 			...diffRoutes(db),
 			...pullRequestRoutes(db),
 			...pullRequestMutationRoutes(db),
+			...gitHubThreadRoutes(db),
 		],
 	});
 	const { port } = handle;

@@ -14,6 +14,8 @@ export interface RunRepo {
 	originUrl: string | null;
 	/** PR this run targets (`--pr`), or null to fall back to the checked-out branch's PR. */
 	prNumber: number | null;
+	/** The commit this run was generated against — used to detect a moved PR head. */
+	headSha: string;
 }
 
 /** Resolve a run's repo context, writing the matching error response on failure. */
@@ -35,7 +37,7 @@ export function resolveRun(db: StageDb, params: RouteParams, res: Res): RunRepo 
 		});
 		return null;
 	}
-	return { repoRoot, originUrl: run.originUrl, prNumber: run.prNumber };
+	return { repoRoot, originUrl: run.originUrl, prNumber: run.prNumber, headSha: run.headSha };
 }
 
 export function requireRepo(run: RunRepo, res: Res): GitHubRepo | null {
