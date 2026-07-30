@@ -72,9 +72,10 @@ export function gitHubThreadRoutes(db: StageDb): Route[] {
 
 				const scope = resolveRunCommentScope(db, params.runId);
 				if (!scope) {
-					// Unreachable: resolveRun (above) already confirmed the run exists,
-					// and no `await` separates that read from this one, so nothing can
-					// delete the row in between on this single-threaded event loop.
+					// Unreachable: resolveRun (above) already confirmed this run exists,
+					// and no route in the codebase ever deletes a chapter_run row. A miss
+					// here means an invariant broke, not a client error — fail loudly
+					// (500) rather than return a misleading duplicate 404.
 					throw new Error(`Run ${params.runId} vanished between resolveRun calls`);
 				}
 				const pending = listPendingThreads(db, scope.scopeKey, run.prNumber);
