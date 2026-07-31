@@ -48,6 +48,8 @@ export function mergeThreads(local: CommentThread[], github: GitHubThread[]): Me
 	};
 	for (const thread of local) push(thread.filePath, { kind: "local", thread });
 	for (const thread of github) {
+		// Nothing to show for a thread whose comments were all deleted on GitHub.
+		if (thread.comments.length === 0) continue;
 		if (thread.anchor === null) outdated.push(thread);
 		else push(thread.filePath, { kind: "github", thread: { ...thread, anchor: thread.anchor } });
 	}

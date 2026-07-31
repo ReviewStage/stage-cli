@@ -61,6 +61,33 @@ describe("CommentThreadsProvider", () => {
 		);
 	});
 
+	it("surfaces a failed GitHub threads fetch under its own toast id", async () => {
+		// Local threads load fine; only the gh-backed fetch fails.
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: unknown) =>
+				isCommentThreadsRequest(input)
+					? new Response("[]", { status: 200, headers: JSON_HEADERS })
+					: new Response("boom", { status: 500 }),
+			),
+		);
+		const { Wrapper } = makeWrapper();
+
+		render(
+			<CommentThreadsProvider runId="run1">
+				<span>diff</span>
+			</CommentThreadsProvider>,
+			{ wrapper: Wrapper },
+		);
+
+		await waitFor(() =>
+			expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+				"Couldn't load GitHub review comments",
+				expect.objectContaining({ id: "github-threads-error" }),
+			),
+		);
+	});
+
 	it("does not toast when the fetch succeeds with no comments", async () => {
 		stubFetch(200, "[]");
 		const { Wrapper } = makeWrapper();

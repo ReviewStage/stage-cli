@@ -1,5 +1,5 @@
 import type { CommentThread } from "@stagereview/types/comments";
-import type { GitHubThread } from "@stagereview/types/github-threads";
+import type { GitHubComment, GitHubThread } from "@stagereview/types/github-threads";
 import { describe, expect, it } from "vitest";
 import { type DisplayThread, mergeThreads } from "../merge-threads";
 
@@ -19,13 +19,24 @@ function makeLocal(over: Partial<CommentThread> = {}): CommentThread {
 	};
 }
 
+function makeGitHubComment(): GitHubComment {
+	return {
+		githubCommentId: "12345",
+		body: "Needs a null check.",
+		author: { login: "octocat", name: "Mona", avatarUrl: null },
+		createdAt: "2026-07-01T00:00:00Z",
+		url: "https://github.com/o/r/pull/1#discussion_r12345",
+		viewerDidAuthor: false,
+	};
+}
+
 function makeGitHub(over: Partial<GitHubThread> = {}): GitHubThread {
 	return {
 		githubThreadId: "RT_1",
 		filePath: "src/foo.ts",
 		anchor: { side: "additions", startLine: 10, endLine: 10 },
 		isResolved: false,
-		comments: [],
+		comments: [makeGitHubComment()],
 		...over,
 	};
 }
@@ -64,6 +75,18 @@ describe("mergeThreads", () => {
 		expect(byFile.get("src/b.ts")).toHaveLength(1);
 		expect(byFile.get("src/a.ts")?.[0]?.kind).toBe("local");
 		expect(byFile.get("src/b.ts")?.[0]?.kind).toBe("github");
+	});
+
+	it("drops GitHub threads whose comments were all deleted, anchored or not", () => {
+		const { byFile, outdated } = mergeThreads(
+			[],
+			[
+				makeGitHub({ comments: [] }),
+				makeGitHub({ githubThreadId: "RT_2", anchor: null, comments: [] }),
+			],
+		);
+		expect(byFile.size).toBe(0);
+		expect(outdated).toHaveLength(0);
 	});
 
 	it("returns empty results for empty input without throwing", () => {

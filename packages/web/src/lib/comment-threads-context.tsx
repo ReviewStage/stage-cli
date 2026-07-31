@@ -14,6 +14,28 @@ export interface CommentThreadsContextValue extends UseCommentThreadsResult {
 const CommentThreadsContext = createContext<CommentThreadsContextValue | null>(null);
 
 const LOAD_ERROR_TOAST_ID = "comment-threads-error";
+const GITHUB_LOAD_ERROR_TOAST_ID = "github-threads-error";
+
+/**
+ * A failed threads fetch is otherwise indistinguishable from "no comments" — the
+ * diff still renders, but the overlay is silently empty. Surface it as a toast
+ * (React Query only sets `error` once its retries are exhausted), and dismiss it
+ * once a later fetch recovers so a stale message doesn't linger.
+ */
+function useLoadErrorToast(error: unknown, toastId: string, title: string): void {
+	useEffect(() => {
+		if (!error) {
+			toast.dismiss(toastId);
+			return;
+		}
+		// Stable id so a re-fire (StrictMode double-mount, remount with a cached error,
+		// refetch failing with a new error reference) updates one toast instead of stacking.
+		toast.error(title, {
+			id: toastId,
+			description: error instanceof Error ? error.message : undefined,
+		});
+	}, [error, toastId, title]);
+}
 
 /**
  * Provides the run's comment threads + mutations to the diff tree without
@@ -40,22 +62,14 @@ export function CommentThreadsProvider({
 		[local, github, merged],
 	);
 
-	// A failed threads fetch is otherwise indistinguishable from "no comments" —
-	// the diff still renders, but the overlay is silently empty. Surface it as a
-	// toast (React Query only sets `error` once its retries are exhausted), and
-	// dismiss it once a later fetch recovers so a stale message doesn't linger.
-	useEffect(() => {
-		if (!value.error) {
-			toast.dismiss(LOAD_ERROR_TOAST_ID);
-			return;
-		}
-		// Stable id so a re-fire (StrictMode double-mount, remount with a cached error,
-		// refetch failing with a new error reference) updates one toast instead of stacking.
-		toast.error("Couldn't load comments", {
-			id: LOAD_ERROR_TOAST_ID,
-			description: value.error instanceof Error ? value.error.message : undefined,
-		});
-	}, [value.error]);
+	useLoadErrorToast(local.error, LOAD_ERROR_TOAST_ID, "Couldn't load comments");
+	// Without this the failure looks exactly like a PR with no review comments:
+	// no threads, no outdated list, no review toolbar, no explanation.
+	useLoadErrorToast(
+		github.error,
+		GITHUB_LOAD_ERROR_TOAST_ID,
+		"Couldn't load GitHub review comments",
+	);
 
 	return <CommentThreadsContext.Provider value={value}>{children}</CommentThreadsContext.Provider>;
 }
