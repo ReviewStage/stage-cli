@@ -65,6 +65,23 @@ describe("POST /api/runs/:runId/github-threads/:commentId/replies", () => {
 		);
 		expect(res.status).toBe(403);
 	});
+
+	it("rejects a non-numeric commentId with 400 without invoking gh", async () => {
+		await env.writeFakeGh(SUCCESS_GH_SCRIPT);
+		const runId = env.seedRun(7);
+		const port = await start();
+
+		// %2F decodes to `/` inside the captured param — a path-traversal attempt
+		// against `repos/:owner/:repo/pulls/:n/comments/:commentId/replies`.
+		const res = await send(
+			port,
+			"POST",
+			`/api/runs/${runId}/github-threads/..%2F..%2Fusers/replies`,
+			{ body: "reply" },
+		);
+		expect(res.status).toBe(400);
+		await expect(fs.access(path.join(env.binDir, "args.log"))).rejects.toThrow();
+	});
 });
 
 describe("PATCH /api/runs/:runId/github-threads/:threadNodeId/resolve", () => {
@@ -117,5 +134,22 @@ describe("PATCH /api/runs/:runId/github-threads/:threadNodeId/resolve", () => {
 			{ Origin: "http://evil.example" },
 		);
 		expect(res.status).toBe(403);
+	});
+
+	it("rejects a threadNodeId containing '@' with 400 without invoking gh", async () => {
+		await env.writeFakeGh(SUCCESS_GH_SCRIPT);
+		const runId = env.seedRun(7);
+		const port = await start();
+
+		// %40 decodes to `@` — gh's `-F`/`-f` treat an `@`-prefixed value as "read
+		// this file from disk," so this charset must be rejected before it reaches gh.
+		const res = await send(
+			port,
+			"PATCH",
+			`/api/runs/${runId}/github-threads/%40%2Fetc%2Fpasswd/resolve`,
+			{ resolved: true },
+		);
+		expect(res.status).toBe(400);
+		await expect(fs.access(path.join(env.binDir, "args.log"))).rejects.toThrow();
 	});
 });

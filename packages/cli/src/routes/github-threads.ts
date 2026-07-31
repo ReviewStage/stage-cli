@@ -4,7 +4,7 @@ import {
 	type GitHubThreadsResponse,
 	SubmitReviewBodySchema,
 } from "@stagereview/types/github-threads";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import {
 	type CommentRow,
@@ -31,6 +31,15 @@ import {
 } from "./pull-request-shared.js";
 
 const UNAVAILABLE: GitHubThreadsResponse = { available: false, threads: [] };
+
+// `commentId` and `threadNodeId` flow straight into `gh` argv (see mutations.ts),
+// so they're validated here at the route boundary rather than deep in the gh
+// helpers. `commentId` is documented as a REST database id (numeric); a decoded
+// `../` would rewrite which endpoint gets POSTed to. `threadNodeId` is a GraphQL
+// node id — the charset deliberately excludes `@` (gh's `-F`/`-f` "read from file"
+// marker), `/`, and `.` to rule out path-like values entirely.
+const COMMENT_ID_PATTERN = /^\d+$/;
+const THREAD_NODE_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
  * Routes for GitHub review threads: a live-fetch GET (GitHub stays the source
@@ -119,6 +128,10 @@ export function gitHubThreadRoutes(db: StageDb): Route[] {
 					writeJson(res, 400, { error: "Run has no associated pull request" });
 					return;
 				}
+				if (!COMMENT_ID_PATTERN.test(commentId)) {
+					writeJson(res, 400, { error: "Invalid commentId" });
+					return;
+				}
 				const body = await parseJsonBody(req, res, GitHubReplyBodySchema);
 				if (!body) return;
 				const replied = await runGhMutation(
@@ -142,6 +155,10 @@ export function gitHubThreadRoutes(db: StageDb): Route[] {
 					writeJson(res, 400, { error: "Missing threadNodeId" });
 					return;
 				}
+				if (!THREAD_NODE_ID_PATTERN.test(threadNodeId)) {
+					writeJson(res, 400, { error: "Invalid threadNodeId" });
+					return;
+				}
 				const body = await parseJsonBody(req, res, GitHubResolveBodySchema);
 				if (!body) return;
 				const resolved = await runGhMutation(
@@ -162,16 +179,24 @@ interface PendingThread {
 }
 
 /**
- * Pending threads for this scope + PR, each with its ordered comments. Mirrors
- * `listThreads` in comments.ts: one query for the threads, one batched query
- * (via `inArray`) for all their comments, grouped back in memory — instead of
- * a per-thread query.
+ * Pending, unresolved threads for this scope + PR, each with its ordered
+ * comments. A thread the user resolved locally before submitting shouldn't be
+ * published — resolving is how they mark it "no longer worth raising".
+ * Mirrors `listThreads` in comments.ts: one query for the threads, one batched
+ * query (via `inArray`) for all their comments, grouped back in memory —
+ * instead of a per-thread query.
  */
 function listPendingThreads(db: StageDb, scopeKey: string, prNumber: number): PendingThread[] {
 	const threads = db
 		.select()
 		.from(commentThread)
-		.where(and(eq(commentThread.scopeKey, scopeKey), eq(commentThread.prNumber, prNumber)))
+		.where(
+			and(
+				eq(commentThread.scopeKey, scopeKey),
+				eq(commentThread.prNumber, prNumber),
+				isNull(commentThread.resolvedAt),
+			),
+		)
 		.orderBy(asc(commentThread.createdAt))
 		.all();
 	if (threads.length === 0) return [];

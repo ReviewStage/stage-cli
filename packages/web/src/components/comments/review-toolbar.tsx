@@ -34,10 +34,16 @@ function Divider() {
  */
 export function ReviewToolbar() {
 	const { threads, github } = useCommentThreadsContext();
-	// The server posts each pending thread as a single review comment (replies are
-	// folded into that comment's body), so threads and comments count 1:1 here.
+	// The server posts each pending, unresolved thread as a single review comment
+	// (replies are folded into that comment's body), so threads and comments count
+	// 1:1 here. Resolved threads are excluded to match the submit route, which
+	// never publishes a thread the user already marked resolved.
 	const pendingCount = useMemo(
-		() => threads.reduce((count, thread) => (thread.pending ? count + 1 : count), 0),
+		() =>
+			threads.reduce(
+				(count, thread) => (thread.pending && !thread.resolvedAt ? count + 1 : count),
+				0,
+			),
 		[threads],
 	);
 

@@ -149,19 +149,23 @@ export async function fetchReviewThreads(
 		const threads: GitHubThread[] = [];
 		let cursor: string | null = null;
 		for (;;) {
+			// `owner`/`repo`/`cursor` are String! variables: `-f` (raw-field) sends
+			// them as-is. `-F` would coerce an all-digit owner/repo name to a JSON
+			// number (breaking the query) and treats a leading `@` as "read from
+			// file". `number` is a genuine Int!, so it keeps `-F`.
 			const args = [
 				"api",
 				"graphql",
 				"-f",
 				`query=${REVIEW_THREADS_QUERY}`,
-				"-F",
+				"-f",
 				`owner=${repo.owner}`,
-				"-F",
+				"-f",
 				`repo=${repo.repo}`,
 				"-F",
 				`number=${prNumber}`,
 			];
-			if (cursor !== null) args.push("-F", `cursor=${cursor}`);
+			if (cursor !== null) args.push("-f", `cursor=${cursor}`);
 			const stdout = await gh(args, repoRoot);
 			const parsed = GhResponseSchema.safeParse(JSON.parse(stdout));
 			if (!parsed.success) return null;

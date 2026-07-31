@@ -195,8 +195,11 @@ export function setReviewThreadResolved(
 	const mutation = resolved
 		? "mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { id } } }"
 		: "mutation($id: ID!) { unresolveReviewThread(input: { threadId: $id }) { thread { id } } }";
+	// `-f` (raw-field): `threadNodeId` is a String! GraphQL variable. `-F` would
+	// treat a leading `@` as "read this value from a file on disk" — a real
+	// local-file-exfiltration vector for an untrusted node id.
 	return ghWrite(
-		["api", "graphql", "-f", `query=${mutation}`, "-F", `id=${threadNodeId}`],
+		["api", "graphql", "-f", `query=${mutation}`, "-f", `id=${threadNodeId}`],
 		repoRoot,
 	);
 }
