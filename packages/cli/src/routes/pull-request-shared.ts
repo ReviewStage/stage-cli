@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { chapterRun } from "../db/schema/index.js";
 import { type GitHubRepo, parseGitHubRepo } from "../github/index.js";
+import { deriveScopeKey } from "../runs/scope-key.js";
 import type { RouteHandler, RouteParams } from "../server.js";
 import { writeJson } from "./json.js";
 
@@ -16,6 +17,8 @@ export interface RunRepo {
 	prNumber: number | null;
 	/** The commit this run was generated against — used to detect a moved PR head. */
 	headSha: string;
+	/** Deterministic diff-scope key (see `deriveScopeKey`) — comment threads are keyed on this. */
+	scopeKey: string;
 }
 
 /** Resolve a run's repo context, writing the matching error response on failure. */
@@ -37,7 +40,32 @@ export function resolveRun(db: StageDb, params: RouteParams, res: Res): RunRepo 
 		});
 		return null;
 	}
-	return { repoRoot, originUrl: run.originUrl, prNumber: run.prNumber, headSha: run.headSha };
+	return {
+		repoRoot,
+		originUrl: run.originUrl,
+		prNumber: run.prNumber,
+		headSha: run.headSha,
+		scopeKey: deriveScopeKey(run),
+	};
+}
+
+/**
+ * Run a `gh`-backed mutation, writing an `errorStatus` error response and
+ * returning false if it throws. Callers write their own success response
+ * (the shape varies), so this only owns the shared try/catch skeleton.
+ */
+export async function runGhMutation(
+	res: Res,
+	fn: () => Promise<void>,
+	errorStatus: number,
+): Promise<boolean> {
+	try {
+		await fn();
+		return true;
+	} catch (err) {
+		writeJson(res, errorStatus, { error: err instanceof Error ? err.message : String(err) });
+		return false;
+	}
 }
 
 export function requireRepo(run: RunRepo, res: Res): GitHubRepo | null {

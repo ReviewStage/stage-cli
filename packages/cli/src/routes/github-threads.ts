@@ -22,9 +22,13 @@ import {
 import { fetchReviewThreads } from "../github/review-comments.js";
 import { DIFF_SIDE } from "../schema.js";
 import type { Route } from "../server.js";
-import { resolveRunCommentScope } from "./comments.js";
 import { parseJsonBody, writeJson } from "./json.js";
-import { enforceSameOrigin, requireRepo, resolveRun } from "./pull-request-shared.js";
+import {
+	enforceSameOrigin,
+	requireRepo,
+	resolveRun,
+	runGhMutation,
+} from "./pull-request-shared.js";
 
 const UNAVAILABLE: GitHubThreadsResponse = { available: false, threads: [] };
 
@@ -63,35 +67,30 @@ export function gitHubThreadRoutes(db: StageDb): Route[] {
 				if (!run) return;
 				const repo = requireRepo(run, res);
 				if (!repo) return;
-				if (run.prNumber === null) {
+				const prNumber = run.prNumber;
+				if (prNumber === null) {
 					writeJson(res, 400, { error: "Run has no associated pull request" });
 					return;
 				}
 				const body = await parseJsonBody(req, res, SubmitReviewBodySchema);
 				if (!body) return;
 
-				const scope = resolveRunCommentScope(db, params.runId);
-				if (!scope) {
-					// Unreachable: resolveRun (above) already confirmed this run exists,
-					// and no route in the codebase ever deletes a chapter_run row. A miss
-					// here means an invariant broke, not a client error — fail loudly
-					// (500) rather than return a misleading duplicate 404.
-					throw new Error(`Run ${params.runId} vanished between resolveRun calls`);
-				}
-				const pending = listPendingThreads(db, scope.scopeKey, run.prNumber);
+				const pending = listPendingThreads(db, run.scopeKey, prNumber);
 				const comments = pending.map(toReviewCommentInput);
-				try {
-					await submitReview(run.repoRoot, repo, run.prNumber, {
-						commit_id: run.headSha,
-						event: body.event,
-						body: body.body,
-						comments,
-					});
-				} catch (err) {
-					// Nothing was deleted — pending comments survive a failed submit.
-					writeJson(res, 502, { error: err instanceof Error ? err.message : String(err) });
-					return;
-				}
+				const submitted = await runGhMutation(
+					res,
+					async () => {
+						await submitReview(run.repoRoot, repo, prNumber, {
+							commit_id: run.headSha,
+							event: body.event,
+							body: body.body,
+							comments,
+						});
+					},
+					502,
+				);
+				// Nothing was deleted on failure — pending comments survive a failed submit.
+				if (!submitted) return;
 				// GitHub accepted the review: it is now the source of truth, so drop
 				// the local pending rows (the live github-threads fetch shows them).
 				db.delete(commentThread)
@@ -115,18 +114,19 @@ export function gitHubThreadRoutes(db: StageDb): Route[] {
 				const repo = requireRepo(run, res);
 				if (!repo) return;
 				const commentId = params.commentId;
-				if (run.prNumber === null || !commentId) {
+				const prNumber = run.prNumber;
+				if (prNumber === null || !commentId) {
 					writeJson(res, 400, { error: "Run has no associated pull request" });
 					return;
 				}
 				const body = await parseJsonBody(req, res, GitHubReplyBodySchema);
 				if (!body) return;
-				try {
-					await replyToReviewComment(run.repoRoot, repo, run.prNumber, commentId, body.body);
-				} catch (err) {
-					writeJson(res, 502, { error: err instanceof Error ? err.message : String(err) });
-					return;
-				}
+				const replied = await runGhMutation(
+					res,
+					() => replyToReviewComment(run.repoRoot, repo, prNumber, commentId, body.body),
+					502,
+				);
+				if (!replied) return;
 				writeJson(res, 200, {});
 			},
 		},
@@ -144,12 +144,12 @@ export function gitHubThreadRoutes(db: StageDb): Route[] {
 				}
 				const body = await parseJsonBody(req, res, GitHubResolveBodySchema);
 				if (!body) return;
-				try {
-					await setReviewThreadResolved(run.repoRoot, threadNodeId, body.resolved);
-				} catch (err) {
-					writeJson(res, 502, { error: err instanceof Error ? err.message : String(err) });
-					return;
-				}
+				const resolved = await runGhMutation(
+					res,
+					() => setReviewThreadResolved(run.repoRoot, threadNodeId, body.resolved),
+					502,
+				);
+				if (!resolved) return;
 				writeJson(res, 200, {});
 			},
 		},
@@ -161,7 +161,12 @@ interface PendingThread {
 	comments: CommentRow[];
 }
 
-/** Pending threads for this scope + PR, each with its ordered comments. */
+/**
+ * Pending threads for this scope + PR, each with its ordered comments. Mirrors
+ * `listThreads` in comments.ts: one query for the threads, one batched query
+ * (via `inArray`) for all their comments, grouped back in memory — instead of
+ * a per-thread query.
+ */
 function listPendingThreads(db: StageDb, scopeKey: string, prNumber: number): PendingThread[] {
 	const threads = db
 		.select()
@@ -169,15 +174,27 @@ function listPendingThreads(db: StageDb, scopeKey: string, prNumber: number): Pe
 		.where(and(eq(commentThread.scopeKey, scopeKey), eq(commentThread.prNumber, prNumber)))
 		.orderBy(asc(commentThread.createdAt))
 		.all();
-	return threads.map((thread) => ({
-		thread,
-		comments: db
-			.select()
-			.from(comment)
-			.where(eq(comment.threadId, thread.id))
-			.orderBy(asc(comment.createdAt))
-			.all(),
-	}));
+	if (threads.length === 0) return [];
+
+	const comments = db
+		.select()
+		.from(comment)
+		.where(
+			inArray(
+				comment.threadId,
+				threads.map((t) => t.id),
+			),
+		)
+		.orderBy(asc(comment.createdAt))
+		.all();
+
+	const byThread = new Map<string, CommentRow[]>();
+	for (const c of comments) {
+		const list = byThread.get(c.threadId);
+		if (list) list.push(c);
+		else byThread.set(c.threadId, [c]);
+	}
+	return threads.map((thread) => ({ thread, comments: byThread.get(thread.id) ?? [] }));
 }
 
 const GH_SIDE: Record<CommentThreadRow["side"], "LEFT" | "RIGHT"> = {

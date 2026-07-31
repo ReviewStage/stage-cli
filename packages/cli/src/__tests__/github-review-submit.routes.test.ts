@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { CreateCommentThreadBody } from "@stagereview/types/comments";
+import type { CommentThread, CreateCommentThreadBody } from "@stagereview/types/comments";
 import { describe, expect, it } from "vitest";
 import { getDb } from "../db/client.js";
 import { commentThread } from "../db/schema/index.js";
@@ -33,8 +33,13 @@ async function startWithRoutes(): Promise<{ port: number }> {
 	return { port };
 }
 
-function createThread(port: number, runId: string, over: Partial<CreateCommentThreadBody> = {}) {
-	return send(port, "POST", `/api/runs/${runId}/comment-threads`, makeThreadBody(over));
+async function createThread(
+	port: number,
+	runId: string,
+	over: Partial<CreateCommentThreadBody> = {},
+): Promise<CommentThread> {
+	const res = await send(port, "POST", `/api/runs/${runId}/comment-threads`, makeThreadBody(over));
+	return JSON.parse(res.body) as CommentThread;
 }
 
 describe("POST /api/runs/:runId/review", () => {
@@ -136,5 +141,52 @@ describe("POST /api/runs/:runId/review", () => {
 			body: "x",
 		});
 		expect(res.status).toBe(404);
+	});
+
+	it("maps a deletions-side thread to the LEFT side", async () => {
+		await env.writeFakeGh(SUCCESS_GH_SCRIPT);
+		const runId = env.seedRun(7);
+		const { port } = await startWithRoutes();
+		await createThread(port, runId, { side: "deletions", startLine: 3, endLine: 3 });
+
+		await send(port, "POST", `/api/runs/${runId}/review`, { event: "COMMENT", body: "x" });
+
+		const payload = JSON.parse(await fs.readFile(path.join(env.binDir, "stdin.log"), "utf8"));
+		expect(payload.comments[0]).toMatchObject({ side: "LEFT" });
+		expect(payload.comments[0].start_side).toBeUndefined();
+	});
+
+	it("joins multiple comments on a thread with a separator", async () => {
+		await env.writeFakeGh(SUCCESS_GH_SCRIPT);
+		const runId = env.seedRun(7);
+		const { port } = await startWithRoutes();
+		const thread = await createThread(port, runId, { body: "first" });
+		await send(port, "POST", `/api/comment-threads/${thread.id}/replies`, { body: "second" });
+
+		await send(port, "POST", `/api/runs/${runId}/review`, { event: "COMMENT", body: "x" });
+
+		const payload = JSON.parse(await fs.readFile(path.join(env.binDir, "stdin.log"), "utf8"));
+		expect(payload.comments[0].body).toBe("first\n\n---\n\nsecond");
+	});
+
+	it("rejects a malformed body (missing event) with 400", async () => {
+		await env.writeFakeGh(SUCCESS_GH_SCRIPT);
+		const runId = env.seedRun(7);
+		const { port } = await startWithRoutes();
+
+		const res = await send(port, "POST", `/api/runs/${runId}/review`, { body: "x" });
+		expect(res.status).toBe(400);
+	});
+
+	it("rejects an invalid event enum value with 400", async () => {
+		await env.writeFakeGh(SUCCESS_GH_SCRIPT);
+		const runId = env.seedRun(7);
+		const { port } = await startWithRoutes();
+
+		const res = await send(port, "POST", `/api/runs/${runId}/review`, {
+			event: "NOT_A_REAL_EVENT",
+			body: "x",
+		});
+		expect(res.status).toBe(400);
 	});
 });

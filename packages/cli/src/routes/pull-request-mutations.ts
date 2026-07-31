@@ -17,7 +17,12 @@ import {
 } from "../github/index.js";
 import type { Route, RouteHandler } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
-import { enforceSameOrigin, requireRepo, resolveRun } from "./pull-request-shared.js";
+import {
+	enforceSameOrigin,
+	requireRepo,
+	resolveRun,
+	runGhMutation,
+} from "./pull-request-shared.js";
 
 type Res = Parameters<RouteHandler>[1];
 
@@ -42,12 +47,7 @@ const reviewersInput = z.object({ number: numberField, reviewers: z.array(z.stri
 
 /** Run a gh write, surfacing failures as a 500 so the UI can toast the message. */
 async function runMutation(res: Res, fn: () => Promise<void>): Promise<void> {
-	try {
-		await fn();
-		writeJson(res, 200, { ok: true });
-	} catch (err) {
-		writeJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
-	}
+	if (await runGhMutation(res, fn, 500)) writeJson(res, 200, { ok: true });
 }
 
 export function pullRequestMutationRoutes(db: StageDb): Route[] {
