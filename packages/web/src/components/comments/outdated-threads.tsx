@@ -1,10 +1,9 @@
-import type { GitHubComment, GitHubThread } from "@stagereview/types/github-threads";
+import type { GitHubThread } from "@stagereview/types/github-threads";
 import { ChevronRight, ExternalLink } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Markdown } from "@/components/ui/markdown";
 import { useCommentThreadsContext } from "@/lib/comment-threads-context";
-import { formatTimeAgo } from "@/lib/format";
+import { CommentByline, gitHubByline } from "./comment-byline";
 
 /**
  * GitHub threads that can't be shown inline — GitHub marked them outdated, the
@@ -17,7 +16,7 @@ export function OutdatedThreads() {
 
 	return (
 		<Collapsible className="mt-6 rounded-xl border border-border bg-card">
-			<CollapsibleTrigger className="group flex w-full items-center gap-2 px-3 py-2.5 text-left">
+			<CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-2 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:rounded-b-none">
 				<ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-90" />
 				<span className="font-medium text-sm">Outdated comments</span>
 				<span className="text-muted-foreground text-xs tabular-nums">{merged.outdated.length}</span>
@@ -35,47 +34,29 @@ export function OutdatedThreads() {
 }
 
 function OutdatedThreadItem({ thread }: { thread: GitHubThread }) {
-	// A thread always arrives with its root comment; the empty case only exists
-	// because noUncheckedIndexedAccess types the lookup as possibly-undefined.
+	// mergeThreads drops comment-less threads, so this only satisfies
+	// noUncheckedIndexedAccess.
 	const root = thread.comments[0];
+	if (!root) return null;
+
 	return (
 		<div className="space-y-2 px-3 py-3">
 			<div className="flex min-w-0 items-center gap-2">
 				<p className="min-w-0 flex-1 truncate font-mono text-muted-foreground text-xs">
 					{thread.filePath}
 				</p>
-				{root && (
-					<a
-						href={root.url}
-						target="_blank"
-						rel="noopener noreferrer"
-						className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs transition-colors hover:text-foreground hover:underline"
-					>
-						View on GitHub
-						<ExternalLink className="size-3" aria-hidden="true" />
-					</a>
-				)}
+				<a
+					href={root.url}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs transition-colors hover:text-foreground hover:underline"
+				>
+					View on GitHub
+					<ExternalLink className="size-3" aria-hidden="true" />
+				</a>
 			</div>
-			{root && <RootComment comment={root} />}
+			<CommentByline comment={gitHubByline(root)} />
+			<Markdown content={root.body} />
 		</div>
-	);
-}
-
-function RootComment({ comment }: { comment: GitHubComment }) {
-	const author = comment.author.name ?? comment.author.login;
-	return (
-		<>
-			<div className="flex items-center gap-1.5 text-muted-foreground text-sm">
-				<Avatar className="size-5 shrink-0">
-					{comment.author.avatarUrl && <AvatarImage src={comment.author.avatarUrl} alt={author} />}
-					<AvatarFallback className="text-[10px]">{author.trim()[0]?.toUpperCase()}</AvatarFallback>
-				</Avatar>
-				<span className="truncate font-medium text-foreground">{author}</span>
-				<time dateTime={comment.createdAt} title={new Date(comment.createdAt).toLocaleString()}>
-					{formatTimeAgo(comment.createdAt)}
-				</time>
-			</div>
-			<Markdown content={comment.body} />
-		</>
 	);
 }
