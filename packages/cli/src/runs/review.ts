@@ -33,6 +33,7 @@ import {
 	type GitHubReview,
 	getPromotionThreadState,
 	getReview,
+	type PromotionThreadState,
 	setThreadResolved,
 	submitReview,
 	updateReviewComment,
@@ -467,11 +468,25 @@ async function promoteLocalThread(
 			409,
 		);
 	}
-	if (checkpoint !== null) {
-		await releaseCrossPullRequestPromotion(db, run, localThreadId, checkpoint);
-	}
+	const checkpointRemote =
+		checkpoint === null
+			? null
+			: await releaseCrossPullRequestPromotion(db, run, localThreadId, checkpoint);
 
 	await withLockedReviewTarget(run, async ({ review }) => {
+		const originatingViewer = checkpoint?.viewerLogin ?? checkpointRemote?.rootAuthorLogin ?? null;
+		if (originatingViewer !== null && originatingViewer !== review.viewerLogin) {
+			throw new ReviewError(
+				`This comment promotion belongs to GitHub user ${originatingViewer}. Switch back to that account to resume it.`,
+				409,
+			);
+		}
+		if (checkpoint !== null && checkpoint.viewerLogin === null && originatingViewer !== null) {
+			db.update(commentThread)
+				.set({ promotionViewerLogin: originatingViewer })
+				.where(eq(commentThread.id, localThreadId))
+				.run();
+		}
 		try {
 			assertPushable(run, review);
 			if (checkpoint !== null && checkpoint.pullRequestNodeId !== review.pullRequestNodeId) {
@@ -577,6 +592,7 @@ async function promoteLocalThread(
 						promotionPullRequestNodeId: review.pullRequestNodeId,
 						promotionThreadNodeId: addedThread.threadNodeId,
 						promotionRootCommentNodeId: addedThread.rootCommentNodeId,
+						promotionViewerLogin: review.viewerLogin,
 						promotionReplyCount: 0,
 					})
 					.where(eq(commentThread.id, localThreadId))
@@ -606,7 +622,9 @@ async function promoteLocalThread(
 				try {
 					await deleteReviewComment(run.repoRoot, addedThread.rootCommentNodeId);
 					remoteRootRolledBack = true;
-				} catch {}
+				} catch (rollbackError) {
+					reportPromotionCleanupFailure("delete partial GitHub promotion", rollbackError);
+				}
 			}
 			if (created && reviewNodeId !== null) {
 				try {
@@ -619,7 +637,9 @@ async function promoteLocalThread(
 							.where(eq(commentThread.id, localThreadId))
 							.run();
 					}
-				} catch {}
+				} catch (discardError) {
+					reportPromotionCleanupFailure("discard promotion review", discardError);
+				}
 			}
 			if (remoteRootRolledBack) clearPromotionProgress(db, localThreadId);
 			if (wasUnassigned && remoteRootRolledBack) {
@@ -639,6 +659,7 @@ interface PromotionCheckpoint {
 	pullRequestNodeId: string;
 	threadNodeId: string;
 	rootCommentNodeId: string;
+	viewerLogin: string | null;
 }
 
 function readPromotionCheckpoint(
@@ -655,7 +676,12 @@ function readPromotionCheckpoint(
 			409,
 		);
 	}
-	return { pullRequestNodeId, threadNodeId, rootCommentNodeId };
+	return {
+		pullRequestNodeId,
+		threadNodeId,
+		rootCommentNodeId,
+		viewerLogin: thread.promotionViewerLogin,
+	};
 }
 
 async function releaseCrossPullRequestPromotion(
@@ -663,28 +689,37 @@ async function releaseCrossPullRequestPromotion(
 	run: ChapterRunRow,
 	localThreadId: string,
 	checkpoint: PromotionCheckpoint,
-): Promise<void> {
+): Promise<PromotionThreadState | null> {
 	const remote = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
 	if (
 		remote === null ||
 		remote.pullRequestNodeId !== checkpoint.pullRequestNodeId ||
 		remote.rootCommentNodeId !== checkpoint.rootCommentNodeId
 	) {
-		return;
+		return null;
 	}
 	const identity = await resolveReviewIdentity(run);
-	if (remote.pullRequestNumber === identity.prNumber) return;
+	const sameTarget =
+		remote.pullRequestNumber === identity.prNumber &&
+		remote.repo.owner.toLowerCase() === identity.repo.owner.toLowerCase() &&
+		remote.repo.repo.toLowerCase() === identity.repo.repo.toLowerCase();
+	if (sameTarget) return remote;
+	let released = false;
 	await reviewActions.run(
 		{
 			kind: REVIEW_ACTION_SCOPE.PULL_REQUEST,
-			owner: identity.repo.owner,
-			repo: identity.repo.repo,
+			owner: remote.repo.owner,
+			repo: remote.repo.repo,
 			prNumber: remote.pullRequestNumber,
 		},
-		() => releasePromotionCheckpoint(db, run, localThreadId, checkpoint),
+		async () => {
+			released = await releasePromotionCheckpoint(db, run, localThreadId, checkpoint);
+		},
 	);
 	throw new ReviewError(
-		"This comment promotion belonged to another pull request and was released. Try adding it to this review again.",
+		released
+			? "This comment promotion belonged to another pull request and was released. Try adding it to this review again."
+			: "This comment promotion belongs to another pull request and is already published there.",
 		409,
 	);
 }
@@ -694,17 +729,18 @@ async function releasePromotionCheckpoint(
 	run: ChapterRunRow,
 	localThreadId: string,
 	checkpoint: PromotionCheckpoint,
-): Promise<void> {
+): Promise<boolean> {
 	const remote = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
 	if (
 		remote !== null &&
 		remote.pullRequestNodeId === checkpoint.pullRequestNodeId &&
-		remote.rootCommentNodeId === checkpoint.rootCommentNodeId &&
-		remote.rootIsPending
+		remote.rootCommentNodeId === checkpoint.rootCommentNodeId
 	) {
+		if (!remote.rootIsPending) return false;
 		await deleteReviewComment(run.repoRoot, checkpoint.rootCommentNodeId);
 	}
 	clearPromotionProgress(db, localThreadId);
+	return true;
 }
 
 function clearPromotionProgress(db: StageDb, localThreadId: string): void {
@@ -713,10 +749,16 @@ function clearPromotionProgress(db: StageDb, localThreadId: string): void {
 			promotionPullRequestNodeId: null,
 			promotionThreadNodeId: null,
 			promotionRootCommentNodeId: null,
+			promotionViewerLogin: null,
 			promotionReplyCount: 0,
 		})
 		.where(eq(commentThread.id, localThreadId))
 		.run();
+}
+
+function reportPromotionCleanupFailure(action: string, error: unknown): void {
+	const message = error instanceof Error ? error.message : String(error);
+	process.stderr.write(`Failed to ${action}: ${message}\n`);
 }
 
 export interface PendingCommentAnchor {

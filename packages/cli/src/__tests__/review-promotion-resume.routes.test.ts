@@ -149,7 +149,8 @@ describe("review API — promotion resume", () => {
 		const [savedThread] = harness.db.select().from(commentThread).all();
 
 		expect(promotion.status, promotion.body).toBe(409);
-		expect(savedThread?.promotionPullRequestNodeId).toBeNull();
+		expect(savedThread?.promotionPullRequestNodeId).toBe("PR_node");
+		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
 		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(0);
 	});
 });

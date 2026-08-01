@@ -24,6 +24,8 @@ export const commentThread = sqliteTable(
 		promotionThreadNodeId: text(),
 		/** Root comment used to roll back an interrupted promotion safely. */
 		promotionRootCommentNodeId: text(),
+		/** GitHub viewer that created the interrupted promotion. */
+		promotionViewerLogin: text(),
 		/** Number of local replies already copied to the promotion thread. */
 		promotionReplyCount: integer().notNull().default(0),
 	},

@@ -82,9 +82,9 @@ const REVIEW_THREAD_COMMENTS_QUERY = `query GetReviewThreadComments($threadId: I
 const PROMOTION_THREAD_QUERY = `query GetPromotionThread($threadId: ID!) {
   node(id: $threadId) {
     ... on PullRequestReviewThread {
-      pullRequest { id number }
+	  pullRequest { id number repository { name owner { login } } }
       comments(first: 1) {
-        nodes { id pullRequestReview { state } }
+		nodes { id author { login } pullRequestReview { state } }
       }
     }
   }
@@ -171,11 +171,19 @@ const PromotionThreadQuerySchema = z.object({
 	data: z.object({
 		node: z
 			.object({
-				pullRequest: z.object({ id: z.string(), number: z.number() }),
+				pullRequest: z.object({
+					id: z.string(),
+					number: z.number(),
+					repository: z.object({
+						name: z.string(),
+						owner: z.object({ login: z.string() }),
+					}),
+				}),
 				comments: z.object({
 					nodes: z.array(
 						z.object({
 							id: z.string(),
+							author: z.object({ login: z.string() }).nullable(),
 							pullRequestReview: z.object({ state: z.string() }).nullable(),
 						}),
 					),
@@ -246,9 +254,11 @@ export interface PendingReviewComment {
 }
 
 export interface PromotionThreadState {
+	repo: GitHubRepo;
 	pullRequestNodeId: string;
 	pullRequestNumber: number;
 	rootCommentNodeId: string | null;
+	rootAuthorLogin: string | null;
 	rootIsPending: boolean;
 }
 
@@ -378,9 +388,14 @@ export async function getPromotionThreadState(
 	if (node === null) return null;
 	const root = node.comments.nodes[0];
 	return {
+		repo: {
+			owner: node.pullRequest.repository.owner.login,
+			repo: node.pullRequest.repository.name,
+		},
 		pullRequestNodeId: node.pullRequest.id,
 		pullRequestNumber: node.pullRequest.number,
 		rootCommentNodeId: root?.id ?? null,
+		rootAuthorLogin: root?.author?.login ?? null,
 		rootIsPending: root?.pullRequestReview?.state === PENDING_STATE,
 	};
 }

@@ -151,6 +151,29 @@ describe("review API — promotion rollback", () => {
 		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
 		expect(savedThread?.promotionRootCommentNodeId).toBe("COMMENT_new");
 	});
+
+	it("reports every failed rollback without hiding the promotion error", async () => {
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		await harness.writeGhShim(EMPTY_REVIEW, {
+			failAddReply: true,
+			failDeleteComment: true,
+			failDiscardReview: true,
+		});
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true });
+
+		const promotion = await promote(runId, localThreadId);
+		const [savedThread] = harness.db.select().from(commentThread).all();
+
+		expect(promotion.status).toBe(500);
+		expect(savedThread?.promotionViewerLogin).toBe("octocat");
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringContaining("Failed to delete partial GitHub promotion: gh: delete failed"),
+		);
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringContaining("Failed to discard promotion review: gh: discard failed"),
+		);
+	});
 });
 
 async function promote(runId: string, localThreadId: string) {

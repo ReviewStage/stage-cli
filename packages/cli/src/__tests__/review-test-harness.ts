@@ -415,6 +415,9 @@ interface GhShimOptions {
 	reviewQueryDelayMs?: number;
 	recoveryPullRequestNodeId?: string;
 	recoveryPullRequestNumber?: number;
+	recoveryRepoOwner?: string;
+	recoveryRepoName?: string;
+	recoveryRootAuthorLogin?: string;
 	recoveryRootState?: "PENDING" | "COMMENTED";
 }
 
@@ -444,6 +447,10 @@ export class ReviewRouteHarness {
 
 	get db(): StageDb {
 		return getDb({ dbPath: this.dbPath });
+	}
+
+	get pullRequestNumber(): number {
+		return this.prNumber;
 	}
 
 	async setup(): Promise<void> {
@@ -515,10 +522,15 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   emit({ data: { node: {
     pullRequest: {
       id: ${JSON.stringify(options.recoveryPullRequestNodeId ?? "PR_node")},
-      number: ${options.recoveryPullRequestNumber ?? this.prNumber}
+      number: ${options.recoveryPullRequestNumber ?? this.prNumber},
+      repository: {
+        name: ${JSON.stringify(options.recoveryRepoName ?? "repo")},
+        owner: { login: ${JSON.stringify(options.recoveryRepoOwner ?? "owner")} }
+      }
     },
     comments: { nodes: [{
       id: "COMMENT_new",
+      author: { login: ${JSON.stringify(options.recoveryRootAuthorLogin ?? "octocat")} },
       pullRequestReview: { state: ${JSON.stringify(options.recoveryRootState ?? "PENDING")} }
     }] }
   } } });

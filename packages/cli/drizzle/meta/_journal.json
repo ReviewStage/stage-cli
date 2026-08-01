@@ -71,6 +71,13 @@
       "when": 1785619298866,
       "tag": "0009_aberrant_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1785623128760,
+      "tag": "0010_young_midnight",
+      "breakpoints": true
     }
   ]
 }
