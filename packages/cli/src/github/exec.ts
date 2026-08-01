@@ -19,13 +19,13 @@ async function execGh(args: string[], cwd: string, options: GhExecOptions): Prom
 	return stdout;
 }
 
-/** Run a passive, read-only `gh` command with a bounded deadline. */
+/** Run a general read-only `gh` command, optionally with a caller-selected deadline. */
 export async function gh(
 	args: string[],
 	cwd: string,
 	options: GhExecOptions = {},
 ): Promise<string> {
-	return execGh(args, cwd, { timeoutMs: options.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS });
+	return execGh(args, cwd, options);
 }
 
 /**
@@ -48,7 +48,7 @@ export async function ghReadOrThrow(
 	options: GhExecOptions = {},
 ): Promise<string> {
 	try {
-		return await gh(args, cwd, options);
+		return await gh(args, cwd, { timeoutMs: options.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS });
 	} catch (err) {
 		throw new Error(ghErrorMessage(err));
 	}
