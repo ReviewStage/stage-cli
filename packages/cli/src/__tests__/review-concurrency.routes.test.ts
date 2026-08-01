@@ -109,6 +109,39 @@ describe("review API — concurrency", () => {
 		await promotion;
 	});
 
+	it("freezes direct comment edits and deletes while promotion is queued", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW);
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread();
+		const [run] = harness.db.select().from(chapterRun).where(eq(chapterRun.id, runId)).all();
+		const [root] = harness.db
+			.select()
+			.from(comment)
+			.where(eq(comment.threadId, localThreadId))
+			.all();
+		if (!run || !root) throw new Error("seeded review data was not found");
+		const port = await harness.start();
+		let releaseCheckout: (() => void) | undefined;
+		const blocker = reviewActions.run(
+			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot },
+			() =>
+				new Promise<void>((resolve) => {
+					releaseCheckout = resolve;
+				}),
+		);
+		await expect.poll(() => releaseCheckout !== undefined).toBe(true);
+		const promotion = addLocalThreadToReview(harness.db, run, localThreadId);
+
+		const edit = harness.request(port, "PATCH", `/api/comments/${root.id}`, { body: "Too late" });
+		const deletion = harness.request(port, "DELETE", `/api/comments/${root.id}`);
+		releaseCheckout?.();
+		const [editResponse, deleteResponse] = await Promise.all([edit, deletion]);
+		await blocker;
+		await promotion;
+
+		expect([editResponse.status, deleteResponse.status]).toEqual([409, 409]);
+	});
+
 	it("promotes an edit that wins the checkout lock before promotion", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW);
 		const runId = harness.insertRun();

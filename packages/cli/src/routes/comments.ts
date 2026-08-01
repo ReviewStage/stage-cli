@@ -199,6 +199,11 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 				}
 				const body = await parseJsonBody(req, res, CommentBodySchema);
 				if (!body) return;
+				const threadId = findCommentThreadId(db, commentId);
+				if (threadId !== null && isLocalThreadPromotionPending(db, threadId)) {
+					writeJson(res, 409, { error: "This comment thread is being added to the review." });
+					return;
+				}
 
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
 					const [existing] = db
@@ -239,6 +244,11 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 					writeJson(res, 400, { error: "Missing commentId" });
 					return;
 				}
+				const threadId = findCommentThreadId(db, commentId);
+				if (threadId !== null && isLocalThreadPromotionPending(db, threadId)) {
+					writeJson(res, 409, { error: "This comment thread is being added to the review." });
+					return;
+				}
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
 					const [existing] = db
 						.select({ threadId: comment.threadId })
@@ -276,6 +286,16 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 			},
 		},
 	];
+}
+
+function findCommentThreadId(db: StageDb, commentId: string): string | null {
+	const [row] = db
+		.select({ threadId: comment.threadId })
+		.from(comment)
+		.where(eq(comment.id, commentId))
+		.limit(1)
+		.all();
+	return row?.threadId ?? null;
 }
 
 function resolveRunScope(db: StageDb, runId: string | undefined): LocalThreadScope | null {
