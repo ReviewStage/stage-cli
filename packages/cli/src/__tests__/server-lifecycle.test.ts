@@ -57,7 +57,9 @@ describe("server lifecycle", () => {
 			{
 				method: "GET",
 				pattern: "/api/close-probe",
-				handler: (_req, res) => res.end(marker),
+				handler: (_req, res) => {
+					res.end(marker);
+				},
 			},
 		]);
 		const { port } = handle;
@@ -65,7 +67,7 @@ describe("server lifecycle", () => {
 
 		await handle.close();
 
-		const body = await rawRequest(port, "/api/close-probe").catch(() => null);
-		expect(body).not.toBe(marker);
+		const response = await rawRequest(port, "/api/close-probe").catch(() => null);
+		expect(response).not.toBe(marker);
 	});
 });
