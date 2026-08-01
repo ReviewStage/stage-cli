@@ -111,8 +111,9 @@ function canPushToReview(run: ChapterRunRow, review: GitHubReview): boolean {
 	);
 }
 
-function requireReviewThread(review: GitHubReview, threadNodeId: string): void {
-	if (review.threads.some((thread) => thread.threadNodeId === threadNodeId)) return;
+function requireReviewThread(review: GitHubReview, threadNodeId: string): GitHubApiReviewThread {
+	const thread = review.threads.find((candidate) => candidate.threadNodeId === threadNodeId);
+	if (thread) return thread;
 	throw new ReviewError("That GitHub review thread doesn't belong to this pull request.", 400);
 }
 
@@ -172,6 +173,8 @@ function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
 		startLine: t.startLine ?? endLine,
 		endLine,
 		isResolved: t.isResolved,
+		viewerCanResolve: t.viewerCanResolve,
+		viewerCanUnresolve: t.viewerCanUnresolve,
 		comments: t.comments.map(
 			(c): GitHubReviewCommentDto => ({
 				id: c.nodeId,
@@ -773,7 +776,14 @@ export async function resolveGitHubThread(
 ): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
 		assertGitHubWritable(run, review);
-		requireReviewThread(review, threadNodeId);
+		const thread = requireReviewThread(review, threadNodeId);
+		const canChangeResolution = resolved ? thread.viewerCanResolve : thread.viewerCanUnresolve;
+		if (!canChangeResolution) {
+			throw new ReviewError(
+				`GitHub doesn't allow you to ${resolved ? "resolve" : "reopen"} this review thread.`,
+				403,
+			);
+		}
 		await setThreadResolved(run.repoRoot, threadNodeId, resolved);
 	});
 }

@@ -100,6 +100,15 @@ export function canReplyToGitHubThread(
 	return canWriteToGitHub && (canPushToReview || canPublishReplyImmediately(thread));
 }
 
+export function canToggleThreadResolution(
+	thread: ReviewThread,
+	canWriteToGitHub: boolean,
+): boolean {
+	if (thread.source === THREAD_SOURCE.LOCAL) return true;
+	if (!canWriteToGitHub) return false;
+	return thread.isResolved ? thread.viewerCanUnresolve : thread.viewerCanResolve;
+}
+
 export function activeReplyingState(isReplying: boolean, canReply: boolean): boolean {
 	return isReplying && canReply;
 }
@@ -252,7 +261,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 					<ResolveButton
 						isResolved={thread.isResolved}
 						onToggle={handleResolveToggle}
-						disabled={isGitHub && !canWriteToGitHub}
+						disabled={!canToggleThreadResolution(thread, canWriteToGitHub)}
 					/>
 					<Byline comment={root} />
 					<StateBadge state={root.state} />

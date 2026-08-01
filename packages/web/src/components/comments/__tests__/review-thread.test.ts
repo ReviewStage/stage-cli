@@ -12,6 +12,7 @@ import {
 	canEditReviewComment,
 	canPublishReplyImmediately,
 	canReplyToGitHubThread,
+	canToggleThreadResolution,
 	deleteRemovesReplies,
 	threadChevronClassName,
 } from "../review-thread";
@@ -72,6 +73,19 @@ describe("GitHub pending comment actions", () => {
 	});
 });
 
+describe("GitHub thread resolution", () => {
+	it("uses GitHub's permission for the current resolution action", () => {
+		const thread = makeThread([COMMENT_STATE.SUBMITTED]);
+
+		expect(canToggleThreadResolution(thread, true)).toBe(true);
+		expect(canToggleThreadResolution({ ...thread, viewerCanResolve: false }, true)).toBe(false);
+		expect(
+			canToggleThreadResolution({ ...thread, isResolved: true, viewerCanUnresolve: false }, true),
+		).toBe(false);
+		expect(canToggleThreadResolution(thread, false)).toBe(false);
+	});
+});
+
 describe("review thread source invariants", () => {
 	const base = {
 		id: "thread",
@@ -120,6 +134,8 @@ function makeThread(states: GitHubReviewComment["state"][]): GitHubReviewThread 
 		id: "thread",
 		source: THREAD_SOURCE.GITHUB,
 		threadNodeId: "thread",
+		viewerCanResolve: true,
+		viewerCanUnresolve: true,
 		filePath: "src/file.ts",
 		side: "additions",
 		startLine: 1,

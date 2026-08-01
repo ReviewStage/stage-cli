@@ -35,6 +35,8 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
         nodes {
           id
           isResolved
+          viewerCanResolve
+          viewerCanUnresolve
           path
           line
           startLine
@@ -102,6 +104,8 @@ const GqlReviewCommentsPageSchema = z.object({
 const GqlReviewThreadSchema = z.object({
 	id: z.string(),
 	isResolved: z.boolean(),
+	viewerCanResolve: z.boolean(),
+	viewerCanUnresolve: z.boolean(),
 	path: z.string(),
 	line: z.number().nullable(),
 	startLine: z.number().nullable(),
@@ -170,6 +174,8 @@ export interface ReviewComment {
 export interface ReviewThread {
 	threadNodeId: string;
 	isResolved: boolean;
+	viewerCanResolve: boolean;
+	viewerCanUnresolve: boolean;
 	path: string;
 	line: number;
 	startLine: number | null;
@@ -287,6 +293,8 @@ export async function getReview(
 			threads.push({
 				threadNodeId: node.id,
 				isResolved: node.isResolved,
+				viewerCanResolve: node.viewerCanResolve,
+				viewerCanUnresolve: node.viewerCanUnresolve,
 				path: node.path,
 				line: node.line,
 				startLine: node.startLine,

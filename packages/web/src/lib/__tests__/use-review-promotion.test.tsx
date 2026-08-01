@@ -31,6 +31,8 @@ const REMOTE_THREAD: ReviewThread = {
 	id: "THREAD_remote",
 	source: "github",
 	threadNodeId: "THREAD_remote",
+	viewerCanResolve: true,
+	viewerCanUnresolve: true,
 	filePath: "src/foo.ts",
 	side: "additions",
 	startLine: 3,

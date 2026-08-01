@@ -26,6 +26,8 @@ export const GITHUB_ORIGIN = "git@github.com:owner/repo.git";
 const submittedThread = {
 	id: "THREAD_sub",
 	isResolved: false,
+	viewerCanResolve: true,
+	viewerCanUnresolve: true,
 	path: "src/foo.ts",
 	line: 10,
 	startLine: null,
@@ -50,6 +52,8 @@ const submittedThread = {
 const pendingThread = {
 	id: "THREAD_pending",
 	isResolved: false,
+	viewerCanResolve: true,
+	viewerCanUnresolve: true,
 	path: "src/bar.ts",
 	line: 4,
 	startLine: null,
@@ -145,6 +149,18 @@ export function makeOwnPullRequestReview(): unknown {
 	return makeReview([pendingThread], "REVIEW_pending", "", {
 		viewerDidAuthor: true,
 	});
+}
+
+export function makeUnresolvableReview(): unknown {
+	return makeReview(
+		[
+			{
+				...submittedThread,
+				viewerCanResolve: false,
+			},
+		],
+		null,
+	);
 }
 
 export function makeInterruptedPromotionReview(promotedReplyBody?: string): unknown {
@@ -292,6 +308,8 @@ export function makeAnchorlessPendingReview(): unknown {
 			{
 				id: "THREAD_outdated",
 				isResolved: false,
+				viewerCanResolve: true,
+				viewerCanUnresolve: true,
 				path: "src/foo.ts",
 				line: null,
 				startLine: null,
