@@ -164,6 +164,20 @@ export function makeUnresolvableReview(): unknown {
 	);
 }
 
+export function makeCrossSideRangeReview(): unknown {
+	return makeReview(
+		[
+			{
+				...submittedThread,
+				startLine: 8,
+				startDiffSide: "LEFT",
+				diffSide: "RIGHT",
+			},
+		],
+		null,
+	);
+}
+
 export function makeInterruptedPromotionReview(
 	promotedReplyBody?: string,
 	options: { state?: "OPEN" | "CLOSED" | "MERGED"; headRefOid?: string } = {},

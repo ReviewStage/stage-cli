@@ -48,6 +48,7 @@ import type { ReviewThread as CommentThread } from "@/lib/use-review";
 import { toSingleSideSelection, useTextSelection } from "@/lib/use-text-selection";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
 import { TextSelectionPopup } from "./text-selection-popup";
+import { getThreadHoverRange } from "./thread-hover-range";
 
 type AppTheme = "light" | "dark";
 
@@ -271,12 +272,7 @@ export function PierreDiffViewer({
 
 	const handleThreadMouseEnter = useCallback((thread: CommentThread) => {
 		isHoveringRef.current = true;
-		setHoverLines({
-			start: thread.startLine,
-			side: thread.side,
-			end: thread.endLine,
-			endSide: thread.side,
-		});
+		setHoverLines(getThreadHoverRange(thread));
 	}, []);
 
 	const handleThreadMouseLeave = useCallback(() => {

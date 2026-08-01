@@ -15,6 +15,7 @@ const GITHUB_THREAD: ReviewThread = {
 	viewerCanUnresolve: true,
 	filePath: "src/github.ts",
 	side: "additions",
+	startSide: "additions",
 	startLine: 2,
 	endLine: 2,
 	isResolved: false,

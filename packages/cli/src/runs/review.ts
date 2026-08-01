@@ -171,6 +171,7 @@ function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
 		threadNodeId: t.threadNodeId,
 		filePath: t.path,
 		side: fromGitHubSide(t.side),
+		startSide: fromGitHubSide(t.startSide ?? t.side),
 		startLine: t.startLine ?? endLine,
 		endLine,
 		isResolved: t.isResolved,

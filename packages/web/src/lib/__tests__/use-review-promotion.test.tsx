@@ -35,6 +35,7 @@ const REMOTE_THREAD: ReviewThread = {
 	viewerCanUnresolve: true,
 	filePath: "src/foo.ts",
 	side: "additions",
+	startSide: "additions",
 	startLine: 3,
 	endLine: 3,
 	isResolved: false,

@@ -2,6 +2,7 @@ import { ReviewResponseSchema } from "@stagereview/types/review";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	HEAD,
+	makeCrossSideRangeReview,
 	makePaginatedThreadReview,
 	REVIEW_QUERY_RESULT,
 	ReviewRouteHarness,
@@ -65,6 +66,19 @@ describe("review API — read", () => {
 			"pending",
 			"submitted",
 		]);
+	});
+
+	it("preserves both sides of a mixed-side GitHub range", async () => {
+		await harness.writeGhShim(makeCrossSideRangeReview());
+		const runId = harness.insertRun();
+
+		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
+		const body = JSON.parse(res.body) as {
+			threads: Array<{ source: string; side: string; startSide?: string }>;
+		};
+		const githubThread = body.threads.find((thread) => thread.source === "github");
+
+		expect(githubThread).toMatchObject({ side: "additions", startSide: "deletions" });
 	});
 
 	it("loads later pages of comments within a GitHub thread", async () => {

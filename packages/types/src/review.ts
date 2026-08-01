@@ -91,6 +91,7 @@ export type LocalReviewThread = z.infer<typeof LocalReviewThreadSchema>;
 export const GitHubReviewThreadSchema = ReviewThreadBaseSchema.extend({
 	source: z.literal(THREAD_SOURCE.GITHUB),
 	threadNodeId: z.string().min(1),
+	startSide: z.enum(DIFF_SIDE),
 	viewerCanResolve: z.boolean(),
 	viewerCanUnresolve: z.boolean(),
 	comments: z.array(GitHubReviewCommentSchema),

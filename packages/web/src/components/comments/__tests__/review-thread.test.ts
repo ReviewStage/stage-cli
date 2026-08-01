@@ -138,6 +138,7 @@ function makeThread(states: GitHubReviewComment["state"][]): GitHubReviewThread 
 		viewerCanUnresolve: true,
 		filePath: "src/file.ts",
 		side: "additions",
+		startSide: "additions",
 		startLine: 1,
 		endLine: 1,
 		isResolved: false,
