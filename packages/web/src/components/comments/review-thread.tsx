@@ -117,7 +117,13 @@ export function deleteRemovesReplies(thread: ReviewThread, comment: ReviewCommen
 	return thread.comments.length > 1 && thread.comments[0]?.id === comment.id;
 }
 
-export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
+interface ReviewThreadViewModel {
+	thread: ReviewThread;
+	githubAnchorEligible: boolean;
+}
+
+export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
+	const { thread, githubAnchorEligible } = model;
 	const review = useReviewContext();
 	const isGitHub = thread.source === THREAD_SOURCE.GITHUB;
 	const githubAvailable = review.github === GITHUB_REVIEW_STATUS.AVAILABLE;
@@ -267,7 +273,7 @@ export function ReviewThreadView({ thread }: { thread: ReviewThread }) {
 					<StateBadge state={root.state} />
 					{idle && (
 						<div className="flex shrink-0 items-center gap-0.5">
-							{root.state === COMMENT_STATE.LOCAL && canPushToReview && (
+							{root.state === COMMENT_STATE.LOCAL && canPushToReview && githubAnchorEligible && (
 								<Tooltip>
 									<TooltipTrigger asChild>
 										<Button

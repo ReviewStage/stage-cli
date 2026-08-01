@@ -182,6 +182,10 @@ export function PierreDiffViewer({
 	const deferredLineNumbers = useDeferredValue(lineNumbers);
 	const deferredSyntaxTheme = useDeferredValue(syntaxTheme);
 	const deferredExpandUnchanged = useDeferredValue(expandUnchanged);
+	const diffHunks = useMemo(
+		() => (fileDiff ? fileDiff.hunks : getSingularPatch(patch).hunks),
+		[fileDiff, patch],
+	);
 
 	const diffContainerRef = useRef<HTMLDivElement>(null);
 
@@ -226,9 +230,10 @@ export function PierreDiffViewer({
 	// same (side, endLine) adopts the new range's startLine rather than duplicating it.
 	const openDraft = useCallback(
 		(anchor: CommentDraft) => {
-			setDrafts((prev) => upsertDraft(prev, anchor, canPushToReview));
+			const canSendToGitHub = canPushToReview && isGitHubReviewAnchor(diffHunks, anchor);
+			setDrafts((prev) => upsertDraft(prev, anchor, canSendToGitHub));
 		},
-		[canPushToReview],
+		[canPushToReview, diffHunks],
 	);
 
 	const closeDraft = useCallback((draft: CommentDraft) => {
@@ -284,8 +289,11 @@ export function PierreDiffViewer({
 			const threads = annotation.metadata ?? [];
 			const draft = findDraftAt(drafts, annotation.side, annotation.lineNumber);
 			if (threads.length === 0 && !draft) return null;
+			const canSendDraftToGitHub = draft !== undefined && isGitHubReviewAnchor(diffHunks, draft);
 			const githubDestination =
-				draft === undefined ? null : getDraftGitHubDestination(draft, canPushToReview);
+				draft === undefined
+					? null
+					: getDraftGitHubDestination(draft, canPushToReview && canSendDraftToGitHub);
 			return (
 				<div
 					className="space-y-2 px-3 py-2 font-sans"
@@ -298,7 +306,12 @@ export function PierreDiffViewer({
 							onMouseEnter={() => handleThreadMouseEnter(thread)}
 							onMouseLeave={handleThreadMouseLeave}
 						>
-							<ReviewThreadView thread={thread} />
+							<ReviewThreadView
+								model={{
+									thread,
+									githubAnchorEligible: isGitHubReviewAnchor(diffHunks, thread),
+								}}
+							/>
 						</div>
 					))}
 					{draft && (
@@ -354,6 +367,7 @@ export function PierreDiffViewer({
 		[
 			drafts,
 			canPushToReview,
+			diffHunks,
 			handleCreateComment,
 			closeDraft,
 			handleThreadMouseEnter,
@@ -543,6 +557,13 @@ export function findContainingHunk(
 		const count = side === DIFF_SIDE.ADDITIONS ? hunk.additionCount : hunk.deletionCount;
 		return line >= start && line < start + count;
 	});
+}
+
+/** GitHub line comments must start and end inside the same hunk in the PR diff. */
+export function isGitHubReviewAnchor(hunks: Hunk[], anchor: CommentDraft): boolean {
+	const startHunk = findContainingHunk(hunks, anchor.startLine, anchor.side);
+	if (!startHunk) return false;
+	return findContainingHunk(hunks, anchor.endLine, anchor.side) === startHunk;
 }
 
 /**
