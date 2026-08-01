@@ -322,6 +322,7 @@ export function PierreDiffViewer({
 						<CommentForm
 							key={`draft-${draft.side}-${draft.endLine}-${githubDestination?.available}`}
 							label="Comment"
+							allowsSuggestedChanges
 							placeholder="Leave a comment…"
 							error={draft.error}
 							initialBody={readDraftBody(draftBodiesRef.current, draft.side, draft.endLine)}

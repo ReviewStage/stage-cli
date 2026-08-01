@@ -30,6 +30,7 @@ describe("comment destination", () => {
 		render(
 			<CommentForm
 				label="Comment"
+				allowsSuggestedChanges
 				destination={{
 					toggleLabel: "Add to GitHub review",
 					on: {
@@ -55,5 +56,22 @@ describe("comment destination", () => {
 		expect(screen.getByText("Local only")).toBeTruthy();
 		expect(screen.queryByRole("button", { name: "Suggestion" })).toBeNull();
 		expect(onToggleChange).toHaveBeenCalledWith(false);
+	});
+
+	it("hides suggested changes for GitHub reply composers", () => {
+		render(
+			<CommentForm
+				label="Reply"
+				destination={{
+					label: "Published on GitHub",
+					description: "Everyone viewing the pull request can see it immediately.",
+					isGitHub: true,
+				}}
+				onSubmit={vi.fn()}
+				onCancel={vi.fn()}
+			/>,
+		);
+
+		expect(screen.queryByRole("button", { name: "Suggestion" })).toBeNull();
 	});
 });

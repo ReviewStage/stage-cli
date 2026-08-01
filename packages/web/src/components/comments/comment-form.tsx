@@ -35,6 +35,8 @@ interface CommentFormProps {
 	autoFocus?: boolean;
 	/** Explains where a new comment goes, with an optional checkbox to switch destinations. */
 	destination?: CommentDestination;
+	/** Enables suggested changes for a new line-anchored GitHub comment. */
+	allowsSuggestedChanges?: boolean;
 }
 
 export function CommentForm({
@@ -48,6 +50,7 @@ export function CommentForm({
 	onToggleChange,
 	autoFocus = true,
 	destination,
+	allowsSuggestedChanges = false,
 }: CommentFormProps) {
 	const [body, setBody] = useState(initialBody ?? "");
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -121,7 +124,7 @@ export function CommentForm({
 				className="rounded-xl border border-border bg-card transition-shadow has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring/20"
 				textareaClassName="max-h-[12rem] overflow-y-auto"
 				previewClassName="max-h-[12rem] overflow-y-auto"
-				showSuggestion={activeDestination?.isGitHub === true}
+				showSuggestion={allowsSuggestedChanges && activeDestination?.isGitHub === true}
 			>
 				{error && <p className="mt-2 text-destructive text-xs">{error}</p>}
 				{activeDestination && (
