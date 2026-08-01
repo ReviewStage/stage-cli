@@ -32,6 +32,18 @@ describe("review API — promotion rollback", () => {
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 
+	it("leaves a promoted resolved thread open when GitHub denies resolution", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, { addedThreadCanResolve: false });
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ resolved: true });
+
+		const res = await promote(runId, localThreadId);
+
+		expect(res.status, res.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "resolve-thread")).toHaveLength(0);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
 	it("rolls back a new remote root when preserving resolution fails", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW, { failResolve: true });
 		const runId = harness.insertRun();

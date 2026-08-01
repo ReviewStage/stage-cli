@@ -257,6 +257,35 @@ export function makeInterruptedPromotionReviewWithForeignMatchingReply(): unknow
 	);
 }
 
+export function makeInterruptedPromotionReviewWithInterleavedViewerReply(): unknown {
+	const root = {
+		...submittedThread.comments.nodes[0],
+		id: "COMMENT_new",
+		body: "Root",
+	};
+	const foreignReply = {
+		...root,
+		id: "COMMENT_foreign",
+		body: "Another participant",
+		author: { login: "collaborator", avatarUrl: "https://x/c.png" },
+	};
+	const viewerReply = {
+		...root,
+		id: "COMMENT_viewer_reply",
+		body: "Reply",
+	};
+	return makeReview(
+		[
+			{
+				...submittedThread,
+				id: "THREAD_new",
+				comments: { ...submittedThread.comments, nodes: [root, foreignReply, viewerReply] },
+			},
+		],
+		null,
+	);
+}
+
 export function makeInterruptedPromotionReviewWithSubmittedReply(): unknown {
 	const root = {
 		...submittedThread.comments.nodes[0],
@@ -357,6 +386,7 @@ export function makePaginatedThreadReview(): unknown {
 }
 
 interface GhShimOptions {
+	addedThreadCanResolve?: boolean;
 	addThreadDelayMs?: number;
 	discoveredPullRequest?: boolean;
 	failAddThread?: boolean;
@@ -503,7 +533,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   fs.appendFileSync(log, "add-thread " + fields + "\\n");
   sleep(${options.addThreadDelayMs ?? 0});
   if (${options.failAddThread ? "true" : "false"}) { process.stderr.write("gh: line not in diff\\n"); process.exit(1); }
-  emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
+  emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", viewerCanResolve: ${options.addedThreadCanResolve === false ? "false" : "true"}, comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
 } else if (query.includes("mutation ResolveThread")) {
   fs.appendFileSync(log, "resolve-thread\\n");
   if (${options.failResolve ? "true" : "false"}) { process.stderr.write("gh: resolve failed\\n"); process.exit(1); }

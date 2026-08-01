@@ -498,7 +498,7 @@ const CREATE_PENDING_REVIEW = `mutation CreatePendingReview($pullRequestId: ID!,
 
 const ADD_REVIEW_THREAD = `mutation AddReviewThread($pullRequestId: ID!, $reviewId: ID!, $path: String!, $body: String!, $line: Int!, $startLine: Int, $side: DiffSide!, $startSide: DiffSide) {
   addPullRequestReviewThread(input: { pullRequestId: $pullRequestId, pullRequestReviewId: $reviewId, path: $path, body: $body, line: $line, startLine: $startLine, side: $side, startSide: $startSide }) {
-    thread { id comments(first: 1) { nodes { id } } }
+    thread { id viewerCanResolve comments(first: 1) { nodes { id } } }
   }
 }`;
 
@@ -588,6 +588,7 @@ const AddedThreadSchema = z.object({
 		addPullRequestReviewThread: z.object({
 			thread: z.object({
 				id: z.string(),
+				viewerCanResolve: z.boolean(),
 				comments: z.object({ nodes: z.array(z.object({ id: z.string() })) }),
 			}),
 		}),
@@ -597,6 +598,7 @@ const AddedThreadSchema = z.object({
 export interface AddedReviewThread {
 	threadNodeId: string;
 	rootCommentNodeId: string;
+	viewerCanResolve: boolean;
 }
 
 /** Add a line-anchored comment (a new thread) to a pending review. */
@@ -620,7 +622,11 @@ export async function addReviewThread(
 	const thread = AddedThreadSchema.parse(JSON.parse(stdout)).data.addPullRequestReviewThread.thread;
 	const root = thread.comments.nodes[0];
 	if (!root) throw new Error("GitHub returned a review thread without its root comment");
-	return { threadNodeId: thread.id, rootCommentNodeId: root.id };
+	return {
+		threadNodeId: thread.id,
+		rootCommentNodeId: root.id,
+		viewerCanResolve: thread.viewerCanResolve,
+	};
 }
 
 /** Reply to an existing thread, attaching the reply to a pending review when one is open. */

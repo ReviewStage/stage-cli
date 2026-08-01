@@ -4,6 +4,7 @@ import { commentThread } from "../db/schema/index.js";
 import {
 	makeInterruptedPromotionReview,
 	makeInterruptedPromotionReviewWithForeignMatchingReply,
+	makeInterruptedPromotionReviewWithInterleavedViewerReply,
 	makeInterruptedPromotionReviewWithSubmittedReply,
 	makeResolvedInterruptedPromotionReview,
 	ReviewRouteHarness,
@@ -63,6 +64,17 @@ describe("review API — promotion resume", () => {
 
 		expect(promotion.status, promotion.body).toBe(200);
 		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(1);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("reconciles a viewer reply after an interleaved participant comment", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReviewWithInterleavedViewerReply());
+		const { runId, localThreadId } = seedInterruptedPromotion();
+
+		const promotion = await promote(runId, localThreadId);
+
+		expect(promotion.status, promotion.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(0);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 

@@ -502,12 +502,14 @@ async function promoteLocalThread(
 			}
 		}
 
-		let addedThread: AddedReviewThread | null = checkpoint;
+		let addedThread: Pick<AddedReviewThread, "threadNodeId" | "rootCommentNodeId"> | null =
+			checkpoint;
 		let promotedReplyCount = thread.promotionReplyCount;
 		let reviewNodeId: string | null = null;
 		let created = false;
 		let remoteRootIsPending = false;
 		let remoteThreadIsResolved = false;
+		let remoteThreadCanResolve = false;
 		let rootCreatedThisAttempt = false;
 		let rollbackReplyCount = promotedReplyCount;
 		try {
@@ -526,14 +528,16 @@ async function promoteLocalThread(
 				} else {
 					remoteRootIsPending = persistedRoot.isPending;
 					remoteThreadIsResolved = remoteThread.isResolved;
+					remoteThreadCanResolve = remoteThread.viewerCanResolve;
 					// A crash can land a reply immediately before its local checkpoint.
 					// Reconcile only replies authored by this viewer before sending
 					// anything again; another participant may have posted the same body.
+					const viewerReplies = remoteThread.comments
+						.slice(1)
+						.filter((candidate) => candidate.authorLogin === review.viewerLogin);
 					while (
 						promotedReplyCount < replies.length &&
-						remoteThread.comments[promotedReplyCount + 1]?.authorLogin === review.viewerLogin &&
-						remoteThread.comments[promotedReplyCount + 1]?.body ===
-							replies[promotedReplyCount]?.body
+						viewerReplies[promotedReplyCount]?.body === replies[promotedReplyCount]?.body
 					) {
 						promotedReplyCount++;
 					}
@@ -552,7 +556,7 @@ async function promoteLocalThread(
 			}
 			if (addedThread === null) {
 				if (reviewNodeId === null) throw new Error("Pending review was not opened");
-				addedThread = await addReviewThread(run.repoRoot, {
+				const createdThread = await addReviewThread(run.repoRoot, {
 					pullRequestNodeId: review.pullRequestNodeId,
 					reviewNodeId,
 					path: thread.filePath,
@@ -562,6 +566,8 @@ async function promoteLocalThread(
 					startLine,
 					startSide: startLine !== null ? side : null,
 				});
+				addedThread = createdThread;
+				remoteThreadCanResolve = createdThread.viewerCanResolve;
 				rootCreatedThisAttempt = true;
 				remoteRootIsPending = true;
 				const persisted = db
@@ -587,7 +593,7 @@ async function promoteLocalThread(
 					.run();
 				if (persisted.changes !== 1) throw new Error("Local promotion checkpoint was not saved");
 			}
-			if (thread.resolvedAt !== null && !remoteThreadIsResolved) {
+			if (thread.resolvedAt !== null && !remoteThreadIsResolved && remoteThreadCanResolve) {
 				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
 			}
 		} catch (err) {
