@@ -373,6 +373,7 @@ export function isLocalThreadPromoting(db: StageDb, localThreadId: string): bool
 	if (promotingThreads.has(localThreadId)) return true;
 	const [thread] = db
 		.select({
+			pullRequestNodeId: commentThread.promotionPullRequestNodeId,
 			threadNodeId: commentThread.promotionThreadNodeId,
 			rootCommentNodeId: commentThread.promotionRootCommentNodeId,
 		})
@@ -381,7 +382,10 @@ export function isLocalThreadPromoting(db: StageDb, localThreadId: string): bool
 		.limit(1)
 		.all();
 	return (
-		thread !== undefined && (thread.threadNodeId !== null || thread.rootCommentNodeId !== null)
+		thread !== undefined &&
+		(thread.pullRequestNodeId !== null ||
+			thread.threadNodeId !== null ||
+			thread.rootCommentNodeId !== null)
 	);
 }
 
@@ -451,7 +455,10 @@ async function promoteLocalThread(
 	const root = comments[0];
 	if (!root) throw new ReviewError("Thread has no comments to add to the review.", 400);
 	const replies = comments.slice(1);
-	if ((thread.promotionThreadNodeId === null) !== (thread.promotionRootCommentNodeId === null)) {
+	const hasPromotionTarget = thread.promotionPullRequestNodeId !== null;
+	const hasPromotionThread = thread.promotionThreadNodeId !== null;
+	const hasPromotionRoot = thread.promotionRootCommentNodeId !== null;
+	if (hasPromotionTarget !== hasPromotionThread || hasPromotionTarget !== hasPromotionRoot) {
 		throw new ReviewError(
 			"This comment has incomplete promotion state and cannot be resumed.",
 			409,
@@ -466,6 +473,12 @@ async function promoteLocalThread(
 
 	await withLockedReviewTarget(run, async ({ review }) => {
 		assertPushable(run, review);
+		if (
+			thread.promotionPullRequestNodeId !== null &&
+			thread.promotionPullRequestNodeId !== review.pullRequestNodeId
+		) {
+			throw new ReviewError("This comment promotion belongs to another pull request.", 409);
+		}
 		const side = toGitHubSide(thread.side);
 		const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
 		const wasUnassigned = thread.repoRoot === UNASSIGNED_REPO_ROOT;
@@ -557,6 +570,7 @@ async function promoteLocalThread(
 				const persisted = db
 					.update(commentThread)
 					.set({
+						promotionPullRequestNodeId: review.pullRequestNodeId,
 						promotionThreadNodeId: addedThread.threadNodeId,
 						promotionRootCommentNodeId: addedThread.rootCommentNodeId,
 						promotionReplyCount: 0,
@@ -620,6 +634,7 @@ async function promoteLocalThread(
 function clearPromotionProgress(db: StageDb, localThreadId: string): void {
 	db.update(commentThread)
 		.set({
+			promotionPullRequestNodeId: null,
 			promotionThreadNodeId: null,
 			promotionRootCommentNodeId: null,
 			promotionReplyCount: 0,

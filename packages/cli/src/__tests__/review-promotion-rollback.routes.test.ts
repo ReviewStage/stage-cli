@@ -125,6 +125,7 @@ describe("review API — promotion rollback", () => {
 		harness.db
 			.update(commentThread)
 			.set({
+				promotionPullRequestNodeId: "PR_node",
 				promotionThreadNodeId: "THREAD_new",
 				promotionRootCommentNodeId: "COMMENT_new",
 			})

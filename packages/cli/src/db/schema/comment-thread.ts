@@ -18,6 +18,8 @@ export const commentThread = sqliteTable(
 		endLine: integer().notNull(),
 		/** Null while open; set to the resolution time once resolved. */
 		resolvedAt: integer({ mode: "timestamp_ms" }),
+		/** Pull request that owns an interrupted local-to-remote promotion. */
+		promotionPullRequestNodeId: text(),
 		/** GitHub thread created by an interrupted local-to-remote promotion. */
 		promotionThreadNodeId: text(),
 		/** Root comment used to roll back an interrupted promotion safely. */

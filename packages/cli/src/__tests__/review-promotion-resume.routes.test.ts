@@ -89,6 +89,23 @@ describe("review API — promotion resume", () => {
 		expect((await harness.logLines()).filter((line) => line === "resolve-thread")).toHaveLength(0);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
+
+	it("rejects recovery through a different pull request", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReview());
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true });
+		checkpoint(localThreadId, "PR_other");
+
+		const promotion = await promote(runId, localThreadId);
+		const [savedThread] = harness.db.select().from(commentThread).all();
+
+		expect(promotion.status).toBe(409);
+		expect((await harness.logLines()).filter((line) => line.startsWith("add-thread"))).toHaveLength(
+			0,
+		);
+		expect(savedThread?.promotionPullRequestNodeId).toBe("PR_other");
+		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
+	});
 });
 
 function seedInterruptedPromotion(): { runId: string; localThreadId: string } {
@@ -98,10 +115,11 @@ function seedInterruptedPromotion(): { runId: string; localThreadId: string } {
 	return { runId, localThreadId };
 }
 
-function checkpoint(localThreadId: string): void {
+function checkpoint(localThreadId: string, pullRequestNodeId = "PR_node"): void {
 	harness.db
 		.update(commentThread)
 		.set({
+			promotionPullRequestNodeId: pullRequestNodeId,
 			promotionThreadNodeId: "THREAD_new",
 			promotionRootCommentNodeId: "COMMENT_new",
 			promotionReplyCount: 0,
