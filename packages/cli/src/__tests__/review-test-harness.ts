@@ -81,6 +81,7 @@ function makeReview(
 	pendingReviewBody = "",
 	options: {
 		state?: "OPEN" | "CLOSED" | "MERGED";
+		headRefOid?: string;
 		pendingReviewCommitOid?: string | null;
 		viewerDidAuthor?: boolean;
 	} = {},
@@ -93,7 +94,7 @@ function makeReview(
 					id: "PR_node",
 					state: options.state ?? "OPEN",
 					viewerDidAuthor: options.viewerDidAuthor ?? false,
-					headRefOid: HEAD,
+					headRefOid: options.headRefOid ?? HEAD,
 					baseRefOid: BASE,
 					reviews: {
 						nodes:
@@ -163,7 +164,10 @@ export function makeUnresolvableReview(): unknown {
 	);
 }
 
-export function makeInterruptedPromotionReview(promotedReplyBody?: string): unknown {
+export function makeInterruptedPromotionReview(
+	promotedReplyBody?: string,
+	options: { state?: "OPEN" | "CLOSED" | "MERGED"; headRefOid?: string } = {},
+): unknown {
 	const root = {
 		...pendingThread.comments.nodes[0],
 		id: "COMMENT_new",
@@ -196,6 +200,8 @@ export function makeInterruptedPromotionReview(promotedReplyBody?: string): unkn
 			},
 		],
 		"REVIEW_pending",
+		"",
+		options,
 	);
 }
 
@@ -363,6 +369,9 @@ interface GhShimOptions {
 	noPullRequest?: boolean;
 	persistCreatedReview?: boolean;
 	reviewQueryDelayMs?: number;
+	recoveryPullRequestNodeId?: string;
+	recoveryPullRequestNumber?: number;
+	recoveryRootState?: "PENDING" | "COMMENTED";
 }
 
 interface InsertRunOptions {
@@ -457,6 +466,18 @@ if (args.some((arg) => arg.includes("/compare/"))) {
       pullRequestReview: { state: "PENDING" }
     }]
   } } } });
+} else if (query.includes("query GetPromotionThread")) {
+  fs.appendFileSync(log, "get-promotion-thread\\n");
+  emit({ data: { node: {
+    pullRequest: {
+      id: ${JSON.stringify(options.recoveryPullRequestNodeId ?? "PR_node")},
+      number: ${options.recoveryPullRequestNumber ?? this.prNumber}
+    },
+    comments: { nodes: [{
+      id: "COMMENT_new",
+      pullRequestReview: { state: ${JSON.stringify(options.recoveryRootState ?? "PENDING")} }
+    }] }
+  } } });
 } else if (query.includes("query GetReview")) {
   sleep(${options.reviewQueryDelayMs ?? 0});
   const commentFields = query.slice(query.indexOf("comments(first: 100)"), query.indexOf("author {"));

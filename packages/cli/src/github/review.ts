@@ -79,6 +79,17 @@ const REVIEW_THREAD_COMMENTS_QUERY = `query GetReviewThreadComments($threadId: I
   }
 }`;
 
+const PROMOTION_THREAD_QUERY = `query GetPromotionThread($threadId: ID!) {
+  node(id: $threadId) {
+    ... on PullRequestReviewThread {
+      pullRequest { id number }
+      comments(first: 1) {
+        nodes { id pullRequestReview { state } }
+      }
+    }
+  }
+}`;
+
 const GqlActorSchema = z.object({ login: z.string(), avatarUrl: z.string() }).nullable();
 
 const GqlReviewCommentSchema = z.object({
@@ -156,6 +167,24 @@ const ReviewThreadCommentsQuerySchema = z.object({
 	}),
 });
 
+const PromotionThreadQuerySchema = z.object({
+	data: z.object({
+		node: z
+			.object({
+				pullRequest: z.object({ id: z.string(), number: z.number() }),
+				comments: z.object({
+					nodes: z.array(
+						z.object({
+							id: z.string(),
+							pullRequestReview: z.object({ state: z.string() }).nullable(),
+						}),
+					),
+				}),
+			})
+			.nullable(),
+	}),
+});
+
 /** A comment within a review thread, tagged with whether it's a draft (pending) or published. */
 export interface ReviewComment {
 	nodeId: string;
@@ -214,6 +243,13 @@ export interface PendingReviewComment {
 	filePath: string;
 	line: number | null;
 	body: string;
+}
+
+export interface PromotionThreadState {
+	pullRequestNodeId: string;
+	pullRequestNumber: number;
+	rootCommentNodeId: string | null;
+	rootIsPending: boolean;
 }
 
 const PENDING_STATE = "PENDING";
@@ -325,6 +361,27 @@ export async function getReview(
 		pendingCommentCount,
 		pendingComments,
 		threads,
+	};
+}
+
+/** Read the remote root needed to reconcile an interrupted local-to-GitHub promotion. */
+export async function getPromotionThreadState(
+	repoRoot: string,
+	threadNodeId: string,
+): Promise<PromotionThreadState | null> {
+	const stdout = await ghReadOrThrow(
+		["api", "graphql", "-f", `query=${PROMOTION_THREAD_QUERY}`, "-f", `threadId=${threadNodeId}`],
+		repoRoot,
+	);
+	const parsed = PromotionThreadQuerySchema.parse(JSON.parse(stdout));
+	const node = parsed.data.node;
+	if (node === null) return null;
+	const root = node.comments.nodes[0];
+	return {
+		pullRequestNodeId: node.pullRequest.id,
+		pullRequestNumber: node.pullRequest.number,
+		rootCommentNodeId: root?.id ?? null,
+		rootIsPending: root?.pullRequestReview?.state === PENDING_STATE,
 	};
 }
 

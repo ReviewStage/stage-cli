@@ -91,7 +91,10 @@ describe("review API — promotion resume", () => {
 	});
 
 	it("rejects recovery through a different pull request", async () => {
-		await harness.writeGhShim(makeInterruptedPromotionReview());
+		await harness.writeGhShim(makeInterruptedPromotionReview(), {
+			recoveryPullRequestNodeId: "PR_other",
+			recoveryPullRequestNumber: 5,
+		});
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ withReply: true });
 		checkpoint(localThreadId, "PR_other");
@@ -99,12 +102,43 @@ describe("review API — promotion resume", () => {
 		const promotion = await promote(runId, localThreadId);
 		const [savedThread] = harness.db.select().from(commentThread).all();
 
-		expect(promotion.status).toBe(409);
+		expect(promotion.status, promotion.body).toBe(409);
 		expect((await harness.logLines()).filter((line) => line.startsWith("add-thread"))).toHaveLength(
 			0,
 		);
-		expect(savedThread?.promotionPullRequestNodeId).toBe("PR_other");
-		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
+		expect(savedThread?.promotionPullRequestNodeId).toBeNull();
+		expect(savedThread?.promotionThreadNodeId).toBeNull();
+		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(1);
+	});
+
+	it.each([
+		["closed", { state: "CLOSED" as const }],
+		["moved", { headRefOid: "d".repeat(40) }],
+	])("releases a checkpoint after the pull request has %s", async (_state, reviewOptions) => {
+		await harness.writeGhShim(makeInterruptedPromotionReview(undefined, reviewOptions));
+		const { runId, localThreadId } = seedInterruptedPromotion();
+
+		const promotion = await promote(runId, localThreadId);
+		const [savedThread] = harness.db.select().from(commentThread).all();
+
+		expect(promotion.status, promotion.body).toBe(409);
+		expect(savedThread?.promotionPullRequestNodeId).toBeNull();
+		expect(savedThread?.promotionThreadNodeId).toBeNull();
+		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(1);
+	});
+
+	it("releases a checkpoint without deleting a published remote root", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReview(undefined, { state: "CLOSED" }), {
+			recoveryRootState: "COMMENTED",
+		});
+		const { runId, localThreadId } = seedInterruptedPromotion();
+
+		const promotion = await promote(runId, localThreadId);
+		const [savedThread] = harness.db.select().from(commentThread).all();
+
+		expect(promotion.status, promotion.body).toBe(409);
+		expect(savedThread?.promotionPullRequestNodeId).toBeNull();
+		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(0);
 	});
 });
 

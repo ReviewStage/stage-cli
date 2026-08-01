@@ -31,6 +31,7 @@ import {
 	type ReviewThread as GitHubApiReviewThread,
 	type GitHubDiffSide,
 	type GitHubReview,
+	getPromotionThreadState,
 	getReview,
 	setThreadResolved,
 	submitReview,
@@ -458,29 +459,28 @@ async function promoteLocalThread(
 	const root = comments[0];
 	if (!root) throw new ReviewError("Thread has no comments to add to the review.", 400);
 	const replies = comments.slice(1);
-	const hasPromotionTarget = thread.promotionPullRequestNodeId !== null;
-	const hasPromotionThread = thread.promotionThreadNodeId !== null;
-	const hasPromotionRoot = thread.promotionRootCommentNodeId !== null;
-	if (hasPromotionTarget !== hasPromotionThread || hasPromotionTarget !== hasPromotionRoot) {
-		throw new ReviewError(
-			"This comment has incomplete promotion state and cannot be resumed.",
-			409,
-		);
-	}
+	const checkpoint = readPromotionCheckpoint(thread);
 	if (thread.promotionReplyCount > replies.length) {
 		throw new ReviewError(
 			"This comment's promotion progress is invalid and cannot be resumed.",
 			409,
 		);
 	}
+	if (checkpoint !== null) {
+		await releaseCrossPullRequestPromotion(db, run, localThreadId, checkpoint);
+	}
 
 	await withLockedReviewTarget(run, async ({ review }) => {
-		assertPushable(run, review);
-		if (
-			thread.promotionPullRequestNodeId !== null &&
-			thread.promotionPullRequestNodeId !== review.pullRequestNodeId
-		) {
-			throw new ReviewError("This comment promotion belongs to another pull request.", 409);
+		try {
+			assertPushable(run, review);
+			if (checkpoint !== null && checkpoint.pullRequestNodeId !== review.pullRequestNodeId) {
+				throw new ReviewError("This comment promotion belongs to another pull request.", 409);
+			}
+		} catch (error) {
+			if (checkpoint !== null) {
+				await releasePromotionCheckpoint(db, run, localThreadId, checkpoint);
+			}
+			throw error;
 		}
 		const side = toGitHubSide(thread.side);
 		const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
@@ -502,13 +502,7 @@ async function promoteLocalThread(
 			}
 		}
 
-		let addedThread: AddedReviewThread | null =
-			thread.promotionThreadNodeId !== null && thread.promotionRootCommentNodeId !== null
-				? {
-						threadNodeId: thread.promotionThreadNodeId,
-						rootCommentNodeId: thread.promotionRootCommentNodeId,
-					}
-				: null;
+		let addedThread: AddedReviewThread | null = checkpoint;
 		let promotedReplyCount = thread.promotionReplyCount;
 		let reviewNodeId: string | null = null;
 		let created = false;
@@ -632,6 +626,78 @@ async function promoteLocalThread(
 		// Every comment landed remotely; the cascade removes all local comment rows.
 		db.delete(commentThread).where(eq(commentThread.id, localThreadId)).run();
 	});
+}
+
+interface PromotionCheckpoint {
+	pullRequestNodeId: string;
+	threadNodeId: string;
+	rootCommentNodeId: string;
+}
+
+function readPromotionCheckpoint(
+	thread: typeof commentThread.$inferSelect,
+): PromotionCheckpoint | null {
+	const pullRequestNodeId = thread.promotionPullRequestNodeId;
+	const threadNodeId = thread.promotionThreadNodeId;
+	const rootCommentNodeId = thread.promotionRootCommentNodeId;
+	if (pullRequestNodeId === null && threadNodeId === null && rootCommentNodeId === null)
+		return null;
+	if (pullRequestNodeId === null || threadNodeId === null || rootCommentNodeId === null) {
+		throw new ReviewError(
+			"This comment has incomplete promotion state and cannot be resumed.",
+			409,
+		);
+	}
+	return { pullRequestNodeId, threadNodeId, rootCommentNodeId };
+}
+
+async function releaseCrossPullRequestPromotion(
+	db: StageDb,
+	run: ChapterRunRow,
+	localThreadId: string,
+	checkpoint: PromotionCheckpoint,
+): Promise<void> {
+	const remote = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
+	if (
+		remote === null ||
+		remote.pullRequestNodeId !== checkpoint.pullRequestNodeId ||
+		remote.rootCommentNodeId !== checkpoint.rootCommentNodeId
+	) {
+		return;
+	}
+	const identity = await resolveReviewIdentity(run);
+	if (remote.pullRequestNumber === identity.prNumber) return;
+	await reviewActions.run(
+		{
+			kind: REVIEW_ACTION_SCOPE.PULL_REQUEST,
+			owner: identity.repo.owner,
+			repo: identity.repo.repo,
+			prNumber: remote.pullRequestNumber,
+		},
+		() => releasePromotionCheckpoint(db, run, localThreadId, checkpoint),
+	);
+	throw new ReviewError(
+		"This comment promotion belonged to another pull request and was released. Try adding it to this review again.",
+		409,
+	);
+}
+
+async function releasePromotionCheckpoint(
+	db: StageDb,
+	run: ChapterRunRow,
+	localThreadId: string,
+	checkpoint: PromotionCheckpoint,
+): Promise<void> {
+	const remote = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
+	if (
+		remote !== null &&
+		remote.pullRequestNodeId === checkpoint.pullRequestNodeId &&
+		remote.rootCommentNodeId === checkpoint.rootCommentNodeId &&
+		remote.rootIsPending
+	) {
+		await deleteReviewComment(run.repoRoot, checkpoint.rootCommentNodeId);
+	}
+	clearPromotionProgress(db, localThreadId);
 }
 
 function clearPromotionProgress(db: StageDb, localThreadId: string): void {
