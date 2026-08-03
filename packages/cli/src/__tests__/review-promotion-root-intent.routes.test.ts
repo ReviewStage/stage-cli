@@ -63,6 +63,32 @@ describe("review API — promotion root intent", () => {
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 
+	it("finishes an accepted promotion after a push makes its root anchorless", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, {
+			failAddThreadAfterWrite: true,
+			anchorlessCreatedThreadBeforeFailure: true,
+			createdThreadHeadRefOidBeforeFailure: "f".repeat(40),
+			persistCreatedReview: true,
+		});
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true });
+		const port = await harness.start();
+
+		const interrupted = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+		const resumed = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+		const log = await harness.logLines();
+
+		expect(interrupted.status).toBe(500);
+		expect(resumed.status, resumed.body).toBe(200);
+		expect(log.filter((line) => line.startsWith("add-thread"))).toHaveLength(1);
+		expect(log.filter((line) => line === "reply")).toHaveLength(1);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
 	it("does not adopt a new anchored root after its marker is edited on GitHub", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW, {
 			failAddThreadAfterWrite: true,

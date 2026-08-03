@@ -35,6 +35,7 @@ import {
 	getPromotionThreadState,
 	getReview,
 	type PromotionThreadState,
+	type ReviewRecoveryThread,
 	setThreadResolved,
 	submitReview,
 	updateReviewComment,
@@ -436,7 +437,7 @@ class PromotionCoordinator {
 		}
 		if (commentIndex === 0) return true;
 		const review = await getReview(thread.repoRoot, remote.repo, remote.pullRequestNumber);
-		const remoteThread = review.threads.find(
+		const remoteThread = review.recoveryThreads.find(
 			(candidate) => candidate.threadNodeId === checkpoint.threadNodeId,
 		);
 		const viewerLogin = checkpoint.viewerLogin ?? remote.rootAuthorLogin;
@@ -668,7 +669,22 @@ async function promoteLocalThread(
 				.run();
 		}
 		try {
-			assertPushable(run, review);
+			const checkpointThread =
+				checkpoint === null
+					? null
+					: review.recoveryThreads.find(
+							(candidate) => candidate.threadNodeId === checkpoint?.threadNodeId,
+						);
+			// Once a push removes an accepted root's anchor, completing that exact
+			// thread is recovery rather than a new line-anchored write. Ordinary
+			// anchored checkpoints retain the current-diff requirement.
+			if (checkpoint !== null && checkpointThread?.line === null) {
+				if (review.state !== "OPEN") {
+					throw new ReviewError("This pull request is closed, so its review is read-only.", 409);
+				}
+			} else {
+				assertPushable(run, review);
+			}
 			if (checkpoint !== null && checkpoint.pullRequestNodeId !== review.pullRequestNodeId) {
 				throw new ReviewError("This comment promotion belongs to another pull request.", 409);
 			}
@@ -704,7 +720,7 @@ async function promoteLocalThread(
 		let remoteThreadCanResolve = false;
 		try {
 			if (addedThread !== null) {
-				const remoteThread = review.threads.find(
+				const remoteThread = review.recoveryThreads.find(
 					(candidate) => candidate.threadNodeId === addedThread?.threadNodeId,
 				);
 				const persistedRoot = remoteThread?.comments.find(
@@ -926,8 +942,20 @@ function findPromotionIntentThread(
 	baselineThreadNodeIds: string[] | null,
 	side: GitHubDiffSide,
 	startLine: number | null,
-): GitHubApiReviewThread | null {
+): ReviewRecoveryThread | null {
 	const marker = promotionRootMarker(localThreadId);
+	const markerMatches = review.recoveryThreads.filter((candidate) => {
+		const root = candidate.comments[0];
+		return root?.authorLogin === review.viewerLogin && root.body.includes(marker);
+	});
+	if (markerMatches.length > 1) {
+		throw new ReviewError(
+			"More than one GitHub thread matches this interrupted comment promotion.",
+			409,
+		);
+	}
+	const markerMatch = markerMatches[0];
+	if (markerMatch) return markerMatch;
 	const anchoredMatches = review.threads.filter((candidate) => {
 		const root = candidate.comments[0];
 		return (
@@ -939,17 +967,6 @@ function findPromotionIntentThread(
 			root?.authorLogin === review.viewerLogin
 		);
 	});
-	const markerMatches = anchoredMatches.filter((candidate) =>
-		candidate.comments[0]?.body.includes(marker),
-	);
-	if (markerMatches.length > 1) {
-		throw new ReviewError(
-			"More than one GitHub thread matches this interrupted comment promotion.",
-			409,
-		);
-	}
-	const markerMatch = markerMatches[0];
-	if (markerMatch) return markerMatch;
 	if (baselineThreadNodeIds === null) return null;
 	const baseline = new Set(baselineThreadNodeIds);
 	const newMatches = anchoredMatches.filter((candidate) => !baseline.has(candidate.threadNodeId));
@@ -1053,7 +1070,7 @@ function markPromotionRootPublished(db: StageDb, localThreadId: string): void {
  * body matching.
  */
 function reconcilePromotionReplyNodeIds(
-	remoteThread: GitHubApiReviewThread,
+	remoteThread: ReviewRecoveryThread,
 	viewerLogin: string,
 	localThreadId: string,
 	localReplies: { id: string; body: string }[],
@@ -1211,9 +1228,9 @@ function directCommentBody(body: string, creationId: string): string {
 	return `${body}\n\n${directCommentMarker(creationId)}`;
 }
 
-function findDirectComment(review: GitHubReview, creationId: string): GitHubApiReviewThread | null {
+function findDirectComment(review: GitHubReview, creationId: string): ReviewRecoveryThread | null {
 	const marker = directCommentMarker(creationId);
-	const matches = review.threads.filter((thread) => {
+	const matches = review.recoveryThreads.filter((thread) => {
 		const root = thread.comments[0];
 		return root?.authorLogin === review.viewerLogin && root.body.includes(marker);
 	});

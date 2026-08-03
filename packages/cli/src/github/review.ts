@@ -249,6 +249,11 @@ export interface ReviewThread {
 	comments: ReviewComment[];
 }
 
+/** A review thread retained for write recovery even when GitHub no longer exposes an anchor. */
+export interface ReviewRecoveryThread extends Omit<ReviewThread, "line"> {
+	line: number | null;
+}
+
 export interface GitHubReview {
 	/** Authenticated viewer, used to distinguish their draft comments during recovery. */
 	viewerLogin: string;
@@ -271,6 +276,8 @@ export interface GitHubReview {
 	/** Viewer's pending (draft) comments across all threads, including anchorless ones. */
 	pendingCommentCount: number;
 	pendingComments: PendingReviewComment[];
+	/** All rooted threads, including outdated/anchorless ones hidden from the line-based UI. */
+	recoveryThreads: ReviewRecoveryThread[];
 	threads: ReviewThread[];
 }
 
@@ -387,6 +394,7 @@ export async function getReview(
 	let pendingReviewBody = "";
 	let pendingCommentCount = 0;
 	const pendingComments: PendingReviewComment[] = [];
+	const recoveryThreads: ReviewRecoveryThread[] = [];
 	const threads: ReviewThread[] = [];
 	let loadedNestedCommentPage = false;
 	let cursor: string | null = null;
@@ -433,8 +441,8 @@ export async function getReview(
 				});
 			}
 			const root = comments[0];
-			if (!root || node.line === null) continue;
-			threads.push({
+			if (!root) continue;
+			const recoveryThread: ReviewRecoveryThread = {
 				threadNodeId: node.id,
 				isResolved: node.isResolved,
 				viewerCanResolve: node.viewerCanResolve,
@@ -446,7 +454,10 @@ export async function getReview(
 				side: node.diffSide,
 				startSide: node.startDiffSide,
 				comments: comments.map(toReviewComment),
-			});
+			};
+			recoveryThreads.push(recoveryThread);
+			if (node.line === null) continue;
+			threads.push({ ...recoveryThread, line: node.line });
 		}
 		cursor = nextCursor(pr.reviewThreads.pageInfo);
 	} while (cursor !== null);
@@ -484,6 +495,7 @@ export async function getReview(
 		pendingReviewBody,
 		pendingCommentCount,
 		pendingComments,
+		recoveryThreads,
 		threads,
 	};
 }
