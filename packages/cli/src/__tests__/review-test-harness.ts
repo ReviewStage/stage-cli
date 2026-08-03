@@ -780,8 +780,8 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 	    process.exit(1);
 	  }
 	  emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", viewerCanResolve: ${options.addedThreadCanResolve === false ? "false" : "true"}, comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
-} else if (query.includes("mutation ResolveThread")) {
-  fs.appendFileSync(log, "resolve-thread\\n");
+} else if (query.includes("mutation ResolveThread") || query.includes("mutation UnresolveThread")) {
+  fs.appendFileSync(log, query.includes("mutation ResolveThread") ? "resolve-thread\\n" : "unresolve-thread\\n");
   if (${options.failResolve ? "true" : "false"}) {
 	    if (${options.addConcurrentPendingReplyOnResolveFailure ? "true" : "false"}) {
 	      const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));

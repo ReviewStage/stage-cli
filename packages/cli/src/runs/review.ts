@@ -719,6 +719,7 @@ async function promoteLocalThread(
 		let reviewNodeId: string | null = null;
 		let remoteThreadIsResolved = false;
 		let remoteThreadCanResolve = false;
+		let remoteThreadCanUnresolve = false;
 		try {
 			if (addedThread !== null) {
 				const remoteThread = review.recoveryThreads.find(
@@ -737,6 +738,7 @@ async function promoteLocalThread(
 				} else {
 					remoteThreadIsResolved = remoteThread.isResolved;
 					remoteThreadCanResolve = remoteThread.viewerCanResolve;
+					remoteThreadCanUnresolve = remoteThread.viewerCanUnresolve;
 					promotedReplyNodeIds = reconcilePromotionReplyNodeIds(
 						remoteThread,
 						review.viewerLogin,
@@ -845,8 +847,18 @@ async function promoteLocalThread(
 					.run();
 				if (persisted.changes !== 1) throw new Error("Local promotion checkpoint was not saved");
 			}
-			if (thread.resolvedAt !== null && !remoteThreadIsResolved && remoteThreadCanResolve) {
-				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
+			const shouldResolve = thread.resolvedAt !== null;
+			if (shouldResolve !== remoteThreadIsResolved) {
+				const canChangeResolution = shouldResolve
+					? remoteThreadCanResolve
+					: remoteThreadCanUnresolve;
+				if (!canChangeResolution) {
+					throw new ReviewError(
+						`GitHub doesn't allow you to ${shouldResolve ? "resolve" : "reopen"} this promoted review thread.`,
+						403,
+					);
+				}
+				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, shouldResolve);
 			}
 		} catch (err) {
 			// GitHub does not offer a conditional delete for a review root or review.
