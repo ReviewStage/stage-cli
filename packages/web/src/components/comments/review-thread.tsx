@@ -47,21 +47,21 @@ const PENDING_BADGE_CN =
 
 // Local comments remain editable offline. A pending GitHub comment is editable
 // only while this run can write to the current pending review.
-export function canEditReviewComment(comment: ReviewComment, canPushToReview: boolean): boolean {
+export function canEditReviewComment(comment: ReviewComment, canWriteToGitHub: boolean): boolean {
 	return (
 		comment.state === COMMENT_STATE.LOCAL ||
-		(comment.state === COMMENT_STATE.PENDING && canPushToReview)
+		(comment.state === COMMENT_STATE.PENDING && canWriteToGitHub)
 	);
 }
 
 export function activeEditingCommentId(
 	comments: ReviewComment[],
 	editingId: string | null,
-	canPushToReview: boolean,
+	canWriteToGitHub: boolean,
 ): string | null {
 	if (editingId === null) return null;
 	const comment = comments.find((candidate) => candidate.id === editingId);
-	return comment && canEditReviewComment(comment, canPushToReview) ? editingId : null;
+	return comment && canEditReviewComment(comment, canWriteToGitHub) ? editingId : null;
 }
 
 function StateBadge({ state }: { state: ReviewComment["state"] }) {
@@ -93,17 +93,8 @@ export function canPublishReplyImmediately(thread: ReviewThread): boolean {
 	return thread.comments.some((comment) => comment.state === COMMENT_STATE.SUBMITTED);
 }
 
-export function canReplyToGitHubThread(
-	thread: ReviewThread,
-	canWriteToGitHub: boolean,
-	canPushToReview: boolean,
-): boolean {
-	return (
-		thread.source === THREAD_SOURCE.GITHUB &&
-		thread.viewerCanReply &&
-		canWriteToGitHub &&
-		(canPushToReview || canPublishReplyImmediately(thread))
-	);
+export function canReplyToGitHubThread(thread: ReviewThread, canWriteToGitHub: boolean): boolean {
+	return thread.source === THREAD_SOURCE.GITHUB && thread.viewerCanReply && canWriteToGitHub;
 }
 
 export function canToggleThreadResolution(
@@ -118,13 +109,13 @@ export function canToggleThreadResolution(
 export function canAddLocalThreadToReview(
 	thread: ReviewThread,
 	githubAvailable: boolean,
-	canPushToReview: boolean,
+	canWriteToGitHub: boolean,
 	githubAnchorEligible: boolean,
 ): boolean {
 	return (
 		thread.source === THREAD_SOURCE.LOCAL &&
 		githubAvailable &&
-		(thread.hasPromotionRecovery || (canPushToReview && githubAnchorEligible))
+		(thread.hasPromotionRecovery || (canWriteToGitHub && githubAnchorEligible))
 	);
 }
 
@@ -146,7 +137,6 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 	const review = useReviewContext();
 	const isGitHub = thread.source === THREAD_SOURCE.GITHUB;
 	const githubAvailable = review.github === GITHUB_REVIEW_STATUS.AVAILABLE;
-	const canPushToReview = review.canPushToReview;
 	const canWriteToGitHub = review.canWriteToGitHub;
 
 	const [isOpen, setIsOpen] = useState(!thread.isResolved);
@@ -155,8 +145,8 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 	const [deleteTarget, setDeleteTarget] = useState<ReviewComment | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
-	const activeEditingId = activeEditingCommentId(thread.comments, editingId, canPushToReview);
-	const canReply = !isGitHub || canReplyToGitHubThread(thread, canWriteToGitHub, canPushToReview);
+	const activeEditingId = activeEditingCommentId(thread.comments, editingId, canWriteToGitHub);
+	const canReply = !isGitHub || canReplyToGitHubThread(thread, canWriteToGitHub);
 	const activeIsReplying = activeReplyingState(isReplying, canReply);
 	useEffect(() => {
 		if (editingId !== null && activeEditingId === null) {
@@ -295,7 +285,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 							{canAddLocalThreadToReview(
 								thread,
 								githubAvailable,
-								canPushToReview,
+								canWriteToGitHub,
 								githubAnchorEligible,
 							) && (
 								<Tooltip>
@@ -337,7 +327,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 									<TooltipContent>Reply</TooltipContent>
 								</Tooltip>
 							)}
-							{canEditReviewComment(root, canPushToReview) && (
+							{canEditReviewComment(root, canWriteToGitHub) && (
 								<CommentActions
 									onEdit={() => {
 										setIsOpen(true);
@@ -388,7 +378,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 									}}
 									onSubmitEdit={(b) => submitEdit(reply, b)}
 									onDelete={() => setDeleteTarget(reply)}
-									canPushToReview={canPushToReview}
+									canWriteToGitHub={canWriteToGitHub}
 								/>
 							))}
 						</div>
@@ -399,7 +389,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 							isGitHub={isGitHub}
 							publishesImmediately={publishesImmediately}
 							hasPendingReview={review.hasPendingReview}
-							canPushToReview={canPushToReview}
+							canWriteToGitHub={canWriteToGitHub}
 							error={error}
 							onSubmit={submitReply}
 							onCancel={() => {
@@ -425,7 +415,7 @@ function ReplyCommentForm({
 	isGitHub,
 	publishesImmediately,
 	hasPendingReview,
-	canPushToReview,
+	canWriteToGitHub,
 	error,
 	onSubmit,
 	onCancel,
@@ -433,15 +423,15 @@ function ReplyCommentForm({
 	isGitHub: boolean;
 	publishesImmediately: boolean;
 	hasPendingReview: boolean;
-	canPushToReview: boolean;
+	canWriteToGitHub: boolean;
 	error: string | null;
 	onSubmit: (body: string, pending: boolean, creationId: string) => Promise<void>;
 	onCancel: () => void;
 }) {
 	const { setStartReview, startReview } = useCommentPreferences();
 	const [creationId] = useState(() => crypto.randomUUID());
-	const hasUsablePendingReview = hasPendingReview && canPushToReview;
-	const showStartReview = isGitHub && publishesImmediately && !hasPendingReview && canPushToReview;
+	const hasUsablePendingReview = hasPendingReview && canWriteToGitHub;
+	const showStartReview = isGitHub && publishesImmediately && !hasPendingReview && canWriteToGitHub;
 	const pending =
 		isGitHub &&
 		(!publishesImmediately || hasUsablePendingReview || (showStartReview && startReview));
@@ -554,7 +544,7 @@ function ReplyItem({
 	onCancelEdit,
 	onSubmitEdit,
 	onDelete,
-	canPushToReview,
+	canWriteToGitHub,
 }: {
 	reply: ReviewComment;
 	idle: boolean;
@@ -564,18 +554,18 @@ function ReplyItem({
 	onCancelEdit: () => void;
 	onSubmitEdit: (body: string) => Promise<void>;
 	onDelete: () => void;
-	canPushToReview: boolean;
+	canWriteToGitHub: boolean;
 }) {
 	return (
 		<div className="space-y-1.5">
 			<div className="flex items-center gap-2">
 				<Byline comment={reply} />
 				<StateBadge state={reply.state} />
-				{idle && canEditReviewComment(reply, canPushToReview) && (
+				{idle && canEditReviewComment(reply, canWriteToGitHub) && (
 					<CommentActions onEdit={onEdit} onDelete={onDelete} />
 				)}
 			</div>
-			{isEditing && canEditReviewComment(reply, canPushToReview) ? (
+			{isEditing && canEditReviewComment(reply, canWriteToGitHub) ? (
 				<CommentForm
 					label="Update"
 					initialBody={reply.body}

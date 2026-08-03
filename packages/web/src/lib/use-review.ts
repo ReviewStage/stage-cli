@@ -95,11 +95,9 @@ export interface UseReviewResult {
 	threadsByFile: ReadonlyMap<string, ReviewThread[]>;
 	github: GitHubReviewStatus;
 	pendingComments: PendingReviewComment[];
-	pendingCommentCount: number;
 	hasPendingReview: boolean;
 	pendingReviewBody: string;
 	isOwnPullRequest: boolean;
-	canPushToReview: boolean;
 	canWriteToGitHub: boolean;
 	error: unknown;
 	// Local comments (CLI-only, work offline).
@@ -393,11 +391,9 @@ export function useReview(runId: string): UseReviewResult {
 		threadsByFile,
 		github: data?.github ?? GITHUB_REVIEW_STATUS.NONE,
 		pendingComments,
-		pendingCommentCount: data?.pendingCommentCount ?? 0,
 		hasPendingReview: data?.hasPendingReview ?? false,
 		pendingReviewBody: data?.pendingReviewBody ?? "",
 		isOwnPullRequest: data?.isOwnPullRequest ?? false,
-		canPushToReview: data?.canPushToReview ?? false,
 		canWriteToGitHub: data?.canWriteToGitHub ?? false,
 		error,
 		createLocalThread: m.createLocalThread.mutateAsync,
@@ -425,11 +421,9 @@ function mergeOfflineReview(offline: ReviewResponse, cached: ReviewResponse): Re
 			...cached.threads.filter((thread) => thread.source === THREAD_SOURCE.GITHUB),
 		],
 		pendingComments: cached.pendingComments,
-		pendingCommentCount: cached.pendingCommentCount,
 		hasPendingReview: cached.hasPendingReview,
 		pendingReviewBody: cached.pendingReviewBody,
 		isOwnPullRequest: cached.isOwnPullRequest,
-		canPushToReview: false,
 		canWriteToGitHub: false,
 	};
 }

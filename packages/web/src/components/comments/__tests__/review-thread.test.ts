@@ -36,13 +36,8 @@ describe("GitHub reply destination", () => {
 		).toBe(true);
 	});
 
-	it("allows only an immediate reply when an older draft blocks pending writes", () => {
-		expect(canReplyToGitHubThread(makeThread([COMMENT_STATE.SUBMITTED]), true, false)).toBe(true);
-		expect(canReplyToGitHubThread(makeThread([COMMENT_STATE.PENDING]), true, false)).toBe(false);
-	});
-
 	it("disables replies when the pull request is read-only", () => {
-		expect(canReplyToGitHubThread(makeThread([COMMENT_STATE.SUBMITTED]), false, false)).toBe(false);
+		expect(canReplyToGitHubThread(makeThread([COMMENT_STATE.SUBMITTED]), false)).toBe(false);
 	});
 
 	it("disables replies when GitHub denies permission for the thread", () => {
@@ -50,7 +45,6 @@ describe("GitHub reply destination", () => {
 			canReplyToGitHubThread(
 				{ ...makeThread([COMMENT_STATE.SUBMITTED]), viewerCanReply: false },
 				true,
-				false,
 			),
 		).toBe(false);
 	});

@@ -171,7 +171,8 @@ export function ReviewPanel() {
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const submissionIdRef = useRef(crypto.randomUUID());
 
-	const { pendingCommentCount, hasPendingReview, isOwnPullRequest, canPushToReview } = review;
+	const { pendingComments, hasPendingReview, isOwnPullRequest, canWriteToGitHub } = review;
+	const pendingCommentCount = pendingComments.length;
 	const pendingByFile = useMemo(
 		() => collectPendingByFile(review.pendingComments),
 		[review.pendingComments],
@@ -184,7 +185,7 @@ export function ReviewPanel() {
 	const effectiveEvent =
 		isOwnPullRequest && selected !== REVIEW_EVENT.COMMENT ? REVIEW_EVENT.COMMENT : selected;
 	const canSubmit =
-		canPushToReview &&
+		canWriteToGitHub &&
 		canSubmitReview({
 			event: effectiveEvent,
 			body,
@@ -249,7 +250,7 @@ export function ReviewPanel() {
 								<Button
 									size="sm"
 									className="h-7 cursor-pointer px-2"
-									disabled={!canPushToReview && !hasPendingReview}
+									disabled={!canWriteToGitHub && !hasPendingReview}
 								>
 									<MessageSquarePlus className="size-3.5" />
 									<span className="ml-1 hidden text-xs @7xl:inline">Review</span>
@@ -263,13 +264,13 @@ export function ReviewPanel() {
 						</span>
 					</TooltipTrigger>
 					<TooltipContent>
-						{canPushToReview ? "Submit your review" : "This GitHub review is read-only"}
+						{canWriteToGitHub ? "Submit your review" : "This GitHub review is read-only"}
 					</TooltipContent>
 				</Tooltip>
 				<PopoverContent align="end" className="w-96">
 					<p className="font-medium text-sm">Finish your review</p>
 					<p className="mt-0.5 text-muted-foreground text-xs">
-						{!canPushToReview
+						{!canWriteToGitHub
 							? "This GitHub review is read-only. You can still discard an existing pending review."
 							: pendingCommentCount > 0
 								? `${pendingCommentCount} pending comment${pendingCommentCount === 1 ? "" : "s"} will be published.`
@@ -279,7 +280,7 @@ export function ReviewPanel() {
 						value={body}
 						onChange={setBody}
 						textareaRef={textareaRef}
-						disabled={isSubmitting || !canPushToReview}
+						disabled={isSubmitting || !canWriteToGitHub}
 						placeholder={
 							effectiveEvent === REVIEW_EVENT.REQUEST_CHANGES
 								? "Summarize the requested changes…"
@@ -294,7 +295,7 @@ export function ReviewPanel() {
 					<ActionSelector
 						selected={effectiveEvent}
 						onSelect={selectAction}
-						disabled={isSubmitting || !canPushToReview}
+						disabled={isSubmitting || !canWriteToGitHub}
 						isOwnPullRequest={isOwnPullRequest}
 					/>
 					<div className="mt-3 flex items-center justify-between">

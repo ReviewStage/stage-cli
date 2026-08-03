@@ -37,11 +37,9 @@ const REVIEW: ReviewResponse = {
 	github: "available",
 	threads: [REVIEW_THREAD],
 	pendingComments: [],
-	pendingCommentCount: 0,
 	hasPendingReview: false,
 	pendingReviewBody: "",
 	isOwnPullRequest: false,
-	canPushToReview: false,
 	canWriteToGitHub: false,
 };
 

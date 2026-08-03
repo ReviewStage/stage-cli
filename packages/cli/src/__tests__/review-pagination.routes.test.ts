@@ -90,7 +90,7 @@ describe("review API — paginated snapshots", () => {
 		const review = ReviewResponseSchema.parse(JSON.parse(response.body));
 
 		expect(review.github).toBe("offline");
-		expect(review.canPushToReview).toBe(false);
+		expect(review.canWriteToGitHub).toBe(false);
 		expect(stderr).toHaveBeenCalledWith(
 			expect.stringContaining("Pull request changed while GitHub review pages were loading"),
 		);

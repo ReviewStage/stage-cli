@@ -96,16 +96,8 @@ function assertGitHubWritable(run: ChapterRunRow, review: GitHubReview): void {
 	throw new ReviewError(reason, 409);
 }
 
-function assertPushable(run: ChapterRunRow, review: GitHubReview): void {
-	assertGitHubWritable(run, review);
-}
-
 function canWriteToGitHub(run: ChapterRunRow, review: GitHubReview): boolean {
 	return review.state === "OPEN" && runMatchesPrDiff(run, review);
-}
-
-function canPushToReview(run: ChapterRunRow, review: GitHubReview): boolean {
-	return canWriteToGitHub(run, review);
 }
 
 function requireReviewThread(review: GitHubReview, threadNodeId: string): GitHubApiReviewThread {
@@ -219,11 +211,9 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 	const base = {
 		threads: localThreads,
 		pendingComments: [],
-		pendingCommentCount: 0,
 		hasPendingReview: false,
 		pendingReviewBody: "",
 		isOwnPullRequest: false,
-		canPushToReview: false,
 		canWriteToGitHub: false,
 	};
 
@@ -259,7 +249,6 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 			...base,
 			github: GITHUB_REVIEW_STATUS.AVAILABLE,
 			pendingComments: visiblePendingComments(review.pendingComments),
-			pendingCommentCount: review.pendingCommentCount,
 			hasPendingReview: review.pendingReviewNodeId !== null,
 			pendingReviewBody: review.pendingReviewBody,
 			isOwnPullRequest: review.viewerDidAuthor,
@@ -271,11 +260,9 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		github: GITHUB_REVIEW_STATUS.AVAILABLE,
 		threads: [...localThreads, ...githubThreads],
 		pendingComments: visiblePendingComments(review.pendingComments),
-		pendingCommentCount: review.pendingCommentCount,
 		hasPendingReview: review.pendingReviewNodeId !== null,
 		pendingReviewBody: review.pendingReviewBody,
 		isOwnPullRequest: review.viewerDidAuthor,
-		canPushToReview: canPushToReview(run, review),
 		canWriteToGitHub: canWriteToGitHub(run, review),
 	};
 }
@@ -728,7 +715,7 @@ async function promoteLocalThread(
 						throw new ReviewError("This pull request is closed, so its review is read-only.", 409);
 					}
 				} else {
-					assertPushable(run, review);
+					assertGitHubWritable(run, review);
 				}
 				if (checkpoint !== null && checkpoint.pullRequestNodeId !== review.pullRequestNodeId) {
 					throw new ReviewError("This comment promotion belongs to another pull request.", 409);
@@ -1221,8 +1208,7 @@ export async function replyToGitHubThread(
 ): Promise<void> {
 	await withLockedReviewTarget(run, async (target) => {
 		const { review } = target;
-		if (pending) assertPushable(run, review);
-		else assertGitHubWritable(run, review);
+		assertGitHubWritable(run, review);
 		const thread = requireReviewThread(review, threadNodeId);
 		if (!thread.viewerCanReply) {
 			throw new ReviewError("GitHub doesn't allow you to reply to this review thread.", 403);
@@ -1287,14 +1273,18 @@ export async function submitRunReview(
 		if (await hasSubmittedReviewMarker(run.repoRoot, repo, prNumber, review.viewerLogin, marker)) {
 			return;
 		}
-		assertPushable(run, review);
+		assertGitHubWritable(run, review);
 		if (review.viewerDidAuthor && event !== REVIEW_EVENT.COMMENT) {
 			throw new ReviewError("You can't approve or request changes on your own pull request.", 400);
 		}
 		if (event === REVIEW_EVENT.REQUEST_CHANGES && body.trim() === "") {
 			throw new ReviewError("Add a summary to request changes.", 400);
 		}
-		if (event === REVIEW_EVENT.COMMENT && body.trim() === "" && review.pendingCommentCount === 0) {
+		if (
+			event === REVIEW_EVENT.COMMENT &&
+			body.trim() === "" &&
+			review.pendingComments.length === 0
+		) {
 			throw new ReviewError(
 				"Add a summary or at least one pending comment to submit a review.",
 				400,
@@ -1341,7 +1331,7 @@ export async function editGitHubComment(
 	body: string,
 ): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
-		assertPushable(run, review);
+		assertGitHubWritable(run, review);
 		const existing = requirePendingComment(review, nodeId);
 		await updateReviewComment(
 			run.repoRoot,
@@ -1354,7 +1344,7 @@ export async function editGitHubComment(
 /** Delete a pending GitHub review comment by node id. */
 export async function deleteGitHubComment(run: ChapterRunRow, nodeId: string): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
-		assertPushable(run, review);
+		assertGitHubWritable(run, review);
 		requirePendingComment(review, nodeId);
 		await deleteReviewComment(run.repoRoot, nodeId);
 	});

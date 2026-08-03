@@ -34,7 +34,6 @@ describe("review API — GitHub boundaries", () => {
 		expect(read.status).toBe(200);
 		expect(review.github).toBe("available");
 		expect(review.threads).toHaveLength(2);
-		expect(review.canPushToReview).toBe(false);
 		expect(review.canWriteToGitHub).toBe(false);
 		expect(edit.status).toBe(409);
 		expect(JSON.parse(edit.body).error).toMatch(/closed/i);
@@ -64,7 +63,6 @@ describe("review API — GitHub boundaries", () => {
 			resolved: true,
 		});
 
-		expect(JSON.parse(read.body).canPushToReview).toBe(true);
 		expect(JSON.parse(read.body).canWriteToGitHub).toBe(true);
 		expect(reply.status).toBe(200);
 		expect(immediateReply.status).toBe(409);
@@ -85,10 +83,8 @@ describe("review API — GitHub boundaries", () => {
 		expect(read.status).toBe(200);
 		expect(review.github).toBe("available");
 		expect(review.threads).toHaveLength(0);
-		expect(review.pendingCommentCount).toBe(1);
 		expect(review.pendingComments).toHaveLength(1);
 		expect(review.hasPendingReview).toBe(true);
-		expect(review.canPushToReview).toBe(false);
 		expect(review.canWriteToGitHub).toBe(false);
 	});
 
@@ -102,7 +98,6 @@ describe("review API — GitHub boundaries", () => {
 		expect(read.status).toBe(200);
 		expect(review.github).toBe("available");
 		expect(review.hasPendingReview).toBe(true);
-		expect(review.canPushToReview).toBe(true);
 		expect(review.canWriteToGitHub).toBe(true);
 	});
 

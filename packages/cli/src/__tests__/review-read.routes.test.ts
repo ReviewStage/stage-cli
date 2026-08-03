@@ -57,7 +57,6 @@ describe("review API — read", () => {
 
 		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
 		expect(review.github).toBe("available");
-		expect(review.pendingCommentCount).toBe(1);
 		expect(review.pendingComments).toEqual([
 			{ id: "COMMENT_pending", filePath: "src/bar.ts", line: 4, body: "Draft comment" },
 		]);
@@ -89,7 +88,6 @@ describe("review API — read", () => {
 		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
 		const githubThread = review.threads.find((thread) => thread.source === "github");
 
-		expect(review.pendingCommentCount).toBe(1);
 		expect(review.pendingComments.map((comment) => comment.id)).toEqual(["COMMENT_late"]);
 		expect(githubThread?.comments.map((comment) => comment.id)).toEqual([
 			"COMMENT_sub",
@@ -160,7 +158,7 @@ describe("review API — read", () => {
 
 		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
 		expect(review.github).toBe("offline");
-		expect(review.canPushToReview).toBe(false);
+		expect(review.canWriteToGitHub).toBe(false);
 		expect(stderr).toHaveBeenCalledWith(
 			expect.stringContaining("Pull request not found on GitHub"),
 		);
@@ -176,7 +174,6 @@ describe("review API — read", () => {
 		expect(review.github).toBe("available");
 		expect(review.threads.every((t) => t.source === "local")).toBe(true);
 		expect(review.hasPendingReview).toBe(true);
-		expect(review.canPushToReview).toBe(false);
 		expect(review.canWriteToGitHub).toBe(false);
 	});
 });

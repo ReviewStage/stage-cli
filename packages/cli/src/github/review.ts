@@ -305,12 +305,9 @@ export interface GitHubReview {
 	mergeBaseOid: string;
 	/** The viewer's open pending review, or null when they have none. */
 	pendingReviewNodeId: string | null;
-	/** Commit the pending review is pinned to, or null when no review is open. */
-	pendingReviewCommitOid: string | null;
 	/** Existing summary text on the viewer's open pending review. */
 	pendingReviewBody: string;
 	/** Viewer's pending (draft) comments across all threads, including anchorless ones. */
-	pendingCommentCount: number;
 	pendingComments: PendingReviewComment[];
 	/** All rooted threads, including outdated/anchorless ones hidden from the line-based UI. */
 	recoveryThreads: ReviewRecoveryThread[];
@@ -428,7 +425,6 @@ export async function getReview(
 ): Promise<GitHubReview> {
 	let snapshotIdentity: ReviewSnapshotIdentity | null = null;
 	let pendingReviewBody = "";
-	let pendingCommentCount = 0;
 	const pendingComments: PendingReviewComment[] = [];
 	const recoveryThreads: ReviewRecoveryThread[] = [];
 	const threads: ReviewThread[] = [];
@@ -468,7 +464,6 @@ export async function getReview(
 			// ones dropped below — so the tray count and the empty-review check don't undercount.
 			for (const c of comments) {
 				if (c.pullRequestReview?.state !== PENDING_STATE) continue;
-				pendingCommentCount++;
 				pendingComments.push({
 					id: c.id,
 					filePath: node.path,
@@ -515,7 +510,6 @@ export async function getReview(
 		headRefOid,
 		baseRefOid,
 		pendingReviewNodeId,
-		pendingReviewCommitOid,
 	} = snapshotIdentity;
 	const mergeBaseOid = await getPullRequestMergeBase(repoRoot, repo, baseRefOid, headRefOid);
 
@@ -527,9 +521,7 @@ export async function getReview(
 		headRefOid,
 		mergeBaseOid,
 		pendingReviewNodeId,
-		pendingReviewCommitOid,
 		pendingReviewBody,
-		pendingCommentCount,
 		pendingComments,
 		recoveryThreads,
 		threads,

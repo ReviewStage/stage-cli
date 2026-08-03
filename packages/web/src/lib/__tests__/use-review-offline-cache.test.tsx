@@ -39,11 +39,9 @@ const AVAILABLE: ReviewResponse = {
 	pendingComments: [
 		{ id: "COMMENT_github", filePath: "src/github.ts", line: 2, body: "GitHub comment" },
 	],
-	pendingCommentCount: 1,
 	hasPendingReview: true,
 	pendingReviewBody: "Draft summary",
 	isOwnPullRequest: true,
-	canPushToReview: true,
 	canWriteToGitHub: true,
 };
 
@@ -64,11 +62,9 @@ const OFFLINE: ReviewResponse = {
 		},
 	],
 	pendingComments: [],
-	pendingCommentCount: 0,
 	hasPendingReview: false,
 	pendingReviewBody: "",
 	isOwnPullRequest: false,
-	canPushToReview: false,
 	canWriteToGitHub: false,
 };
 
@@ -101,10 +97,9 @@ describe("useReview offline cache", () => {
 			"THREAD_local",
 			"THREAD_github",
 		]);
-		expect(result.current.pendingCommentCount).toBe(1);
+		expect(result.current.pendingComments).toHaveLength(1);
 		expect(result.current.hasPendingReview).toBe(true);
 		expect(result.current.pendingReviewBody).toBe("Draft summary");
-		expect(result.current.canPushToReview).toBe(false);
 		expect(result.current.canWriteToGitHub).toBe(false);
 	});
 
@@ -128,6 +123,6 @@ describe("useReview offline cache", () => {
 		});
 		await waitFor(() => expect(result.current.github).toBe("offline"));
 		expect(result.current.threads.map((thread) => thread.id)).toEqual(["THREAD_local"]);
-		expect(result.current.pendingCommentCount).toBe(0);
+		expect(result.current.pendingComments).toHaveLength(0);
 	});
 });

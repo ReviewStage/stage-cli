@@ -38,11 +38,9 @@ const AVAILABLE_REVIEW: ReviewResponse = {
 	github: "available",
 	threads: [GITHUB_THREAD],
 	pendingComments: [],
-	pendingCommentCount: 0,
 	hasPendingReview: false,
 	pendingReviewBody: "",
 	isOwnPullRequest: false,
-	canPushToReview: true,
 	canWriteToGitHub: true,
 };
 
@@ -50,11 +48,9 @@ const OFFLINE_REVIEW: ReviewResponse = {
 	github: "offline",
 	threads: [],
 	pendingComments: [],
-	pendingCommentCount: 0,
 	hasPendingReview: false,
 	pendingReviewBody: "",
 	isOwnPullRequest: false,
-	canPushToReview: false,
 	canWriteToGitHub: false,
 };
 

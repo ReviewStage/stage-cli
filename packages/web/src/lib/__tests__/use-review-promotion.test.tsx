@@ -58,12 +58,12 @@ const REMOTE_THREAD: ReviewThread = {
 const review = (promoted: boolean): ReviewResponse => ({
 	github: "available",
 	threads: promoted ? [REMOTE_THREAD] : [],
-	pendingComments: [],
-	pendingCommentCount: promoted ? 1 : 0,
+	pendingComments: promoted
+		? [{ id: "COMMENT_remote", filePath: "src/foo.ts", line: 3, body: "Promote me" }]
+		: [],
 	hasPendingReview: promoted,
 	pendingReviewBody: "",
 	isOwnPullRequest: false,
-	canPushToReview: true,
 	canWriteToGitHub: true,
 });
 
@@ -115,7 +115,7 @@ describe("useReview promotion", () => {
 		releaseRefetch(jsonResponse(review(true)));
 		await act(async () => mutation);
 		expect(mutationSettled).toBe(true);
-		await waitFor(() => expect(result.current.pendingCommentCount).toBe(1));
+		await waitFor(() => expect(result.current.pendingComments).toHaveLength(1));
 	});
 
 	it("removes the local overlay even when its post-promotion refresh fails", async () => {

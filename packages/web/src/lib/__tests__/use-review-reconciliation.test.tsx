@@ -68,11 +68,9 @@ const reviewWith = (threads: CommentThread[]): ReviewResponse => ({
 	github: "available",
 	threads: threads.map(toReviewThread),
 	pendingComments: [],
-	pendingCommentCount: 0,
 	hasPendingReview: false,
 	pendingReviewBody: "",
 	isOwnPullRequest: false,
-	canPushToReview: true,
 	canWriteToGitHub: true,
 });
 

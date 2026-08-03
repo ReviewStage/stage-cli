@@ -37,7 +37,6 @@ describe("review API — merge base", () => {
 		expect(review.github).toBe("available");
 		expect(review.threads.every((thread) => thread.source === "local")).toBe(true);
 		expect(review.hasPendingReview).toBe(true);
-		expect(review.canPushToReview).toBe(false);
 		expect(review.canWriteToGitHub).toBe(false);
 	});
 });
