@@ -532,6 +532,7 @@ interface GhShimOptions {
 	discoveredPullRequest?: boolean;
 	failAddThread?: boolean;
 	failAddThreadAfterWrite?: boolean;
+	failReviewAfterAddThreadWrite?: boolean;
 	anchorlessCreatedThreadBeforeFailure?: boolean;
 	createdThreadHeadRefOidBeforeFailure?: string;
 	createdThreadPullRequestStateBeforeFailure?: "OPEN" | "CLOSED" | "MERGED";
@@ -639,6 +640,7 @@ const fields = inputText
 const log = ${JSON.stringify(path.join(this.tmpDir, "gh-log.txt"))};
 const argvLog = ${JSON.stringify(path.join(this.tmpDir, "gh-argv-log.txt"))};
 const reviewPath = ${JSON.stringify(reviewPath)};
+const failReviewPath = ${JSON.stringify(path.join(this.tmpDir, "fail-review"))};
 fs.appendFileSync(argvLog, JSON.stringify(args) + "\\n");
 function emit(o) { process.stdout.write(JSON.stringify(o)); }
 function sleep(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
@@ -711,6 +713,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   }
   emit(review);
 } else if (query.includes("query GetReview")) {
+	if (fs.existsSync(failReviewPath)) { process.stderr.write("gh: review refresh failed\\n"); process.exit(1); }
   sleep(${options.reviewQueryDelayMs ?? 0});
   const commentFields = query.slice(query.indexOf("comments(first:"), query.indexOf("author {"));
   const illegalCommentField = ["databaseId", "diffSide", "startDiffSide"].find((field) => commentFields.includes(field));
@@ -775,6 +778,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 	  if (${options.createdThreadHeadRefOidBeforeFailure ? "true" : "false"}) review.data.repository.pullRequest.headRefOid = ${JSON.stringify(options.createdThreadHeadRefOidBeforeFailure ?? HEAD)};
 	  if (${options.createdThreadPullRequestStateBeforeFailure ? "true" : "false"}) review.data.repository.pullRequest.state = ${JSON.stringify(options.createdThreadPullRequestStateBeforeFailure ?? "OPEN")};
 	  fs.writeFileSync(reviewPath, JSON.stringify(review));
+	  if (${options.failReviewAfterAddThreadWrite ? "true" : "false"}) fs.writeFileSync(failReviewPath, "1");
 	  if (${options.failAddThreadAfterWrite ? "true" : "false"}) {
 	    process.stderr.write("gh: connection closed after mutation\\n");
 	    process.exit(1);

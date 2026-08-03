@@ -63,6 +63,26 @@ describe("review API — promotion root intent", () => {
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 
+	it("keeps an uncertain unassigned intent bound to the claimed repository", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, {
+			failAddThreadAfterWrite: true,
+			failReviewAfterAddThreadWrite: true,
+		});
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ repoRoot: "" });
+		const port = await harness.start();
+
+		const interrupted = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+		const [saved] = harness.db.select().from(commentThread).all();
+
+		expect(interrupted.status).toBe(500);
+		expect(saved?.repoRoot).not.toBe("");
+		expect(saved?.promotionPullRequestNodeId).toBe("PR_node");
+		expect(saved?.promotionThreadNodeId).toBeNull();
+	});
+
 	it("finishes an accepted promotion after a push makes its root anchorless", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW, {
 			failAddThreadAfterWrite: true,

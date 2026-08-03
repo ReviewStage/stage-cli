@@ -864,7 +864,7 @@ async function promoteLocalThread(
 			// GitHub does not offer a conditional delete for a review root or review.
 			// Once a root exists, retain its checkpoint so a retry can reconcile it
 			// without racing and deleting concurrent GitHub work.
-			if (wasUnassigned && addedThread === null) {
+			if (wasUnassigned && addedThread === null && intent === null && checkpoint === null) {
 				db.update(commentThread)
 					.set({ repoRoot: UNASSIGNED_REPO_ROOT })
 					.where(and(eq(commentThread.id, localThreadId), eq(commentThread.repoRoot, run.repoRoot)))
