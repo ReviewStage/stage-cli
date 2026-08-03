@@ -406,13 +406,19 @@ class PromotionCoordinator {
 			const replyIndex = commentIndex - 1;
 			const storedNodeId = thread.promotionReplyNodeIds[replyIndex];
 			const isLegacyCheckpoint = replyIndex < thread.promotionReplyCount;
+			const isSparseCheckpointSlot = replyIndex < thread.promotionReplyNodeIds.length;
 			const uncertainReplyIndex = Math.max(
 				thread.promotionReplyCount,
 				thread.promotionReplyNodeIds.length,
 			);
-			// A saved sparse id and the single next uncertain reply both require a
+			// Any saved positional slot and the single next uncertain reply require a
 			// live check. Later unsaved replies cannot have been attempted yet.
-			if (!storedNodeId && !isLegacyCheckpoint && replyIndex !== uncertainReplyIndex) {
+			if (
+				!storedNodeId &&
+				!isLegacyCheckpoint &&
+				!isSparseCheckpointSlot &&
+				replyIndex !== uncertainReplyIndex
+			) {
 				return false;
 			}
 		}

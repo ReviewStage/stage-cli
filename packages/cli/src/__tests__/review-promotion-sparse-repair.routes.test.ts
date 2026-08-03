@@ -24,7 +24,12 @@ describe("review API — sparse promotion repair", () => {
 		await harness.writeGhShim(review, { failAddReplyAfterWrite: true });
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ withReply: true });
-		harness.db.insert(comment).values({ threadId: localThreadId, body: "Second reply" }).run();
+		const [middleReply] = harness.db
+			.insert(comment)
+			.values({ threadId: localThreadId, body: "Second reply" })
+			.returning({ id: comment.id })
+			.all();
+		if (!middleReply) throw new Error("Expected second local reply");
 		harness.db.insert(comment).values({ threadId: localThreadId, body: "Third reply" }).run();
 		harness.db
 			.update(commentThread)
@@ -48,6 +53,9 @@ describe("review API — sparse promotion repair", () => {
 			.from(commentThread)
 			.where(eq(commentThread.id, localThreadId))
 			.get();
+		const edit = await harness.request(port, "PATCH", `/api/comments/${middleReply.id}`, {
+			body: "Changed after ambiguous write",
+		});
 		const resumed = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
 			localThreadId,
 		});
@@ -55,6 +63,7 @@ describe("review API — sparse promotion repair", () => {
 		expect(interrupted.status).toBe(500);
 		expect(checkpoint?.promotionReplyCount).toBe(0);
 		expect(checkpoint?.promotionReplyNodeIds).toEqual(["COMMENT_first", null, "COMMENT_third"]);
+		expect(edit.status).toBe(409);
 		expect(resumed.status, resumed.body).toBe(200);
 		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(1);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
