@@ -426,7 +426,9 @@ export function makeInterruptedPromotionReviewWithSparseReplies(): unknown {
 	);
 }
 
-export function makeInterruptedPromotionReviewWithSubmittedReply(): unknown {
+export function makeInterruptedPromotionReviewWithSubmittedReply(
+	state: "OPEN" | "CLOSED" | "MERGED" = "OPEN",
+): unknown {
 	const root = {
 		...submittedThread.comments.nodes[0],
 		id: "COMMENT_new",
@@ -451,6 +453,8 @@ export function makeInterruptedPromotionReviewWithSubmittedReply(): unknown {
 			},
 		],
 		null,
+		"",
+		{ state },
 	);
 }
 

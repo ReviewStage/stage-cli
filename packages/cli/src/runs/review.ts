@@ -692,32 +692,6 @@ async function promoteLocalThread(
 				.where(eq(commentThread.id, localThreadId))
 				.run();
 		}
-		try {
-			const checkpointThread =
-				checkpoint === null
-					? null
-					: review.recoveryThreads.find(
-							(candidate) => candidate.threadNodeId === checkpoint?.threadNodeId,
-						);
-			// Once a push removes an accepted root's anchor, completing that exact
-			// thread is recovery rather than a new line-anchored write. Ordinary
-			// anchored checkpoints retain the current-diff requirement.
-			if (checkpoint !== null && checkpointThread?.line === null) {
-				if (review.state !== "OPEN") {
-					throw new ReviewError("This pull request is closed, so its review is read-only.", 409);
-				}
-			} else {
-				assertPushable(run, review);
-			}
-			if (checkpoint !== null && checkpoint.pullRequestNodeId !== review.pullRequestNodeId) {
-				throw new ReviewError("This comment promotion belongs to another pull request.", 409);
-			}
-		} catch (error) {
-			if (checkpoint !== null) {
-				await releasePromotionCheckpoint(db, run, localThreadId, checkpoint);
-			}
-			throw error;
-		}
 		const wasUnassigned = thread.repoRoot === UNASSIGNED_REPO_ROOT;
 		if (wasUnassigned) {
 			const [claimed] = db
@@ -778,6 +752,39 @@ async function promoteLocalThread(
 						.where(eq(commentThread.id, localThreadId))
 						.run();
 				}
+			}
+			const shouldResolve = thread.resolvedAt !== null;
+			const needsCommentWrite =
+				addedThread === null || promotedReplyNodeIds.filter(Boolean).length < replies.length;
+			const needsResolutionWrite = addedThread !== null && shouldResolve !== remoteThreadIsResolved;
+			if (!needsCommentWrite && !needsResolutionWrite) {
+				db.delete(commentThread).where(eq(commentThread.id, localThreadId)).run();
+				return;
+			}
+			try {
+				const checkpointThread =
+					checkpoint === null
+						? null
+						: review.recoveryThreads.find(
+								(candidate) => candidate.threadNodeId === checkpoint?.threadNodeId,
+							);
+				// An anchorless checkpoint can finish against a moved diff, but every
+				// remaining remote write still requires an open pull request.
+				if (checkpoint !== null && checkpointThread?.line === null) {
+					if (review.state !== "OPEN") {
+						throw new ReviewError("This pull request is closed, so its review is read-only.", 409);
+					}
+				} else {
+					assertPushable(run, review);
+				}
+				if (checkpoint !== null && checkpoint.pullRequestNodeId !== review.pullRequestNodeId) {
+					throw new ReviewError("This comment promotion belongs to another pull request.", 409);
+				}
+			} catch (error) {
+				if (checkpoint !== null) {
+					await releasePromotionCheckpoint(db, run, localThreadId, checkpoint);
+				}
+				throw error;
 			}
 			if (addedThread === null || promotedReplyNodeIds.filter(Boolean).length < replies.length) {
 				reviewNodeId = await openPendingReview(run, review);
@@ -870,7 +877,6 @@ async function promoteLocalThread(
 					.run();
 				if (persisted.changes !== 1) throw new Error("Local promotion checkpoint was not saved");
 			}
-			const shouldResolve = thread.resolvedAt !== null;
 			if (shouldResolve !== remoteThreadIsResolved) {
 				const canChangeResolution = shouldResolve
 					? remoteThreadCanResolve

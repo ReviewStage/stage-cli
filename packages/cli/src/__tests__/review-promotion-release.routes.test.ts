@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { commentThread } from "../db/schema/index.js";
 import {
 	makeInterruptedPromotionReview,
+	makeInterruptedPromotionReviewWithSubmittedReply,
 	makePublishedInterruptedPromotionReview,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -97,6 +98,28 @@ describe("review API — promotion checkpoint release", () => {
 			0,
 		);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("cleans up a completed promotion after the pull request closes", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReviewWithSubmittedReply("CLOSED"), {
+			recoveryRootState: "COMMENTED",
+		});
+		const { runId, localThreadId } = seedInterruptedPromotion();
+		harness.db
+			.update(commentThread)
+			.set({
+				promotionRootPublished: true,
+				promotionReplyNodeIds: ["COMMENT_reply"],
+			})
+			.where(eq(commentThread.id, localThreadId))
+			.run();
+
+		const promotion = await promote(runId, localThreadId);
+
+		expect(promotion.status, promotion.body).toBe(200);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+		expect(await harness.logLines()).not.toContain("reply");
+		expect(await harness.logLines()).not.toContain("resolve-thread");
 	});
 });
 
