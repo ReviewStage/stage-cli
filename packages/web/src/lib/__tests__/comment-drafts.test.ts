@@ -101,14 +101,20 @@ describe("upsertDraft", () => {
 		expect(findDraftAt(result, "deletions", 10)?.startLine).toBe(8);
 	});
 
-	it("adopts the new startLine when re-opening the same (side, endLine) row", () => {
+	it("renews the creation identity when re-opening a row with a new range", () => {
 		const existing = { ...draftState("additions", 3, 10), error: "boom" as string | null };
 		const result = upsertDraft([existing], draftState("additions", 7, 10));
 		expect(result).toHaveLength(1);
 		expect(result[0]?.startLine).toBe(7);
-		expect(result[0]?.creationId).toBe(existing.creationId);
+		expect(result[0]?.creationId).not.toBe(existing.creationId);
 		// A re-drag clears any stale submit error.
 		expect(result[0]?.error).toBeNull();
+	});
+
+	it("keeps the creation identity when re-opening the exact same range", () => {
+		const existing = draftState("additions", 3, 10);
+		const result = upsertDraft([existing], draftState("additions", 3, 10));
+		expect(result[0]?.creationId).toBe(existing.creationId);
 	});
 
 	it("leaves other open drafts untouched when updating one", () => {

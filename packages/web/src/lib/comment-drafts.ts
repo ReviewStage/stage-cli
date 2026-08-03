@@ -73,7 +73,12 @@ export function upsertDraft(drafts: readonly DraftState[], anchor: CommentDraft)
 	}
 	return drafts.map((draft) =>
 		isSameAnchor(draft, anchor.side, anchor.endLine)
-			? { ...draft, startLine: anchor.startLine, error: null }
+			? {
+					...draft,
+					startLine: anchor.startLine,
+					creationId: draft.startLine === anchor.startLine ? draft.creationId : crypto.randomUUID(),
+					error: null,
+				}
 			: draft,
 	);
 }
