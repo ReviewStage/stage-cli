@@ -785,7 +785,8 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 	  }
 	  emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", viewerCanResolve: ${options.addedThreadCanResolve === false ? "false" : "true"}, comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
 } else if (query.includes("mutation ResolveThread") || query.includes("mutation UnresolveThread")) {
-  fs.appendFileSync(log, query.includes("mutation ResolveThread") ? "resolve-thread\\n" : "unresolve-thread\\n");
+  const resolving = query.includes("mutation ResolveThread");
+  fs.appendFileSync(log, resolving ? "resolve-thread\\n" : "unresolve-thread\\n");
   if (${options.failResolve ? "true" : "false"}) {
 	    if (${options.addConcurrentPendingReplyOnResolveFailure ? "true" : "false"}) {
 	      const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
@@ -796,7 +797,8 @@ if (args.some((arg) => arg.includes("/compare/"))) {
     process.stderr.write("gh: resolve failed\\n");
     process.exit(1);
   }
-  emit({ data: { resolveReviewThread: { thread: { id: "THREAD_new" } } } });
+  const responseField = resolving ? "resolveReviewThread" : "unresolveReviewThread";
+  emit({ data: { [responseField]: { thread: { id: "THREAD_new" } } } });
 } else if (query.includes("mutation DeleteReviewComment")) {
   fs.appendFileSync(log, "delete-comment\\n");
   emit({ data: { deletePullRequestReviewComment: { pullRequestReviewComment: { id: "COMMENT_new" } } } });
