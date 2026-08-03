@@ -9,6 +9,7 @@ import { makeWrapper } from "./fixtures";
 
 const LOCAL_THREAD: CommentThread = {
 	id: "THREAD_local",
+	hasPromotionRecovery: false,
 	filePath: "src/foo.ts",
 	side: "additions",
 	startLine: 3,

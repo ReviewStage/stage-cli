@@ -428,6 +428,10 @@ function toThreadDto(thread: CommentThreadRow, comments: CommentRow[]): CommentT
 		startLine: thread.startLine,
 		endLine: thread.endLine,
 		resolvedAt: thread.resolvedAt?.toISOString() ?? null,
+		hasPromotionRecovery:
+			thread.promotionPullRequestNodeId !== null ||
+			thread.promotionThreadNodeId !== null ||
+			thread.promotionRootCommentNodeId !== null,
 		createdAt: thread.createdAt.toISOString(),
 		updatedAt: thread.updatedAt.toISOString(),
 		comments: comments.map(toCommentDto),

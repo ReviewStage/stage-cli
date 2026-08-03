@@ -34,17 +34,16 @@ describe("review API — promotion resolution recovery", () => {
 			})
 			.run();
 
-		const response = await harness.request(
-			await harness.start(),
-			"GET",
-			`/api/runs/${runId}/review`,
-		);
+		const port = await harness.start();
+		const response = await harness.request(port, "GET", `/api/runs/${runId}/review`);
+		const localResponse = await harness.request(port, "GET", `/api/runs/${runId}/comment-threads`);
 		const localThread = JSON.parse(response.body).threads.find(
 			(thread: { id: string }) => thread.id === localThreadId,
 		);
 
 		expect(response.status).toBe(200);
 		expect(localThread).toMatchObject({ hasPromotionRecovery: true });
+		expect(JSON.parse(localResponse.body)[0]).toMatchObject({ hasPromotionRecovery: true });
 	});
 
 	it("reopens a recovered GitHub thread when the local thread was reopened", async () => {
