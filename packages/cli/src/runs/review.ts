@@ -400,8 +400,20 @@ class PromotionCoordinator {
 			.all();
 		const commentIndex = localComments.findIndex((candidate) => candidate.id === commentId);
 		if (commentIndex === -1) return false;
-		// Replies after the first uncheckpointed one cannot have been attempted yet.
-		if (commentIndex > thread.promotionReplyCount + 1) return false;
+		if (commentIndex > 0) {
+			const replyIndex = commentIndex - 1;
+			const storedNodeId = thread.promotionReplyNodeIds[replyIndex];
+			const isLegacyCheckpoint = replyIndex < thread.promotionReplyCount;
+			const uncertainReplyIndex = Math.max(
+				thread.promotionReplyCount,
+				thread.promotionReplyNodeIds.length,
+			);
+			// A saved sparse id and the single next uncertain reply both require a
+			// live check. Later unsaved replies cannot have been attempted yet.
+			if (!storedNodeId && !isLegacyCheckpoint && replyIndex !== uncertainReplyIndex) {
+				return false;
+			}
+		}
 
 		const remote = await getPromotionThreadState(thread.repoRoot, checkpoint.threadNodeId);
 		if (
