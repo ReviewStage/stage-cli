@@ -784,7 +784,8 @@ function reconcilePromotionReplyNodeIds(
 		}
 
 		const isLegacyCheckpoint = index < checkpointCount;
-		const mayHaveLandedBeforeCheckpoint = index >= checkpointNodeIds.length;
+		const checkpointedPrefixLength = Math.max(checkpointCount, checkpointNodeIds.length);
+		const mayHaveLandedBeforeCheckpoint = index === checkpointedPrefixLength;
 		if (!isLegacyCheckpoint && !mayHaveLandedBeforeCheckpoint) continue;
 		const remoteIndex = remoteReplies.findIndex(
 			(candidate, candidateIndex) =>

@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { commentThread } from "../db/schema/index.js";
+import { comment, commentThread } from "../db/schema/index.js";
 import {
 	makeInterruptedPromotionReview,
 	makeInterruptedPromotionReviewWithForeignMatchingReply,
@@ -87,6 +87,18 @@ describe("review API — promotion resume", () => {
 
 		expect(promotion.status, promotion.body).toBe(200);
 		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(0);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("does not match a later local reply before the next uncertain reply", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReview("Later reply"));
+		const { runId, localThreadId } = seedInterruptedPromotion();
+		harness.db.insert(comment).values({ threadId: localThreadId, body: "Later reply" }).run();
+
+		const promotion = await promote(runId, localThreadId);
+
+		expect(promotion.status, promotion.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(2);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 
