@@ -326,37 +326,70 @@ async function withPendingReview<T>(
 	return action(reviewNodeId);
 }
 
-// Queued ids reject duplicate promotion requests immediately. The active set starts
-// only after promotion owns the checkout lock, so an earlier local mutation wins.
-const queuedPromotions = new Set<string>();
-const promotingThreads = new Set<string>();
+/** Owns the complete queued -> active -> durable-checkpoint promotion lifecycle. */
+class PromotionCoordinator {
+	readonly #queued = new Set<string>();
+	readonly #active = new Set<string>();
+
+	isPromoting(db: StageDb, localThreadId: string): boolean {
+		if (this.#active.has(localThreadId)) return true;
+		const [thread] = db
+			.select({
+				pullRequestNodeId: commentThread.promotionPullRequestNodeId,
+				threadNodeId: commentThread.promotionThreadNodeId,
+				rootCommentNodeId: commentThread.promotionRootCommentNodeId,
+				rootPublished: commentThread.promotionRootPublished,
+			})
+			.from(commentThread)
+			.where(eq(commentThread.id, localThreadId))
+			.limit(1)
+			.all();
+		return (
+			thread !== undefined &&
+			!thread.rootPublished &&
+			(thread.pullRequestNodeId !== null ||
+				thread.threadNodeId !== null ||
+				thread.rootCommentNodeId !== null)
+		);
+	}
+
+	isPending(db: StageDb, localThreadId: string): boolean {
+		return this.#queued.has(localThreadId) || this.isPromoting(db, localThreadId);
+	}
+
+	async add(db: StageDb, run: ChapterRunRow, localThreadId: string): Promise<void> {
+		if (this.#queued.has(localThreadId)) {
+			throw new ReviewError("This comment is already being added to the review.", 409);
+		}
+		this.#queued.add(localThreadId);
+		try {
+			await reviewActions.run(
+				{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot },
+				async () => {
+					this.#active.add(localThreadId);
+					try {
+						await promoteLocalThread(db, run, localThreadId);
+					} finally {
+						this.#active.delete(localThreadId);
+					}
+				},
+			);
+		} finally {
+			this.#queued.delete(localThreadId);
+		}
+	}
+}
+
+const promotionCoordinator = new PromotionCoordinator();
 
 /** True while the local thread is frozen for an in-flight or interrupted promotion. */
 export function isLocalThreadPromoting(db: StageDb, localThreadId: string): boolean {
-	if (promotingThreads.has(localThreadId)) return true;
-	const [thread] = db
-		.select({
-			pullRequestNodeId: commentThread.promotionPullRequestNodeId,
-			threadNodeId: commentThread.promotionThreadNodeId,
-			rootCommentNodeId: commentThread.promotionRootCommentNodeId,
-			rootPublished: commentThread.promotionRootPublished,
-		})
-		.from(commentThread)
-		.where(eq(commentThread.id, localThreadId))
-		.limit(1)
-		.all();
-	return (
-		thread !== undefined &&
-		!thread.rootPublished &&
-		(thread.pullRequestNodeId !== null ||
-			thread.threadNodeId !== null ||
-			thread.rootCommentNodeId !== null)
-	);
+	return promotionCoordinator.isPromoting(db, localThreadId);
 }
 
 /** True once promotion is queued, active, or interrupted and awaiting recovery. */
 export function isLocalThreadPromotionPending(db: StageDb, localThreadId: string): boolean {
-	return queuedPromotions.has(localThreadId) || isLocalThreadPromoting(db, localThreadId);
+	return promotionCoordinator.isPending(db, localThreadId);
 }
 
 /**
@@ -370,25 +403,7 @@ export async function addLocalThreadToReview(
 	run: ChapterRunRow,
 	localThreadId: string,
 ): Promise<void> {
-	if (queuedPromotions.has(localThreadId)) {
-		throw new ReviewError("This comment is already being added to the review.", 409);
-	}
-	queuedPromotions.add(localThreadId);
-	try {
-		await reviewActions.run(
-			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot },
-			async () => {
-				promotingThreads.add(localThreadId);
-				try {
-					await promoteLocalThread(db, run, localThreadId);
-				} finally {
-					promotingThreads.delete(localThreadId);
-				}
-			},
-		);
-	} finally {
-		queuedPromotions.delete(localThreadId);
-	}
+	await promotionCoordinator.add(db, run, localThreadId);
 }
 
 async function promoteLocalThread(
