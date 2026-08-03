@@ -354,7 +354,64 @@ class PromotionCoordinator {
 	}
 
 	isPending(db: StageDb, localThreadId: string): boolean {
-		return this.#queued.has(localThreadId) || this.isPromoting(db, localThreadId);
+		return this.isInFlight(localThreadId) || this.isPromoting(db, localThreadId);
+	}
+
+	isInFlight(localThreadId: string): boolean {
+		return this.#queued.has(localThreadId) || this.#active.has(localThreadId);
+	}
+
+	async isCommentFrozen(db: StageDb, localThreadId: string, commentId: string): Promise<boolean> {
+		if (this.#queued.has(localThreadId) || this.#active.has(localThreadId)) return true;
+		const [thread] = db
+			.select()
+			.from(commentThread)
+			.where(eq(commentThread.id, localThreadId))
+			.limit(1)
+			.all();
+		if (!thread || thread.promotionRootPublished) return false;
+		const checkpoint = readPromotionCheckpoint(thread);
+		if (checkpoint === null) return false;
+
+		const localComments = db
+			.select({ id: comment.id, body: comment.body })
+			.from(comment)
+			.where(eq(comment.threadId, localThreadId))
+			.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
+			.all();
+		const commentIndex = localComments.findIndex((candidate) => candidate.id === commentId);
+		if (commentIndex === -1) return false;
+		// The root and checkpointed reply prefix already exist on GitHub. Replies
+		// after the first uncheckpointed one cannot have been attempted yet.
+		if (commentIndex <= thread.promotionReplyCount) return true;
+		if (commentIndex > thread.promotionReplyCount + 1) return false;
+
+		const remote = await getPromotionThreadState(thread.repoRoot, checkpoint.threadNodeId);
+		if (
+			remote === null ||
+			remote.pullRequestNodeId !== checkpoint.pullRequestNodeId ||
+			remote.rootCommentNodeId !== checkpoint.rootCommentNodeId
+		) {
+			return false;
+		}
+		if (!remote.rootIsPending) {
+			markPromotionRootPublished(db, localThreadId);
+			return false;
+		}
+		const review = await getReview(thread.repoRoot, remote.repo, remote.pullRequestNumber);
+		const remoteThread = review.threads.find(
+			(candidate) => candidate.threadNodeId === checkpoint.threadNodeId,
+		);
+		const viewerLogin = checkpoint.viewerLogin ?? remote.rootAuthorLogin;
+		if (!remoteThread || viewerLogin === null || review.viewerLogin !== viewerLogin) return true;
+		const reconciled = reconcilePromotionReplyNodeIds(
+			remoteThread,
+			viewerLogin,
+			localComments.slice(1),
+			thread.promotionReplyCount,
+			thread.promotionReplyNodeIds,
+		);
+		return reconciled[commentIndex - 1] !== null;
 	}
 
 	async add(db: StageDb, run: ChapterRunRow, localThreadId: string): Promise<void> {
@@ -390,6 +447,20 @@ export function isLocalThreadPromoting(db: StageDb, localThreadId: string): bool
 /** True once promotion is queued, active, or interrupted and awaiting recovery. */
 export function isLocalThreadPromotionPending(db: StageDb, localThreadId: string): boolean {
 	return promotionCoordinator.isPending(db, localThreadId);
+}
+
+/** True only for a promotion queued or running in this process. */
+export function isLocalThreadPromotionInFlight(localThreadId: string): boolean {
+	return promotionCoordinator.isInFlight(localThreadId);
+}
+
+/** Whether a local comment is already remote or could be landing during promotion. */
+export function isLocalCommentPromotionPending(
+	db: StageDb,
+	localThreadId: string,
+	commentId: string,
+): Promise<boolean> {
+	return promotionCoordinator.isCommentFrozen(db, localThreadId, commentId);
 }
 
 /**

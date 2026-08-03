@@ -17,7 +17,12 @@ import {
 	commentThread,
 } from "../db/schema/index.js";
 import { type LocalThreadScope, loadLocalThreadRecords } from "../runs/local-comment-threads.js";
-import { isLocalThreadPromoting, isLocalThreadPromotionPending } from "../runs/review.js";
+import {
+	isLocalCommentPromotionPending,
+	isLocalThreadPromoting,
+	isLocalThreadPromotionInFlight,
+	isLocalThreadPromotionPending,
+} from "../runs/review.js";
 import { REVIEW_ACTION_SCOPE, reviewActions } from "../runs/review-action-queue.js";
 import { deriveScopeKey } from "../runs/scope-key.js";
 import type { Route } from "../server.js";
@@ -200,11 +205,10 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 				const body = await parseJsonBody(req, res, CommentBodySchema);
 				if (!body) return;
 				const threadId = findCommentThreadId(db, commentId);
-				if (threadId !== null && isLocalThreadPromotionPending(db, threadId)) {
+				if (threadId !== null && isLocalThreadPromotionInFlight(threadId)) {
 					writeJson(res, 409, { error: "This comment thread is being added to the review." });
 					return;
 				}
-
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
 					const [existing] = db
 						.select({ threadId: comment.threadId })
@@ -216,7 +220,7 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 						writeJson(res, 404, { error: `Comment ${commentId} not found` });
 						return;
 					}
-					if (isLocalThreadPromoting(db, existing.threadId)) {
+					if (await isLocalCommentPromotionPending(db, existing.threadId, commentId)) {
 						writeJson(res, 409, { error: "This comment thread is being added to the review." });
 						return;
 					}
@@ -245,7 +249,7 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 					return;
 				}
 				const threadId = findCommentThreadId(db, commentId);
-				if (threadId !== null && isLocalThreadPromotionPending(db, threadId)) {
+				if (threadId !== null && isLocalThreadPromotionInFlight(threadId)) {
 					writeJson(res, 409, { error: "This comment thread is being added to the review." });
 					return;
 				}
@@ -256,7 +260,10 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 						.where(eq(comment.id, commentId))
 						.limit(1)
 						.all();
-					if (existing && isLocalThreadPromoting(db, existing.threadId)) {
+					if (
+						existing &&
+						(await isLocalCommentPromotionPending(db, existing.threadId, commentId))
+					) {
 						writeJson(res, 409, { error: "This comment thread is being added to the review." });
 						return;
 					}
