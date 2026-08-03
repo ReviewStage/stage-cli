@@ -334,16 +334,24 @@ async function openPendingReview(
  */
 async function withPendingReview<T>(
 	run: ChapterRunRow,
-	review: GitHubReview,
+	target: ReviewTarget,
 	action: (reviewNodeId: string) => Promise<T>,
 ): Promise<T> {
+	const { review } = target;
 	const { reviewNodeId, created } = await openPendingReview(run, review);
 	try {
 		return await action(reviewNodeId);
 	} catch (err) {
 		if (created) {
 			try {
-				await discardReview(run.repoRoot, reviewNodeId);
+				const current = await getReview(run.repoRoot, target.repo, target.prNumber);
+				if (
+					current.pendingReviewNodeId === reviewNodeId &&
+					current.pendingCommentCount === 0 &&
+					current.pendingReviewBody.trim() === ""
+				) {
+					await discardReview(run.repoRoot, reviewNodeId);
+				}
 			} catch (discardError) {
 				const message = discardError instanceof Error ? discardError.message : String(discardError);
 				process.stderr.write(
@@ -765,7 +773,8 @@ export async function addGitHubComment(
 	run: ChapterRunRow,
 	anchor: GitHubCommentAnchor,
 ): Promise<void> {
-	await withLockedReviewTarget(run, async ({ repo, prNumber, review }) => {
+	await withLockedReviewTarget(run, async (target) => {
+		const { repo, prNumber, review } = target;
 		if (anchor.pending) assertGitHubWritable(run, review);
 		else {
 			assertGitHubWritable(run, review);
@@ -790,7 +799,7 @@ export async function addGitHubComment(
 			});
 			return;
 		}
-		await withPendingReview(run, review, (reviewNodeId) =>
+		await withPendingReview(run, target, (reviewNodeId) =>
 			addReviewThread(run.repoRoot, {
 				pullRequestNodeId: review.pullRequestNodeId,
 				reviewNodeId,
@@ -812,7 +821,8 @@ export async function replyToGitHubThread(
 	body: string,
 	pending: boolean,
 ): Promise<void> {
-	await withLockedReviewTarget(run, async ({ review }) => {
+	await withLockedReviewTarget(run, async (target) => {
+		const { review } = target;
 		if (pending) assertPushable(run, review);
 		else assertGitHubWritable(run, review);
 		requireReviewThread(review, threadNodeId);
@@ -820,7 +830,7 @@ export async function replyToGitHubThread(
 			await addReviewReply(run.repoRoot, threadNodeId, body, null);
 			return;
 		}
-		await withPendingReview(run, review, (reviewNodeId) =>
+		await withPendingReview(run, target, (reviewNodeId) =>
 			addReviewReply(run.repoRoot, threadNodeId, body, reviewNodeId),
 		);
 	});
@@ -832,7 +842,8 @@ export async function submitRunReview(
 	event: ReviewEvent,
 	body: string,
 ): Promise<void> {
-	await withLockedReviewTarget(run, async ({ review }) => {
+	await withLockedReviewTarget(run, async (target) => {
+		const { review } = target;
 		assertPushable(run, review);
 		if (review.viewerDidAuthor && event !== REVIEW_EVENT.COMMENT) {
 			throw new ReviewError("You can't approve or request changes on your own pull request.", 400);
@@ -846,7 +857,7 @@ export async function submitRunReview(
 				400,
 			);
 		}
-		await withPendingReview(run, review, (reviewNodeId) =>
+		await withPendingReview(run, target, (reviewNodeId) =>
 			submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
 		);
 	});

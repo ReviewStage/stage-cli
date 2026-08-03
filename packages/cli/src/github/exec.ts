@@ -23,9 +23,11 @@ async function execGh(args: string[], cwd: string, options: GhExecOptions): Prom
 					maxBuffer: 10 * 1024 * 1024,
 					timeout: options.timeoutMs,
 				},
-				(error, stdout) => {
-					if (error) reject(error);
-					else resolve(stdout);
+				(error, stdout, stderr) => {
+					if (error) {
+						Object.assign(error, { stdout, stderr });
+						reject(error);
+					} else resolve(stdout);
 				},
 			);
 			child.stdin?.end(options.stdin);

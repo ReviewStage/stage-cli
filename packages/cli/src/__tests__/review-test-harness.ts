@@ -404,6 +404,7 @@ interface GhShimOptions {
 	addThreadDelayMs?: number;
 	discoveredPullRequest?: boolean;
 	failAddThread?: boolean;
+	addConcurrentPendingCommentOnThreadFailure?: boolean;
 	failAddReply?: boolean;
 	failDeleteComment?: boolean;
 	failDiscardReview?: boolean;
@@ -571,7 +572,15 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 } else if (query.includes("mutation AddReviewThread")) {
   fs.appendFileSync(log, "add-thread " + fields + "\\n");
   sleep(${options.addThreadDelayMs ?? 0});
-  if (${options.failAddThread ? "true" : "false"}) { process.stderr.write("gh: line not in diff\\n"); process.exit(1); }
+  if (${options.failAddThread ? "true" : "false"}) {
+    if (${options.addConcurrentPendingCommentOnThreadFailure ? "true" : "false"}) {
+      const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+      review.data.repository.pullRequest.reviewThreads.nodes.push(${JSON.stringify(pendingThread)});
+      fs.writeFileSync(reviewPath, JSON.stringify(review));
+    }
+    process.stderr.write("gh: line not in diff\\n");
+    process.exit(1);
+  }
   emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", viewerCanResolve: ${options.addedThreadCanResolve === false ? "false" : "true"}, comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
 } else if (query.includes("mutation ResolveThread")) {
   fs.appendFileSync(log, "resolve-thread\\n");
