@@ -555,16 +555,26 @@ const UNRESOLVE_THREAD = `mutation UnresolveThread($threadId: ID!) {
   unresolveReviewThread(input: { threadId: $threadId }) { thread { id } }
 }`;
 
-function gqlArgs(query: string, fields: Record<string, string | number | null>): string[] {
-	const args = ["api", "graphql", "-f", `query=${query}`];
-	for (const [key, value] of Object.entries(fields)) {
-		// Omit null fields so GraphQL applies its own null default (e.g. single-line
-		// comments send no startLine/startSide).
-		if (value === null) continue;
-		// `-f` for strings, `-F` for the numeric line fields (typed JSON values).
-		args.push(typeof value === "number" ? "-F" : "-f", `${key}=${value}`);
-	}
-	return args;
+function gqlInput(
+	query: string,
+	fields: Record<string, string | number | null>,
+): { args: string[]; stdin: string } {
+	return {
+		args: ["api", "graphql", "--input", "-"],
+		stdin: JSON.stringify({
+			query,
+			variables: Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null)),
+		}),
+	};
+}
+
+async function writeGraphql(
+	repoRoot: string,
+	query: string,
+	fields: Record<string, string | number | null>,
+): Promise<string> {
+	const input = gqlInput(query, fields);
+	return await ghWriteOrThrow(input.args, repoRoot, { stdin: input.stdin });
 }
 
 const CreatedReviewSchema = z.object({
@@ -579,10 +589,10 @@ export async function createPendingReview(
 	pullRequestNodeId: string,
 	commitOid: string,
 ): Promise<string> {
-	const stdout = await ghWriteOrThrow(
-		gqlArgs(CREATE_PENDING_REVIEW, { pullRequestId: pullRequestNodeId, commitOID: commitOid }),
-		repoRoot,
-	);
+	const stdout = await writeGraphql(repoRoot, CREATE_PENDING_REVIEW, {
+		pullRequestId: pullRequestNodeId,
+		commitOID: commitOid,
+	});
 	return CreatedReviewSchema.parse(JSON.parse(stdout)).data.addPullRequestReview.pullRequestReview
 		.id;
 }
@@ -631,19 +641,16 @@ export async function addReviewThread(
 	repoRoot: string,
 	input: AddReviewThreadInput,
 ): Promise<AddedReviewThread> {
-	const stdout = await ghWriteOrThrow(
-		gqlArgs(ADD_REVIEW_THREAD, {
-			pullRequestId: input.pullRequestNodeId,
-			reviewId: input.reviewNodeId,
-			path: input.path,
-			body: input.body,
-			line: input.line,
-			startLine: input.startLine,
-			side: input.side,
-			startSide: input.startSide,
-		}),
-		repoRoot,
-	);
+	const stdout = await writeGraphql(repoRoot, ADD_REVIEW_THREAD, {
+		pullRequestId: input.pullRequestNodeId,
+		reviewId: input.reviewNodeId,
+		path: input.path,
+		body: input.body,
+		line: input.line,
+		startLine: input.startLine,
+		side: input.side,
+		startSide: input.startSide,
+	});
 	const thread = AddedThreadSchema.parse(JSON.parse(stdout)).data.addPullRequestReviewThread.thread;
 	const root = thread.comments.nodes[0];
 	if (!root) throw new Error("GitHub returned a review thread without its root comment");
@@ -662,29 +669,20 @@ export async function addImmediateReviewComment(
 	input: AddImmediateReviewCommentInput,
 ): Promise<void> {
 	const endpoint = `repos/${repo.owner}/${repo.repo}/pulls/${pullRequestNumber}/comments`;
-	const args = [
-		"api",
-		"--method",
-		"POST",
-		endpoint,
-		"-f",
-		`body=${input.body}`,
-		"-f",
-		`commit_id=${input.commitOid}`,
-		"-f",
-		`path=${input.path}`,
-		"-F",
-		`line=${input.line}`,
-		"-f",
-		`side=${input.side}`,
-	];
-	if (input.startLine !== null) {
-		args.push("-F", `start_line=${input.startLine}`);
-	}
-	if (input.startSide !== null) {
-		args.push("-f", `start_side=${input.startSide}`);
-	}
-	await ghWriteOrThrow(args, repoRoot);
+	const body = Object.fromEntries(
+		Object.entries({
+			body: input.body,
+			commit_id: input.commitOid,
+			path: input.path,
+			line: input.line,
+			side: input.side,
+			start_line: input.startLine,
+			start_side: input.startSide,
+		}).filter(([, value]) => value !== null),
+	);
+	await ghWriteOrThrow(["api", "--method", "POST", endpoint, "--input", "-"], repoRoot, {
+		stdin: JSON.stringify(body),
+	});
 }
 
 /** Reply to an existing thread, attaching the reply to a pending review when one is open. */
@@ -694,10 +692,11 @@ export async function addReviewReply(
 	body: string,
 	reviewNodeId: string | null,
 ): Promise<void> {
-	await ghWriteOrThrow(
-		gqlArgs(ADD_REVIEW_REPLY, { threadId: threadNodeId, reviewId: reviewNodeId, body }),
-		repoRoot,
-	);
+	await writeGraphql(repoRoot, ADD_REVIEW_REPLY, {
+		threadId: threadNodeId,
+		reviewId: reviewNodeId,
+		body,
+	});
 }
 
 /** Edit a review comment by node id (works for pending and submitted comments). */
@@ -706,15 +705,12 @@ export async function updateReviewComment(
 	commentNodeId: string,
 	body: string,
 ): Promise<void> {
-	await ghWriteOrThrow(
-		gqlArgs(UPDATE_REVIEW_COMMENT, { commentId: commentNodeId, body }),
-		repoRoot,
-	);
+	await writeGraphql(repoRoot, UPDATE_REVIEW_COMMENT, { commentId: commentNodeId, body });
 }
 
 /** Delete a review comment by node id (used for pending comments). */
 export async function deleteReviewComment(repoRoot: string, commentNodeId: string): Promise<void> {
-	await ghWriteOrThrow(gqlArgs(DELETE_REVIEW_COMMENT, { commentId: commentNodeId }), repoRoot);
+	await writeGraphql(repoRoot, DELETE_REVIEW_COMMENT, { commentId: commentNodeId });
 }
 
 /** Submit the pending review with the chosen event (Comment / Approve / Request changes). */
@@ -725,20 +721,17 @@ export async function submitReview(
 	event: ReviewEvent,
 	body: string,
 ): Promise<void> {
-	await ghWriteOrThrow(
-		gqlArgs(SUBMIT_REVIEW, {
-			pullRequestId: pullRequestNodeId,
-			reviewId: reviewNodeId,
-			event,
-			body,
-		}),
-		repoRoot,
-	);
+	await writeGraphql(repoRoot, SUBMIT_REVIEW, {
+		pullRequestId: pullRequestNodeId,
+		reviewId: reviewNodeId,
+		event,
+		body,
+	});
 }
 
 /** Throw away the pending review and all its draft comments. */
 export async function discardReview(repoRoot: string, reviewNodeId: string): Promise<void> {
-	await ghWriteOrThrow(gqlArgs(DISCARD_REVIEW, { reviewId: reviewNodeId }), repoRoot);
+	await writeGraphql(repoRoot, DISCARD_REVIEW, { reviewId: reviewNodeId });
 }
 
 /** Resolve or reopen a review thread by its node id. */
@@ -747,8 +740,7 @@ export async function setThreadResolved(
 	threadNodeId: string,
 	resolved: boolean,
 ): Promise<void> {
-	await ghWriteOrThrow(
-		gqlArgs(resolved ? RESOLVE_THREAD : UNRESOLVE_THREAD, { threadId: threadNodeId }),
-		repoRoot,
-	);
+	await writeGraphql(repoRoot, resolved ? RESOLVE_THREAD : UNRESOLVE_THREAD, {
+		threadId: threadNodeId,
+	});
 }

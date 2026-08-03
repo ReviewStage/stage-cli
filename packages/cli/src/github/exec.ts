@@ -7,9 +7,30 @@ const DEFAULT_GH_TIMEOUT_MS = 30_000;
 export interface GhExecOptions {
 	/** Bound a spawned `gh` process so passive review reads cannot hang the local UI. */
 	timeoutMs?: number;
+	/** Send structured mutation input without exposing large bodies in argv. */
+	stdin?: string;
 }
 
 async function execGh(args: string[], cwd: string, options: GhExecOptions): Promise<string> {
+	if (options.stdin !== undefined) {
+		return await new Promise((resolve, reject) => {
+			const child = execFile(
+				"gh",
+				args,
+				{
+					cwd,
+					encoding: "utf8",
+					maxBuffer: 10 * 1024 * 1024,
+					timeout: options.timeoutMs,
+				},
+				(error, stdout) => {
+					if (error) reject(error);
+					else resolve(stdout);
+				},
+			);
+			child.stdin?.end(options.stdin);
+		});
+	}
 	const { stdout } = await execFileAsync("gh", args, {
 		cwd,
 		encoding: "utf8",
@@ -33,9 +54,13 @@ export async function gh(
  * Non-idempotent mutations must not be timed out: GitHub may have accepted the
  * write before the local process is killed, making a retry duplicate the action.
  */
-export async function ghWriteOrThrow(args: string[], cwd: string): Promise<string> {
+export async function ghWriteOrThrow(
+	args: string[],
+	cwd: string,
+	options: Pick<GhExecOptions, "stdin"> = {},
+): Promise<string> {
 	try {
-		return await execGh(args, cwd, {});
+		return await execGh(args, cwd, options);
 	} catch (err) {
 		throw new Error(ghErrorMessage(err));
 	}

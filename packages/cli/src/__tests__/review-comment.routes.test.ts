@@ -35,6 +35,24 @@ describe("review API — create comment", () => {
 		expect((await harness.logLines()).some((line) => line.startsWith("add-thread"))).toBe(true);
 	});
 
+	it("sends GitHub comment bodies through stdin instead of argv", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW);
+		const runId = harness.insertRun();
+		const marker = "body-that-must-not-appear-in-process-arguments";
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/comment`,
+			{ filePath: "src/foo.ts", side: "additions", startLine: 3, endLine: 3, body: marker },
+		);
+
+		expect(res.status, res.body).toBe(200);
+		const mutationArgs = (await harness.ghArgvCalls()).filter((args) => args.includes("--input"));
+		expect(mutationArgs).toContainEqual(["api", "graphql", "--input", "-"]);
+		expect(JSON.stringify(mutationArgs)).not.toContain(marker);
+	});
+
 	it("publishes a PR comment immediately without opening a review", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW);
 		const runId = harness.insertRun();

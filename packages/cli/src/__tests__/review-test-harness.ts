@@ -488,10 +488,17 @@ export class ReviewRouteHarness {
 		const shim = `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
-const query = (args.find((a) => a.startsWith("query=")) || "");
-const fields = args.filter((a) => !a.startsWith("query=") && a !== "-f" && a !== "-F" && a !== "api" && a !== "graphql").join(" ");
+const inputText = args.includes("--input") ? fs.readFileSync(0, "utf8") : "";
+const input = inputText ? JSON.parse(inputText) : null;
+const query = (args.find((a) => a.startsWith("query=")) || input?.query || "");
+const inputFields = input?.variables || input || {};
+const fields = inputText
+  ? Object.entries(inputFields).map(([key, value]) => key + "=" + value).join(" ")
+  : args.filter((a) => !a.startsWith("query=") && a !== "-f" && a !== "-F" && a !== "api" && a !== "graphql").join(" ");
 const log = ${JSON.stringify(path.join(this.tmpDir, "gh-log.txt"))};
+const argvLog = ${JSON.stringify(path.join(this.tmpDir, "gh-argv-log.txt"))};
 const reviewPath = ${JSON.stringify(reviewPath)};
+fs.appendFileSync(argvLog, JSON.stringify(args) + "\\n");
 function emit(o) { process.stdout.write(JSON.stringify(o)); }
 function sleep(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 if (args.some((arg) => arg.includes("/compare/"))) {
@@ -704,5 +711,15 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 	async logLines(): Promise<string[]> {
 		const text = await fs.readFile(path.join(this.tmpDir, "gh-log.txt"), "utf8").catch(() => "");
 		return text.split("\n");
+	}
+
+	async ghArgvCalls(): Promise<string[][]> {
+		const text = await fs
+			.readFile(path.join(this.tmpDir, "gh-argv-log.txt"), "utf8")
+			.catch(() => "");
+		return text
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as string[]);
 	}
 }
