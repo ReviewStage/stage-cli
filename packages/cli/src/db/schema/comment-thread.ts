@@ -26,6 +26,8 @@ export const commentThread = sqliteTable(
 		promotionRootCommentNodeId: text(),
 		/** GitHub viewer that created the interrupted promotion. */
 		promotionViewerLogin: text(),
+		/** The checkpoint root has already been published and no longer freezes local replies. */
+		promotionRootPublished: integer({ mode: "boolean" }).notNull().default(false),
 		/** Number of local replies already copied to the promotion thread. */
 		promotionReplyCount: integer().notNull().default(0),
 		/** GitHub node ids for copied replies, in local reply order. */

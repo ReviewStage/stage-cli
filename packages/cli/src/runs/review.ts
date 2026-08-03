@@ -339,6 +339,7 @@ export function isLocalThreadPromoting(db: StageDb, localThreadId: string): bool
 			pullRequestNodeId: commentThread.promotionPullRequestNodeId,
 			threadNodeId: commentThread.promotionThreadNodeId,
 			rootCommentNodeId: commentThread.promotionRootCommentNodeId,
+			rootPublished: commentThread.promotionRootPublished,
 		})
 		.from(commentThread)
 		.where(eq(commentThread.id, localThreadId))
@@ -346,6 +347,7 @@ export function isLocalThreadPromoting(db: StageDb, localThreadId: string): bool
 		.all();
 	return (
 		thread !== undefined &&
+		!thread.rootPublished &&
 		(thread.pullRequestNodeId !== null ||
 			thread.threadNodeId !== null ||
 			thread.rootCommentNodeId !== null)
@@ -460,6 +462,7 @@ async function promoteLocalThread(
 				initialReplyNodeIds = [];
 			} else {
 				liveCheckpointRemote = current;
+				if (!current.rootIsPending) markPromotionRootPublished(db, localThreadId);
 			}
 		}
 		const originatingViewer =
@@ -685,7 +688,7 @@ async function releaseCrossPullRequestPromotion(
 	throw new ReviewError(
 		released
 			? "This comment promotion belonged to another pull request and was released. Try adding it to this review again."
-			: "This comment promotion belongs to another pull request and is already published there.",
+			: "This comment promotion belongs to another pull request and remains associated with it.",
 		409,
 	);
 }
@@ -703,10 +706,9 @@ async function releasePromotionCheckpoint(
 		remote.rootCommentNodeId === checkpoint.rootCommentNodeId
 	) {
 		if (!remote.rootIsPending) {
-			clearPromotionProgress(db, localThreadId);
-			return false;
+			markPromotionRootPublished(db, localThreadId);
 		}
-		await deleteReviewComment(run.repoRoot, checkpoint.rootCommentNodeId);
+		return false;
 	}
 	clearPromotionProgress(db, localThreadId);
 	return true;
@@ -719,9 +721,17 @@ function clearPromotionProgress(db: StageDb, localThreadId: string): void {
 			promotionThreadNodeId: null,
 			promotionRootCommentNodeId: null,
 			promotionViewerLogin: null,
+			promotionRootPublished: false,
 			promotionReplyCount: 0,
 			promotionReplyNodeIds: [],
 		})
+		.where(eq(commentThread.id, localThreadId))
+		.run();
+}
+
+function markPromotionRootPublished(db: StageDb, localThreadId: string): void {
+	db.update(commentThread)
+		.set({ promotionRootPublished: true })
 		.where(eq(commentThread.id, localThreadId))
 		.run();
 }

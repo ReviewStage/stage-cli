@@ -1,7 +1,11 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { commentThread } from "../db/schema/index.js";
-import { makeInterruptedPromotionReview, ReviewRouteHarness } from "./review-test-harness.js";
+import {
+	makeInterruptedPromotionReview,
+	makePublishedInterruptedPromotionReview,
+	ReviewRouteHarness,
+} from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
 
@@ -31,15 +35,16 @@ describe("review API — promotion checkpoint release", () => {
 		expect((await harness.logLines()).filter((line) => line.startsWith("add-thread"))).toHaveLength(
 			0,
 		);
-		expect(savedThread?.promotionPullRequestNodeId).toBeNull();
-		expect(savedThread?.promotionThreadNodeId).toBeNull();
-		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(1);
+		expect(savedThread?.promotionPullRequestNodeId).toBe("PR_other");
+		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
+		expect(savedThread?.promotionRootPublished).toBe(false);
+		expect(await harness.logLines()).not.toContain("delete-comment");
 	});
 
 	it.each([
 		["closed", { state: "CLOSED" as const }],
 		["moved", { headRefOid: "d".repeat(40) }],
-	])("releases a checkpoint after the pull request has %s", async (_state, reviewOptions) => {
+	])("retains a checkpoint after the pull request has %s", async (_state, reviewOptions) => {
 		await harness.writeGhShim(makeInterruptedPromotionReview(undefined, reviewOptions));
 		const { runId, localThreadId } = seedInterruptedPromotion();
 
@@ -47,12 +52,13 @@ describe("review API — promotion checkpoint release", () => {
 		const [savedThread] = harness.db.select().from(commentThread).all();
 
 		expect(promotion.status, promotion.body).toBe(409);
-		expect(savedThread?.promotionPullRequestNodeId).toBeNull();
-		expect(savedThread?.promotionThreadNodeId).toBeNull();
-		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(1);
+		expect(savedThread?.promotionPullRequestNodeId).toBe("PR_node");
+		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
+		expect(savedThread?.promotionRootPublished).toBe(false);
+		expect(await harness.logLines()).not.toContain("delete-comment");
 	});
 
-	it("releases a checkpoint without deleting a published remote root", async () => {
+	it("retains a published association while allowing local replies", async () => {
 		await harness.writeGhShim(makeInterruptedPromotionReview(undefined, { state: "CLOSED" }), {
 			recoveryRootState: "COMMENTED",
 		});
@@ -72,9 +78,23 @@ describe("review API — promotion checkpoint release", () => {
 
 		expect(promotion.status, promotion.body).toBe(409);
 		expect(reply.status).toBe(201);
-		expect(savedThread?.promotionPullRequestNodeId).toBeNull();
-		expect(savedThread?.promotionThreadNodeId).toBeNull();
+		expect(savedThread?.promotionPullRequestNodeId).toBe("PR_node");
+		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
+		expect(savedThread?.promotionRootPublished).toBe(true);
 		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(0);
+
+		await harness.writeGhShim(makePublishedInterruptedPromotionReview(), {
+			recoveryRootState: "COMMENTED",
+		});
+		const resumed = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+
+		expect(resumed.status, resumed.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line.startsWith("add-thread"))).toHaveLength(
+			0,
+		);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 });
 

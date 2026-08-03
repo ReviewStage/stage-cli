@@ -85,6 +85,13 @@
       "when": 1785743889791,
       "tag": "0011_tranquil_raider",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1785750544911,
+      "tag": "0012_eminent_magdalene",
+      "breakpoints": true
     }
   ]
 }
