@@ -438,6 +438,7 @@ class PromotionCoordinator {
 		const reconciled = reconcilePromotionReplyNodeIds(
 			remoteThread,
 			viewerLogin,
+			localThreadId,
 			localComments.slice(1),
 			thread.promotionReplyCount,
 			thread.promotionReplyNodeIds,
@@ -716,6 +717,7 @@ async function promoteLocalThread(
 					promotedReplyNodeIds = reconcilePromotionReplyNodeIds(
 						remoteThread,
 						review.viewerLogin,
+						localThreadId,
 						replies,
 						initialReplyCount,
 						promotedReplyNodeIds,
@@ -806,7 +808,7 @@ async function promoteLocalThread(
 				const replyNodeId = await addReviewReply(
 					run.repoRoot,
 					addedThread.threadNodeId,
-					reply.body,
+					promotionReplyBody(reply.body, localThreadId, reply.id),
 					reviewNodeId,
 				);
 				promotedReplyNodeIds[index] = replyNodeId;
@@ -901,6 +903,14 @@ function promotionRootMarker(localThreadId: string): string {
 
 function promotionRootBody(body: string, localThreadId: string): string {
 	return `${body}\n\n${promotionRootMarker(localThreadId)}`;
+}
+
+function promotionReplyMarker(localThreadId: string, localReplyId: string): string {
+	return `<!-- stagereview-promotion-reply:${localThreadId}:${localReplyId} -->`;
+}
+
+function promotionReplyBody(body: string, localThreadId: string, localReplyId: string): string {
+	return `${body}\n\n${promotionReplyMarker(localThreadId, localReplyId)}`;
 }
 
 function findPromotionIntentThread(
@@ -1031,15 +1041,16 @@ function markPromotionRootPublished(db: StageDb, localThreadId: string): void {
 }
 
 /**
- * Reconcile saved reply ids with the live thread. Older checkpoints have only a
- * count, so their prefix falls back to ordered body matching. Replies that landed
- * immediately before a crash are also found by searching forward, which tolerates
- * unrelated viewer replies without treating them as positional matches.
+ * Reconcile saved reply ids with the live thread. New writes carry a deterministic
+ * marker so an ambiguous success can be recovered exactly. Older checkpoints have
+ * only a count, so their prefix and single next uncertain reply fall back to ordered
+ * body matching.
  */
 function reconcilePromotionReplyNodeIds(
 	remoteThread: GitHubApiReviewThread,
 	viewerLogin: string,
-	localReplies: { body: string }[],
+	localThreadId: string,
+	localReplies: { id: string; body: string }[],
 	checkpointCount: number,
 	checkpointNodeIds: (string | null)[],
 ): (string | null)[] {
@@ -1059,6 +1070,33 @@ function reconcilePromotionReplyNodeIds(
 			}
 			// A saved id that disappeared was manually deleted. Do not let a
 			// same-body viewer comment impersonate it; this local reply must resend.
+			continue;
+		}
+
+		const marker = promotionReplyMarker(localThreadId, localReply.id);
+		let markedRemoteReply: (typeof remoteReplies)[number] | null = null;
+		let markedRemoteIndex = -1;
+		for (const [candidateIndex, candidate] of remoteReplies.entries()) {
+			if (
+				usedRemoteIds.has(candidate.nodeId) ||
+				candidate.authorLogin !== viewerLogin ||
+				!candidate.body.includes(marker)
+			) {
+				continue;
+			}
+			if (markedRemoteReply !== null) {
+				throw new ReviewError(
+					"More than one GitHub reply matches this interrupted comment promotion.",
+					409,
+				);
+			}
+			markedRemoteReply = candidate;
+			markedRemoteIndex = candidateIndex;
+		}
+		if (markedRemoteReply !== null) {
+			reconciled[index] = markedRemoteReply.nodeId;
+			usedRemoteIds.add(markedRemoteReply.nodeId);
+			lastRemoteIndex = Math.max(lastRemoteIndex, markedRemoteIndex);
 			continue;
 		}
 

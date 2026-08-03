@@ -536,6 +536,7 @@ interface GhShimOptions {
 	addConcurrentPendingCommentOnThreadFailure?: boolean;
 	addConcurrentPendingReplyOnResolveFailure?: boolean;
 	failAddReply?: boolean;
+	failAddReplyAfterWrite?: boolean;
 	failResolve?: boolean;
 	failThreadComments?: boolean;
 	identityQueryPendingReviewId?: string | null;
@@ -788,6 +789,22 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 } else if (query.includes("mutation AddReviewReply")) {
   fs.appendFileSync(log, "reply\\n");
   if (${options.failAddReply ? "true" : "false"}) { process.stderr.write("gh: reply failed\\n"); process.exit(1); }
+  if (${options.failAddReplyAfterWrite ? "true" : "false"}) {
+	const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+	const thread = review.data.repository.pullRequest.reviewThreads.nodes.find((entry) => entry.id === "THREAD_new");
+	thread.comments.nodes.push({
+	  id: "COMMENT_reply_after_write",
+	  url: "https://github.com/owner/repo/pull/5#discussion_r5",
+	  body: inputFields.body,
+	  bodyHTML: "<p>" + inputFields.body + "</p>",
+	  createdAt: "2026-01-05T00:00:00Z",
+	  author: { login: "octocat", avatarUrl: "https://x/o.png" },
+	  pullRequestReview: { state: "PENDING" }
+	});
+	fs.writeFileSync(reviewPath, JSON.stringify(review));
+	process.stderr.write("gh: connection closed after reply mutation\\n");
+	process.exit(1);
+  }
   emit({ data: { addPullRequestReviewThreadReply: { comment: { id: "C" } } } });
 } else if (query.includes("mutation SubmitReview")) {
   fs.appendFileSync(log, "submit " + fields + "\\n");

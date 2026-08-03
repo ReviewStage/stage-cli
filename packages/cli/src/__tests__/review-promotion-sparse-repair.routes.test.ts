@@ -19,9 +19,9 @@ afterEach(async () => {
 });
 
 describe("review API — sparse promotion repair", () => {
-	it("does not rematch a cleared middle reply on the next resume", async () => {
+	it("recovers an ambiguous write into a sparse hole without duplicating it", async () => {
 		const review = makeInterruptedPromotionReviewWithSparseReplies();
-		await harness.writeGhShim(review, { failAddReply: true });
+		await harness.writeGhShim(review, { failAddReplyAfterWrite: true });
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ withReply: true });
 		harness.db.insert(comment).values({ threadId: localThreadId, body: "Second reply" }).run();
@@ -48,7 +48,6 @@ describe("review API — sparse promotion repair", () => {
 			.from(commentThread)
 			.where(eq(commentThread.id, localThreadId))
 			.get();
-		await harness.writeGhShim(review);
 		const resumed = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
 			localThreadId,
 		});
@@ -57,7 +56,7 @@ describe("review API — sparse promotion repair", () => {
 		expect(checkpoint?.promotionReplyCount).toBe(0);
 		expect(checkpoint?.promotionReplyNodeIds).toEqual(["COMMENT_first", null, "COMMENT_third"]);
 		expect(resumed.status, resumed.body).toBe(200);
-		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(2);
+		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(1);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 
