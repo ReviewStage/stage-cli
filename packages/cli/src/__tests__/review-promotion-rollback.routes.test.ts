@@ -133,6 +133,25 @@ describe("review API — promotion rollback", () => {
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(1);
 	});
 
+	it("checkpoints the GitHub node id for every copied reply", async () => {
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		await harness.writeGhShim(EMPTY_REVIEW, {
+			failResolve: true,
+			failDeleteComment: true,
+			failDiscardReview: true,
+		});
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true, resolved: true });
+
+		const promotion = await promote(runId, localThreadId);
+		const [savedThread] = harness.db.select().from(commentThread).all();
+
+		expect(promotion.status).toBe(500);
+		expect(savedThread?.promotionReplyCount).toBe(1);
+		expect(savedThread?.promotionReplyNodeIds).toEqual(["C"]);
+		expect(stderr).toHaveBeenCalled();
+	});
+
 	it("preserves insertion order when comments share a timestamp", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW);
 		const runId = harness.insertRun();
@@ -168,6 +187,24 @@ describe("review API — promotion rollback", () => {
 
 		expect(promotion.status).toBe(500);
 		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(0);
+		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
+		expect(savedThread?.promotionRootCommentNodeId).toBe("COMMENT_new");
+	});
+
+	it("rechecks a new root before rollback when the review was submitted concurrently", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, {
+			failResolve: true,
+			recoveryRootState: "COMMENTED",
+		});
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ resolved: true });
+
+		const promotion = await promote(runId, localThreadId);
+		const [savedThread] = harness.db.select().from(commentThread).all();
+
+		expect(promotion.status).toBe(500);
+		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(0);
+		expect((await harness.logLines()).filter((line) => line === "discard-review")).toHaveLength(0);
 		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
 		expect(savedThread?.promotionRootCommentNodeId).toBe("COMMENT_new");
 	});

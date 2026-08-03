@@ -28,6 +28,8 @@ export const commentThread = sqliteTable(
 		promotionViewerLogin: text(),
 		/** Number of local replies already copied to the promotion thread. */
 		promotionReplyCount: integer().notNull().default(0),
+		/** GitHub node ids for copied replies, in local reply order. */
+		promotionReplyNodeIds: text({ mode: "json" }).$type<(string | null)[]>().notNull().default([]),
 	},
 	(table) => [index("comment_thread_repo_scope_idx").on(table.repoRoot, table.scopeKey)],
 );

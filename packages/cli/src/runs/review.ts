@@ -455,8 +455,13 @@ async function promoteLocalThread(
 	const root = comments[0];
 	if (!root) throw new ReviewError("Thread has no comments to add to the review.", 400);
 	const replies = comments.slice(1);
-	const checkpoint = readPromotionCheckpoint(thread);
-	if (thread.promotionReplyCount > replies.length) {
+	let checkpoint = readPromotionCheckpoint(thread);
+	let initialReplyCount = thread.promotionReplyCount;
+	let initialReplyNodeIds = thread.promotionReplyNodeIds;
+	if (
+		thread.promotionReplyCount > replies.length ||
+		thread.promotionReplyNodeIds.length > replies.length
+	) {
 		throw new ReviewError(
 			"This comment's promotion progress is invalid and cannot be resumed.",
 			409,
@@ -466,9 +471,35 @@ async function promoteLocalThread(
 		checkpoint === null
 			? null
 			: await releaseCrossPullRequestPromotion(db, run, localThreadId, checkpoint);
+	// The remote root may have been removed while an account switch was in progress.
+	// Release that now-missing checkpoint before binding recovery to its old viewer.
+	if (checkpoint !== null && checkpointRemote === null) {
+		clearPromotionProgress(db, localThreadId);
+		checkpoint = null;
+		initialReplyCount = 0;
+		initialReplyNodeIds = [];
+	}
 
 	await withLockedReviewTarget(run, async ({ review }) => {
-		const originatingViewer = checkpoint?.viewerLogin ?? checkpointRemote?.rootAuthorLogin ?? null;
+		let liveCheckpointRemote = checkpointRemote;
+		if (checkpoint !== null) {
+			const current = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
+			if (
+				current === null ||
+				current.pullRequestNodeId !== checkpoint.pullRequestNodeId ||
+				current.rootCommentNodeId !== checkpoint.rootCommentNodeId
+			) {
+				clearPromotionProgress(db, localThreadId);
+				checkpoint = null;
+				liveCheckpointRemote = null;
+				initialReplyCount = 0;
+				initialReplyNodeIds = [];
+			} else {
+				liveCheckpointRemote = current;
+			}
+		}
+		const originatingViewer =
+			checkpoint?.viewerLogin ?? liveCheckpointRemote?.rootAuthorLogin ?? null;
 		if (originatingViewer !== null && originatingViewer !== review.viewerLogin) {
 			throw new ReviewError(
 				`This comment promotion belongs to GitHub user ${originatingViewer}. Switch back to that account to resume it.`,
@@ -514,7 +545,8 @@ async function promoteLocalThread(
 
 		let addedThread: Pick<AddedReviewThread, "threadNodeId" | "rootCommentNodeId"> | null =
 			checkpoint;
-		let promotedReplyCount = thread.promotionReplyCount;
+		let promotedReplyNodeIds = [...initialReplyNodeIds];
+		let promotedReplyCount = initialReplyCount;
 		let reviewNodeId: string | null = null;
 		let created = false;
 		let remoteRootIsPending = false;
@@ -522,6 +554,7 @@ async function promoteLocalThread(
 		let remoteThreadCanResolve = false;
 		let rootCreatedThisAttempt = false;
 		let rollbackReplyCount = promotedReplyCount;
+		let rollbackReplyNodeIds = [...promotedReplyNodeIds];
 		try {
 			if (addedThread !== null) {
 				const remoteThread = review.threads.find(
@@ -530,36 +563,38 @@ async function promoteLocalThread(
 				const persistedRoot = remoteThread?.comments.find(
 					(candidate) => candidate.nodeId === addedThread?.rootCommentNodeId,
 				);
-				// If the persisted remote root was removed manually, restart cleanly.
+				// A fresh point lookup above proved the root exists. If the broader
+				// review snapshot omitted it, stop instead of creating a duplicate.
 				if (!remoteThread || !persistedRoot) {
-					clearPromotionProgress(db, localThreadId);
-					addedThread = null;
-					promotedReplyCount = 0;
+					throw new ReviewError(
+						"The GitHub promotion thread could not be loaded. Refresh and try again.",
+						409,
+					);
 				} else {
 					remoteRootIsPending = persistedRoot.isPending;
 					remoteThreadIsResolved = remoteThread.isResolved;
 					remoteThreadCanResolve = remoteThread.viewerCanResolve;
-					// A crash can land a reply immediately before its local checkpoint.
-					// Reconcile only replies authored by this viewer before sending
-					// anything again; another participant may have posted the same body.
-					const viewerReplies = remoteThread.comments
-						.slice(1)
-						.filter((candidate) => candidate.authorLogin === review.viewerLogin);
-					while (
-						promotedReplyCount < replies.length &&
-						viewerReplies[promotedReplyCount]?.body === replies[promotedReplyCount]?.body
-					) {
-						promotedReplyCount++;
-					}
+					promotedReplyNodeIds = reconcilePromotionReplyNodeIds(
+						remoteThread,
+						review.viewerLogin,
+						replies,
+						promotedReplyCount,
+						promotedReplyNodeIds,
+					);
+					promotedReplyCount = promotedReplyNodeIds.filter(Boolean).length;
 					db.update(commentThread)
-						.set({ promotionReplyCount: promotedReplyCount })
+						.set({
+							promotionReplyCount: promotedReplyCount,
+							promotionReplyNodeIds: compactPromotionReplyNodeIds(promotedReplyNodeIds),
+						})
 						.where(eq(commentThread.id, localThreadId))
 						.run();
 				}
 			}
 			rollbackReplyCount = promotedReplyCount;
+			rollbackReplyNodeIds = [...promotedReplyNodeIds];
 
-			if (addedThread === null || promotedReplyCount < replies.length) {
+			if (addedThread === null || promotedReplyNodeIds.filter(Boolean).length < replies.length) {
 				const pendingReview = await openPendingReview(run, review);
 				reviewNodeId = pendingReview.reviewNodeId;
 				created = pendingReview.created;
@@ -588,18 +623,29 @@ async function promoteLocalThread(
 						promotionRootCommentNodeId: addedThread.rootCommentNodeId,
 						promotionViewerLogin: review.viewerLogin,
 						promotionReplyCount: 0,
+						promotionReplyNodeIds: [],
 					})
 					.where(eq(commentThread.id, localThreadId))
 					.run();
 				if (persisted.changes !== 1) throw new Error("Local promotion checkpoint was not saved");
 			}
 			for (const [index, reply] of replies.entries()) {
-				if (index < promotedReplyCount) continue;
+				if (promotedReplyNodeIds[index]) continue;
 				if (reviewNodeId === null) throw new Error("Pending review was not opened");
-				await addReviewReply(run.repoRoot, addedThread.threadNodeId, reply.body, reviewNodeId);
+				const replyNodeId = await addReviewReply(
+					run.repoRoot,
+					addedThread.threadNodeId,
+					reply.body,
+					reviewNodeId,
+				);
+				promotedReplyNodeIds[index] = replyNodeId;
+				promotedReplyCount = promotedReplyNodeIds.filter(Boolean).length;
 				const persisted = db
 					.update(commentThread)
-					.set({ promotionReplyCount: index + 1 })
+					.set({
+						promotionReplyCount: promotedReplyCount,
+						promotionReplyNodeIds: compactPromotionReplyNodeIds(promotedReplyNodeIds),
+					})
 					.where(eq(commentThread.id, localThreadId))
 					.run();
 				if (persisted.changes !== 1) throw new Error("Local promotion checkpoint was not saved");
@@ -612,22 +658,38 @@ async function promoteLocalThread(
 			// published root must never be deleted: it may have been submitted on
 			// GitHub while this process was interrupted.
 			let remoteRootRolledBack = addedThread === null;
+			let remoteRootWasPublished = false;
 			if (addedThread !== null && remoteRootIsPending) {
 				try {
-					await deleteReviewComment(run.repoRoot, addedThread.rootCommentNodeId);
-					remoteRootRolledBack = true;
+					const current = await getPromotionThreadState(run.repoRoot, addedThread.threadNodeId);
+					if (
+						current !== null &&
+						current.rootCommentNodeId === addedThread.rootCommentNodeId &&
+						current.rootIsPending
+					) {
+						await deleteReviewComment(run.repoRoot, addedThread.rootCommentNodeId);
+						remoteRootRolledBack = true;
+					} else if (
+						current !== null &&
+						current.rootCommentNodeId === addedThread.rootCommentNodeId
+					) {
+						remoteRootWasPublished = true;
+					}
 				} catch (rollbackError) {
 					reportPromotionCleanupFailure("delete partial GitHub promotion", rollbackError);
 				}
 			}
-			if (created && reviewNodeId !== null) {
+			if (created && reviewNodeId !== null && !remoteRootWasPublished) {
 				try {
 					await discardReview(run.repoRoot, reviewNodeId);
 					if (rootCreatedThisAttempt) {
 						remoteRootRolledBack = true;
 					} else if (!remoteRootRolledBack) {
 						db.update(commentThread)
-							.set({ promotionReplyCount: rollbackReplyCount })
+							.set({
+								promotionReplyCount: rollbackReplyCount,
+								promotionReplyNodeIds: compactPromotionReplyNodeIds(rollbackReplyNodeIds),
+							})
 							.where(eq(commentThread.id, localThreadId))
 							.run();
 					}
@@ -745,9 +807,73 @@ function clearPromotionProgress(db: StageDb, localThreadId: string): void {
 			promotionRootCommentNodeId: null,
 			promotionViewerLogin: null,
 			promotionReplyCount: 0,
+			promotionReplyNodeIds: [],
 		})
 		.where(eq(commentThread.id, localThreadId))
 		.run();
+}
+
+/**
+ * Reconcile saved reply ids with the live thread. Older checkpoints have only a
+ * count, so their prefix falls back to ordered body matching. Replies that landed
+ * immediately before a crash are also found by searching forward, which tolerates
+ * unrelated viewer replies without treating them as positional matches.
+ */
+function reconcilePromotionReplyNodeIds(
+	remoteThread: GitHubApiReviewThread,
+	viewerLogin: string,
+	localReplies: { body: string }[],
+	checkpointCount: number,
+	checkpointNodeIds: (string | null)[],
+): (string | null)[] {
+	const remoteReplies = remoteThread.comments.slice(1);
+	const reconciled = Array<string | null>(localReplies.length).fill(null);
+	const usedRemoteIds = new Set<string>();
+	let lastRemoteIndex = -1;
+
+	for (const [index, localReply] of localReplies.entries()) {
+		const storedNodeId = checkpointNodeIds[index];
+		if (storedNodeId) {
+			const remoteIndex = remoteReplies.findIndex(
+				(candidate) =>
+					candidate.nodeId === storedNodeId &&
+					candidate.authorLogin === viewerLogin &&
+					candidate.body === localReply.body,
+			);
+			if (remoteIndex !== -1) {
+				reconciled[index] = storedNodeId;
+				usedRemoteIds.add(storedNodeId);
+				lastRemoteIndex = Math.max(lastRemoteIndex, remoteIndex);
+			}
+			// A saved id that disappeared was manually deleted. Do not let a
+			// same-body viewer comment impersonate it; this local reply must resend.
+			continue;
+		}
+
+		const isLegacyCheckpoint = index < checkpointCount;
+		const mayHaveLandedBeforeCheckpoint = index >= checkpointNodeIds.length;
+		if (!isLegacyCheckpoint && !mayHaveLandedBeforeCheckpoint) continue;
+		const remoteIndex = remoteReplies.findIndex(
+			(candidate, candidateIndex) =>
+				candidateIndex > lastRemoteIndex &&
+				!usedRemoteIds.has(candidate.nodeId) &&
+				candidate.authorLogin === viewerLogin &&
+				candidate.body === localReply.body,
+		);
+		if (remoteIndex === -1) continue;
+		const remoteReply = remoteReplies[remoteIndex];
+		if (!remoteReply) continue;
+		reconciled[index] = remoteReply.nodeId;
+		usedRemoteIds.add(remoteReply.nodeId);
+		lastRemoteIndex = remoteIndex;
+	}
+	return reconciled;
+}
+
+function compactPromotionReplyNodeIds(ids: (string | null)[]): (string | null)[] {
+	let length = ids.length;
+	while (length > 0 && !ids[length - 1]) length--;
+	return ids.slice(0, length);
 }
 
 function reportPromotionCleanupFailure(action: string, error: unknown): void {

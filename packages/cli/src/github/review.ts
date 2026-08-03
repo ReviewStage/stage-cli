@@ -691,13 +691,20 @@ export async function addReviewReply(
 	threadNodeId: string,
 	body: string,
 	reviewNodeId: string | null,
-): Promise<void> {
-	await writeGraphql(repoRoot, ADD_REVIEW_REPLY, {
+): Promise<string> {
+	const stdout = await writeGraphql(repoRoot, ADD_REVIEW_REPLY, {
 		threadId: threadNodeId,
 		reviewId: reviewNodeId,
 		body,
 	});
+	return AddedReplySchema.parse(JSON.parse(stdout)).data.addPullRequestReviewThreadReply.comment.id;
 }
+
+const AddedReplySchema = z.object({
+	data: z.object({
+		addPullRequestReviewThreadReply: z.object({ comment: z.object({ id: z.string() }) }),
+	}),
+});
 
 /** Edit a review comment by node id (works for pending and submitted comments). */
 export async function updateReviewComment(

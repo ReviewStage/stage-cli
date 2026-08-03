@@ -6,6 +6,7 @@ import {
 	makeInterruptedPromotionReviewWithForeignMatchingReply,
 	makeInterruptedPromotionReviewWithInterleavedViewerReply,
 	makeInterruptedPromotionReviewWithSubmittedReply,
+	makeInterruptedPromotionReviewWithUnrelatedViewerReply,
 	makeResolvedInterruptedPromotionReview,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -75,6 +76,33 @@ describe("review API — promotion resume", () => {
 
 		expect(promotion.status, promotion.body).toBe(200);
 		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(0);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("finds a promoted reply after an unrelated reply by the same viewer", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReviewWithUnrelatedViewerReply());
+		const { runId, localThreadId } = seedInterruptedPromotion();
+
+		const promotion = await promote(runId, localThreadId);
+
+		expect(promotion.status, promotion.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(0);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("resends a checkpointed reply that was manually deleted", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReview());
+		const { runId, localThreadId } = seedInterruptedPromotion();
+		harness.db
+			.update(commentThread)
+			.set({ promotionReplyCount: 1, promotionReplyNodeIds: ["COMMENT_deleted_reply"] })
+			.where(eq(commentThread.id, localThreadId))
+			.run();
+
+		const promotion = await promote(runId, localThreadId);
+
+		expect(promotion.status, promotion.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(1);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 

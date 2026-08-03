@@ -300,6 +300,40 @@ export function makeInterruptedPromotionReviewWithInterleavedViewerReply(): unkn
 	);
 }
 
+export function makeInterruptedPromotionReviewWithUnrelatedViewerReply(): unknown {
+	const root = {
+		...pendingThread.comments.nodes[0],
+		id: "COMMENT_new",
+		body: "Root",
+	};
+	const unrelatedViewerReply = {
+		...root,
+		id: "COMMENT_unrelated_viewer",
+		body: "Unrelated viewer reply",
+	};
+	const promotedReply = {
+		...root,
+		id: "COMMENT_promoted_reply",
+		body: "Reply",
+	};
+	return makeReview(
+		[
+			{
+				...pendingThread,
+				id: "THREAD_new",
+				path: "src/foo.ts",
+				line: 3,
+				diffSide: "RIGHT",
+				comments: {
+					...pendingThread.comments,
+					nodes: [root, unrelatedViewerReply, promotedReply],
+				},
+			},
+		],
+		"REVIEW_pending",
+	);
+}
+
 export function makeInterruptedPromotionReviewWithSubmittedReply(): unknown {
 	const root = {
 		...submittedThread.comments.nodes[0],
@@ -420,6 +454,7 @@ interface GhShimOptions {
 	recoveryRepoName?: string;
 	recoveryRootAuthorLogin?: string;
 	recoveryRootState?: "PENDING" | "COMMENTED";
+	recoveryThreadMissing?: boolean;
 }
 
 interface InsertRunOptions {
@@ -533,7 +568,10 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   } } } });
 } else if (query.includes("query GetPromotionThread")) {
   fs.appendFileSync(log, "get-promotion-thread\\n");
-  emit({ data: { node: {
+  emit({ data: { node: ${
+		options.recoveryThreadMissing
+			? "null"
+			: `{
     pullRequest: {
       id: ${JSON.stringify(options.recoveryPullRequestNodeId ?? "PR_node")},
       number: ${options.recoveryPullRequestNumber ?? this.prNumber},
@@ -547,7 +585,8 @@ if (args.some((arg) => arg.includes("/compare/"))) {
       author: { login: ${JSON.stringify(options.recoveryRootAuthorLogin ?? "octocat")} },
       pullRequestReview: { state: ${JSON.stringify(options.recoveryRootState ?? "PENDING")} }
     }] }
-  } } });
+  }`
+	} } });
 } else if (query.includes("query GetReview")) {
   sleep(${options.reviewQueryDelayMs ?? 0});
   const commentFields = query.slice(query.indexOf("comments(first: 100)"), query.indexOf("author {"));
