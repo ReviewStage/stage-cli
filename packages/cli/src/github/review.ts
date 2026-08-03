@@ -311,17 +311,27 @@ export async function getReview(
 		if (cursor !== null) args.push("-f", `cursor=${cursor}`);
 		const parsed = ReviewQuerySchema.safeParse(JSON.parse(await ghReadOrThrow(args, repoRoot)));
 		if (!parsed.success) throw new Error("Unexpected response shape from GitHub review query");
-		viewerLogin = parsed.data.data.viewer.login;
+		const pageViewerLogin = parsed.data.data.viewer.login;
 		const pr = parsed.data.data.repository?.pullRequest;
 		if (!pr) break;
-		pullRequestNodeId = pr.id;
-		state = pr.state;
-		viewerDidAuthor = pr.viewerDidAuthor;
-		headRefOid = pr.headRefOid;
-		baseRefOid = pr.baseRefOid;
-		pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
-		pendingReviewCommitOid = pr.reviews.nodes[0]?.commit?.oid ?? null;
-		pendingReviewBody = pr.reviews.nodes[0]?.body ?? "";
+		if (pullRequestNodeId === "") {
+			viewerLogin = pageViewerLogin;
+			pullRequestNodeId = pr.id;
+			state = pr.state;
+			viewerDidAuthor = pr.viewerDidAuthor;
+			headRefOid = pr.headRefOid;
+			baseRefOid = pr.baseRefOid;
+			pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
+			pendingReviewCommitOid = pr.reviews.nodes[0]?.commit?.oid ?? null;
+			pendingReviewBody = pr.reviews.nodes[0]?.body ?? "";
+		} else if (
+			pageViewerLogin !== viewerLogin ||
+			pr.id !== pullRequestNodeId ||
+			pr.headRefOid !== headRefOid ||
+			pr.baseRefOid !== baseRefOid
+		) {
+			throw new Error("Pull request changed while GitHub review pages were loading");
+		}
 
 		const nodesWithComments = await loadThreadCommentsInBatches(repoRoot, pr.reviewThreads.nodes);
 		for (const { node, comments } of nodesWithComments) {

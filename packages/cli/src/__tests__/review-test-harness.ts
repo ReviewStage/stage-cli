@@ -487,6 +487,7 @@ interface GhShimOptions {
 	noPullRequest?: boolean;
 	persistCreatedReview?: boolean;
 	reviewQueryDelayMs?: number;
+	secondReviewPageHeadRefOid?: string;
 	recoveryPullRequestNodeId?: string;
 	recoveryPullRequestNumber?: number;
 	recoveryRepoOwner?: string;
@@ -635,7 +636,17 @@ if (args.some((arg) => arg.includes("/compare/"))) {
     process.stderr.write("gh: PullRequestReviewComment has no field " + illegalCommentField + "\\n");
     process.exit(1);
   }
-  emit(JSON.parse(fs.readFileSync(reviewPath, "utf8")));
+	const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+	if (${options.secondReviewPageHeadRefOid ? "true" : "false"}) {
+	  if (args.includes("cursor=THREAD_PAGE_2")) {
+	    review.data.repository.pullRequest.headRefOid = ${JSON.stringify(options.secondReviewPageHeadRefOid ?? HEAD)};
+	    review.data.repository.pullRequest.reviewThreads.pageInfo = { hasNextPage: false, endCursor: null };
+	    review.data.repository.pullRequest.reviewThreads.nodes = [];
+	  } else {
+	    review.data.repository.pullRequest.reviewThreads.pageInfo = { hasNextPage: true, endCursor: "THREAD_PAGE_2" };
+	  }
+	}
+	  emit(review);
 } else if (query.includes("mutation CreatePendingReview")) {
   fs.appendFileSync(log, "create-review " + fields + "\\n");
   if (${options.persistCreatedReview ? "true" : "false"}) {
