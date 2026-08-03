@@ -668,25 +668,33 @@ async function promoteLocalThread(
 				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
 			}
 		} catch (err) {
-			// A pending root can be deleted to roll back its whole partial thread. A
-			// published root must never be deleted: it may have been submitted on
-			// GitHub while this process was interrupted.
+			const ownedCommentNodeIds = [addedThread?.rootCommentNodeId, ...promotedReplyNodeIds].filter(
+				(nodeId): nodeId is string => nodeId !== null && nodeId !== undefined,
+			);
+			const ownedComments = new Set(ownedCommentNodeIds);
+			// Delete a pending partial thread only while every comment still belongs
+			// to this promotion. Concurrent GitHub replies and published comments
+			// must survive rollback.
 			let remoteRootRolledBack = addedThread === null;
 			let remoteRootWasPublished = false;
 			if (addedThread !== null && remoteRootIsPending) {
+				const threadNodeId = addedThread.threadNodeId;
+				const rootCommentNodeId = addedThread.rootCommentNodeId;
 				try {
-					const current = await getPromotionThreadState(run.repoRoot, addedThread.threadNodeId);
+					const currentReview = await getReview(run.repoRoot, target.repo, target.prNumber);
+					const currentThread = currentReview.threads.find(
+						(candidate) => candidate.threadNodeId === threadNodeId,
+					);
+					const currentRoot = currentThread?.comments[0];
 					if (
-						current !== null &&
-						current.rootCommentNodeId === addedThread.rootCommentNodeId &&
-						current.rootIsPending
+						currentThread !== undefined &&
+						currentRoot?.nodeId === rootCommentNodeId &&
+						currentRoot.isPending &&
+						currentThread.comments.every((candidate) => ownedComments.has(candidate.nodeId))
 					) {
-						await deleteReviewComment(run.repoRoot, addedThread.rootCommentNodeId);
+						await deleteReviewComment(run.repoRoot, rootCommentNodeId);
 						remoteRootRolledBack = true;
-					} else if (
-						current !== null &&
-						current.rootCommentNodeId === addedThread.rootCommentNodeId
-					) {
+					} else if (currentRoot?.nodeId === rootCommentNodeId && !currentRoot.isPending) {
 						remoteRootWasPublished = true;
 					}
 				} catch (rollbackError) {
@@ -695,10 +703,6 @@ async function promoteLocalThread(
 			}
 			if (created && reviewNodeId !== null && !remoteRootWasPublished) {
 				try {
-					const ownedCommentNodeIds = [
-						addedThread?.rootCommentNodeId,
-						...promotedReplyNodeIds,
-					].filter((nodeId): nodeId is string => nodeId !== null && nodeId !== undefined);
 					if (await discardCreatedReviewIfOwned(run, target, reviewNodeId, ownedCommentNodeIds)) {
 						if (rootCreatedThisAttempt) {
 							remoteRootRolledBack = true;

@@ -24,9 +24,7 @@ describe("review API — promotion rollback", () => {
 		await harness.writeGhShim(EMPTY_REVIEW);
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ resolved: true });
-
 		const res = await promote(runId, localThreadId);
-
 		expect(res.status).toBe(200);
 		expect((await harness.logLines()).filter((line) => line === "resolve-thread")).toHaveLength(1);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
@@ -56,19 +54,21 @@ describe("review API — promotion rollback", () => {
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(1);
 	});
 
-	it("preserves concurrent draft work when promotion rollback fails", async () => {
+	it("preserves a concurrent reply in the promotion thread during rollback", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW, {
 			failResolve: true,
 			persistCreatedReview: true,
-			addConcurrentPendingCommentOnResolveFailure: true,
+			addConcurrentPendingReplyOnResolveFailure: true,
 		});
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ resolved: true });
 		const res = await promote(runId, localThreadId);
 		const logs = await harness.logLines();
+		const [savedThread] = harness.db.select().from(commentThread).all();
 		expect(res.status).toBe(500);
-		expect(logs).toContain("delete-comment");
+		expect(logs).not.toContain("delete-comment");
 		expect(logs).not.toContain("discard-review");
+		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
 	});
 
 	it("keeps the whole local thread when a promoted reply fails", async () => {

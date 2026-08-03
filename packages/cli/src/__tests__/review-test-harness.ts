@@ -75,6 +75,44 @@ const pendingThread = {
 	},
 };
 
+function makePromotionThread(rootState: "PENDING" | "COMMENTED") {
+	return {
+		id: "THREAD_new",
+		isResolved: false,
+		viewerCanResolve: true,
+		viewerCanUnresolve: true,
+		path: "src/foo.ts",
+		line: 3,
+		startLine: null,
+		diffSide: "RIGHT",
+		startDiffSide: null,
+		comments: {
+			pageInfo: { hasNextPage: false, endCursor: null },
+			nodes: [
+				{
+					id: "COMMENT_new",
+					url: "https://github.com/owner/repo/pull/5#discussion_r3",
+					body: "Local note",
+					bodyHTML: "<p>Local note</p>",
+					createdAt: "2026-01-03T00:00:00Z",
+					author: { login: "octocat", avatarUrl: "https://x/o.png" },
+					pullRequestReview: { state: rootState },
+				},
+			],
+		},
+	};
+}
+
+const manualPromotionReply = {
+	id: "COMMENT_manual",
+	url: "https://github.com/owner/repo/pull/5#discussion_r4",
+	body: "Manual GitHub reply",
+	bodyHTML: "<p>Manual GitHub reply</p>",
+	createdAt: "2026-01-04T00:00:00Z",
+	author: { login: "octocat", avatarUrl: "https://x/o.png" },
+	pullRequestReview: { state: "PENDING" },
+};
+
 function makeReview(
 	threads: unknown[],
 	pendingReviewId: string | null,
@@ -439,7 +477,7 @@ interface GhShimOptions {
 	discoveredPullRequest?: boolean;
 	failAddThread?: boolean;
 	addConcurrentPendingCommentOnThreadFailure?: boolean;
-	addConcurrentPendingCommentOnResolveFailure?: boolean;
+	addConcurrentPendingReplyOnResolveFailure?: boolean;
 	failAddReply?: boolean;
 	failDeleteComment?: boolean;
 	failDiscardReview?: boolean;
@@ -522,6 +560,7 @@ export class ReviewRouteHarness {
 	async writeGhShim(reviewResult: unknown, options: GhShimOptions = {}): Promise<void> {
 		const reviewPath = path.join(this.tmpDir, "review.json");
 		await fs.writeFile(reviewPath, JSON.stringify(reviewResult));
+		const promotionThread = makePromotionThread(options.recoveryRootState ?? "PENDING");
 		const shim = `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -620,15 +659,19 @@ if (args.some((arg) => arg.includes("/compare/"))) {
     }
     process.stderr.write("gh: line not in diff\\n");
     process.exit(1);
-  }
-  emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", viewerCanResolve: ${options.addedThreadCanResolve === false ? "false" : "true"}, comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
+	  }
+	  const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+	  review.data.repository.pullRequest.reviewThreads.nodes.push(${JSON.stringify(promotionThread)});
+	  fs.writeFileSync(reviewPath, JSON.stringify(review));
+	  emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", viewerCanResolve: ${options.addedThreadCanResolve === false ? "false" : "true"}, comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
 } else if (query.includes("mutation ResolveThread")) {
   fs.appendFileSync(log, "resolve-thread\\n");
   if (${options.failResolve ? "true" : "false"}) {
-    if (${options.addConcurrentPendingCommentOnResolveFailure ? "true" : "false"}) {
-      const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-      review.data.repository.pullRequest.reviewThreads.nodes.push(${JSON.stringify(pendingThread)});
-      fs.writeFileSync(reviewPath, JSON.stringify(review));
+	    if (${options.addConcurrentPendingReplyOnResolveFailure ? "true" : "false"}) {
+	      const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+	      const thread = review.data.repository.pullRequest.reviewThreads.nodes.find((entry) => entry.id === "THREAD_new");
+	      thread.comments.nodes.push(${JSON.stringify(manualPromotionReply)});
+	      fs.writeFileSync(reviewPath, JSON.stringify(review));
     }
     process.stderr.write("gh: resolve failed\\n");
     process.exit(1);
