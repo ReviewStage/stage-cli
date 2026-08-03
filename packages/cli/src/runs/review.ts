@@ -811,7 +811,10 @@ async function releasePromotionCheckpoint(
 		remote.pullRequestNodeId === checkpoint.pullRequestNodeId &&
 		remote.rootCommentNodeId === checkpoint.rootCommentNodeId
 	) {
-		if (!remote.rootIsPending) return false;
+		if (!remote.rootIsPending) {
+			clearPromotionProgress(db, localThreadId);
+			return false;
+		}
 		await deleteReviewComment(run.repoRoot, checkpoint.rootCommentNodeId);
 	}
 	clearPromotionProgress(db, localThreadId);

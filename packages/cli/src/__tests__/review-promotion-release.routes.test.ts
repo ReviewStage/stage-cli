@@ -57,13 +57,23 @@ describe("review API — promotion checkpoint release", () => {
 			recoveryRootState: "COMMENTED",
 		});
 		const { runId, localThreadId } = seedInterruptedPromotion();
+		const port = await harness.start();
 
-		const promotion = await promote(runId, localThreadId);
+		const promotion = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+		const reply = await harness.request(
+			port,
+			"POST",
+			`/api/comment-threads/${localThreadId}/replies`,
+			{ body: "Continue locally" },
+		);
 		const [savedThread] = harness.db.select().from(commentThread).all();
 
 		expect(promotion.status, promotion.body).toBe(409);
-		expect(savedThread?.promotionPullRequestNodeId).toBe("PR_node");
-		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
+		expect(reply.status).toBe(201);
+		expect(savedThread?.promotionPullRequestNodeId).toBeNull();
+		expect(savedThread?.promotionThreadNodeId).toBeNull();
 		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(0);
 	});
 });
