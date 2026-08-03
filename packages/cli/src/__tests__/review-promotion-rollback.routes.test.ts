@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { comment, commentThread } from "../db/schema/index.js";
 import {
 	EMPTY_REVIEW,
@@ -15,7 +15,6 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-	vi.restoreAllMocks();
 	await harness.teardown();
 });
 
@@ -42,16 +41,18 @@ describe("review API — promotion rollback", () => {
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 
-	it("rolls back a new remote root when preserving resolution fails", async () => {
+	it("retains a new remote root when preserving resolution fails", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW, { failResolve: true, persistCreatedReview: true });
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ resolved: true });
 
 		const res = await promote(runId, localThreadId);
+		const [savedThread] = harness.db.select().from(commentThread).all();
 
 		expect(res.status).toBe(500);
-		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(1);
-		expect(harness.db.select().from(commentThread).all()).toHaveLength(1);
+		expect(await harness.logLines()).not.toContain("delete-comment");
+		expect(await harness.logLines()).not.toContain("discard-review");
+		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
 	});
 
 	it("preserves a concurrent reply in the promotion thread during rollback", async () => {
@@ -79,7 +80,7 @@ describe("review API — promotion rollback", () => {
 		const res = await promote(runId, localThreadId);
 
 		expect(res.status).toBe(500);
-		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(1);
+		expect(await harness.logLines()).not.toContain("delete-comment");
 		expect(
 			harness.db
 				.select()
@@ -87,15 +88,14 @@ describe("review API — promotion rollback", () => {
 				.all()
 				.map((row) => row.body),
 		).toEqual(["Root", "Reply"]);
-		expect(harness.db.select().from(commentThread).all()).toHaveLength(1);
+		const [savedThread] = harness.db.select().from(commentThread).all();
+		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
+		expect(savedThread?.promotionViewerLogin).toBe("octocat");
 	});
 
 	it("checkpoints the GitHub node id for every copied reply", async () => {
-		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 		await harness.writeGhShim(EMPTY_REVIEW, {
 			failResolve: true,
-			failDeleteComment: true,
-			failDiscardReview: true,
 			persistCreatedReview: true,
 		});
 		const runId = harness.insertRun();
@@ -107,7 +107,6 @@ describe("review API — promotion rollback", () => {
 		expect(promotion.status).toBe(500);
 		expect(savedThread?.promotionReplyCount).toBe(1);
 		expect(savedThread?.promotionReplyNodeIds).toEqual(["C"]);
-		expect(stderr).toHaveBeenCalled();
 	});
 
 	it("preserves insertion order when comments share a timestamp", async () => {
@@ -166,30 +165,6 @@ describe("review API — promotion rollback", () => {
 		expect((await harness.logLines()).filter((line) => line === "discard-review")).toHaveLength(0);
 		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
 		expect(savedThread?.promotionRootCommentNodeId).toBe("COMMENT_new");
-	});
-
-	it("reports every failed rollback without hiding the promotion error", async () => {
-		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-		await harness.writeGhShim(EMPTY_REVIEW, {
-			failAddReply: true,
-			failDeleteComment: true,
-			failDiscardReview: true,
-			persistCreatedReview: true,
-		});
-		const runId = harness.insertRun();
-		const localThreadId = harness.seedLocalThread({ withReply: true });
-
-		const promotion = await promote(runId, localThreadId);
-		const [savedThread] = harness.db.select().from(commentThread).all();
-
-		expect(promotion.status).toBe(500);
-		expect(savedThread?.promotionViewerLogin).toBe("octocat");
-		expect(stderr).toHaveBeenCalledWith(
-			expect.stringContaining("Failed to delete partial GitHub promotion: gh: delete failed"),
-		);
-		expect(stderr).toHaveBeenCalledWith(
-			expect.stringContaining("Failed to discard promotion review: gh: discard failed"),
-		);
 	});
 });
 

@@ -309,71 +309,21 @@ async function withLockedReviewTarget<T>(
 }
 
 /** The viewer's pending review node id, opening an empty pending review if none is open. */
-async function openPendingReview(
-	run: ChapterRunRow,
-	review: GitHubReview,
-): Promise<{ reviewNodeId: string; created: boolean }> {
+async function openPendingReview(run: ChapterRunRow, review: GitHubReview): Promise<string> {
 	if (review.pendingReviewNodeId !== null) {
-		return { reviewNodeId: review.pendingReviewNodeId, created: false };
+		return review.pendingReviewNodeId;
 	}
-	return {
-		reviewNodeId: await createPendingReview(
-			run.repoRoot,
-			review.pullRequestNodeId,
-			review.headRefOid,
-		),
-		created: true,
-	};
+	return createPendingReview(run.repoRoot, review.pullRequestNodeId, review.headRefOid);
 }
 
-/**
- * Run an action against the viewer's pending review, opening one if needed. If we
- * had to open the review and the action then fails (e.g. an out-of-diff line), the
- * just-created empty review is discarded so it doesn't linger on the PR as a stray
- * "review to submit". A pre-existing review is never discarded.
- */
+/** Run an action against the viewer's pending review, opening one if needed. */
 async function withPendingReview<T>(
 	run: ChapterRunRow,
 	target: ReviewTarget,
 	action: (reviewNodeId: string) => Promise<T>,
 ): Promise<T> {
-	const { review } = target;
-	const { reviewNodeId, created } = await openPendingReview(run, review);
-	try {
-		return await action(reviewNodeId);
-	} catch (err) {
-		if (created) {
-			try {
-				await discardCreatedReviewIfOwned(run, target, reviewNodeId, []);
-			} catch (discardError) {
-				const message = discardError instanceof Error ? discardError.message : String(discardError);
-				process.stderr.write(
-					`Failed to discard newly created GitHub review after action failure: ${message}\n`,
-				);
-			}
-		}
-		throw err;
-	}
-}
-
-/** Discard a Stage-created review only while every remaining draft still belongs to Stage. */
-async function discardCreatedReviewIfOwned(
-	run: ChapterRunRow,
-	target: Pick<ReviewTarget, "repo" | "prNumber">,
-	reviewNodeId: string,
-	ownedCommentNodeIds: string[],
-): Promise<boolean> {
-	const current = await getReview(run.repoRoot, target.repo, target.prNumber);
-	const owned = new Set(ownedCommentNodeIds);
-	if (
-		current.pendingReviewNodeId !== reviewNodeId ||
-		current.pendingReviewBody.trim() !== "" ||
-		current.pendingComments.some((candidate) => !owned.has(candidate.id))
-	) {
-		return false;
-	}
-	await discardReview(run.repoRoot, reviewNodeId);
-	return true;
+	const reviewNodeId = await openPendingReview(run, target.review);
+	return action(reviewNodeId);
 }
 
 // Queued ids reject duplicate promotion requests immediately. The active set starts
@@ -562,13 +512,8 @@ async function promoteLocalThread(
 		let promotedReplyNodeIds = [...initialReplyNodeIds];
 		let promotedReplyCount = initialReplyCount;
 		let reviewNodeId: string | null = null;
-		let created = false;
-		let remoteRootIsPending = false;
 		let remoteThreadIsResolved = false;
 		let remoteThreadCanResolve = false;
-		let rootCreatedThisAttempt = false;
-		let rollbackReplyCount = promotedReplyCount;
-		let rollbackReplyNodeIds = [...promotedReplyNodeIds];
 		try {
 			if (addedThread !== null) {
 				const remoteThread = review.threads.find(
@@ -585,7 +530,6 @@ async function promoteLocalThread(
 						409,
 					);
 				} else {
-					remoteRootIsPending = persistedRoot.isPending;
 					remoteThreadIsResolved = remoteThread.isResolved;
 					remoteThreadCanResolve = remoteThread.viewerCanResolve;
 					promotedReplyNodeIds = reconcilePromotionReplyNodeIds(
@@ -605,13 +549,8 @@ async function promoteLocalThread(
 						.run();
 				}
 			}
-			rollbackReplyCount = promotedReplyCount;
-			rollbackReplyNodeIds = [...promotedReplyNodeIds];
-
 			if (addedThread === null || promotedReplyNodeIds.filter(Boolean).length < replies.length) {
-				const pendingReview = await openPendingReview(run, review);
-				reviewNodeId = pendingReview.reviewNodeId;
-				created = pendingReview.created;
+				reviewNodeId = await openPendingReview(run, review);
 			}
 			if (addedThread === null) {
 				if (reviewNodeId === null) throw new Error("Pending review was not opened");
@@ -627,8 +566,6 @@ async function promoteLocalThread(
 				});
 				addedThread = createdThread;
 				remoteThreadCanResolve = createdThread.viewerCanResolve;
-				rootCreatedThisAttempt = true;
-				remoteRootIsPending = true;
 				const persisted = db
 					.update(commentThread)
 					.set({
@@ -668,60 +605,10 @@ async function promoteLocalThread(
 				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
 			}
 		} catch (err) {
-			const ownedCommentNodeIds = [addedThread?.rootCommentNodeId, ...promotedReplyNodeIds].filter(
-				(nodeId): nodeId is string => nodeId !== null && nodeId !== undefined,
-			);
-			const ownedComments = new Set(ownedCommentNodeIds);
-			// Delete a pending partial thread only while every comment still belongs
-			// to this promotion. Concurrent GitHub replies and published comments
-			// must survive rollback.
-			let remoteRootRolledBack = addedThread === null;
-			let remoteRootWasPublished = false;
-			if (addedThread !== null && remoteRootIsPending) {
-				const threadNodeId = addedThread.threadNodeId;
-				const rootCommentNodeId = addedThread.rootCommentNodeId;
-				try {
-					const currentReview = await getReview(run.repoRoot, target.repo, target.prNumber);
-					const currentThread = currentReview.threads.find(
-						(candidate) => candidate.threadNodeId === threadNodeId,
-					);
-					const currentRoot = currentThread?.comments[0];
-					if (
-						currentThread !== undefined &&
-						currentRoot?.nodeId === rootCommentNodeId &&
-						currentRoot.isPending &&
-						currentThread.comments.every((candidate) => ownedComments.has(candidate.nodeId))
-					) {
-						await deleteReviewComment(run.repoRoot, rootCommentNodeId);
-						remoteRootRolledBack = true;
-					} else if (currentRoot?.nodeId === rootCommentNodeId && !currentRoot.isPending) {
-						remoteRootWasPublished = true;
-					}
-				} catch (rollbackError) {
-					reportPromotionCleanupFailure("delete partial GitHub promotion", rollbackError);
-				}
-			}
-			if (created && reviewNodeId !== null && !remoteRootWasPublished) {
-				try {
-					if (await discardCreatedReviewIfOwned(run, target, reviewNodeId, ownedCommentNodeIds)) {
-						if (rootCreatedThisAttempt) {
-							remoteRootRolledBack = true;
-						} else if (!remoteRootRolledBack) {
-							db.update(commentThread)
-								.set({
-									promotionReplyCount: rollbackReplyCount,
-									promotionReplyNodeIds: compactPromotionReplyNodeIds(rollbackReplyNodeIds),
-								})
-								.where(eq(commentThread.id, localThreadId))
-								.run();
-						}
-					}
-				} catch (discardError) {
-					reportPromotionCleanupFailure("discard promotion review", discardError);
-				}
-			}
-			if (remoteRootRolledBack) clearPromotionProgress(db, localThreadId);
-			if (wasUnassigned && remoteRootRolledBack) {
+			// GitHub does not offer a conditional delete for a review root or review.
+			// Once a root exists, retain its checkpoint so a retry can reconcile it
+			// without racing and deleting concurrent GitHub work.
+			if (wasUnassigned && addedThread === null) {
 				db.update(commentThread)
 					.set({ repoRoot: UNASSIGNED_REPO_ROOT })
 					.where(and(eq(commentThread.id, localThreadId), eq(commentThread.repoRoot, run.repoRoot)))
@@ -895,11 +782,6 @@ function compactPromotionReplyNodeIds(ids: (string | null)[]): (string | null)[]
 	let length = ids.length;
 	while (length > 0 && !ids[length - 1]) length--;
 	return ids.slice(0, length);
-}
-
-function reportPromotionCleanupFailure(action: string, error: unknown): void {
-	const message = error instanceof Error ? error.message : String(error);
-	process.stderr.write(`Failed to ${action}: ${message}\n`);
 }
 
 export interface GitHubCommentAnchor {

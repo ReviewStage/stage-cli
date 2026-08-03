@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { commentThread } from "../db/schema/index.js";
 import {
 	EMPTY_REVIEW,
@@ -16,7 +16,6 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-	vi.restoreAllMocks();
 	await harness.teardown();
 });
 
@@ -105,11 +104,9 @@ describe("review API — GitHub mutations", () => {
 		expect(await harness.logLines()).not.toContain("resolve-thread");
 	});
 
-	it("restores a legacy claim when discarding a fresh review completes rollback", async () => {
-		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+	it("retains a legacy claim and checkpoint after promotion fails", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW, {
 			failAddReply: true,
-			failDeleteComment: true,
 			persistCreatedReview: true,
 		});
 		const runId = harness.insertRun();
@@ -124,10 +121,8 @@ describe("review API — GitHub mutations", () => {
 		const [thread] = harness.db.select().from(commentThread).all();
 
 		expect(res.status).toBe(500);
-		expect(await harness.logLines()).toContain("discard-review");
-		expect(stderr).toHaveBeenCalledWith(
-			expect.stringContaining("Failed to delete partial GitHub promotion: gh: delete failed"),
-		);
-		expect(thread?.repoRoot).toBe("");
+		expect(await harness.logLines()).not.toContain("discard-review");
+		expect(thread?.repoRoot).not.toBe("");
+		expect(thread?.promotionThreadNodeId).toBe("THREAD_new");
 	});
 });

@@ -479,8 +479,6 @@ interface GhShimOptions {
 	addConcurrentPendingCommentOnThreadFailure?: boolean;
 	addConcurrentPendingReplyOnResolveFailure?: boolean;
 	failAddReply?: boolean;
-	failDeleteComment?: boolean;
-	failDiscardReview?: boolean;
 	failResolve?: boolean;
 	failThreadComments?: boolean;
 	mergeBaseOid?: string;
@@ -690,14 +688,12 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   emit({ data: { resolveReviewThread: { thread: { id: "THREAD_new" } } } });
 } else if (query.includes("mutation DeleteReviewComment")) {
   fs.appendFileSync(log, "delete-comment\\n");
-  if (${options.failDeleteComment ? "true" : "false"}) { process.stderr.write("gh: delete failed\\n"); process.exit(1); }
   emit({ data: { deletePullRequestReviewComment: { pullRequestReviewComment: { id: "COMMENT_new" } } } });
 } else if (query.includes("mutation UpdateReviewComment")) {
   fs.appendFileSync(log, "edit-comment " + fields + "\\n");
   emit({ data: { updatePullRequestReviewComment: { pullRequestReviewComment: { id: "COMMENT_new" } } } });
 } else if (query.includes("mutation DiscardReview")) {
   fs.appendFileSync(log, "discard-review\\n");
-  if (${options.failDiscardReview ? "true" : "false"}) { process.stderr.write("gh: discard failed\\n"); process.exit(1); }
   emit({ data: { deletePullRequestReview: { pullRequestReview: { id: "REVIEW_new" } } } });
 } else if (query.includes("mutation AddReviewReply")) {
   fs.appendFileSync(log, "reply\\n");
