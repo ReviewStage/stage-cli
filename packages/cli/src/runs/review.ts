@@ -906,7 +906,7 @@ function promotionRootBody(body: string, localThreadId: string): string {
 }
 
 function promotionReplyMarker(localThreadId: string, localReplyId: string): string {
-	return `<!-- stagereview-promotion-reply:${localThreadId}:${localReplyId} -->`;
+	return `<!-- stagereview-promotion-reply ${JSON.stringify([localThreadId, localReplyId])} -->`;
 }
 
 function promotionReplyBody(body: string, localThreadId: string, localReplyId: string): string {
