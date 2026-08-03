@@ -22,6 +22,7 @@ import {
 import { type GitHubRepo, getPullRequestOrThrow, parseGitHubRepo } from "../github/index.js";
 import {
 	type AddedReviewThread,
+	addImmediateReviewComment,
 	addReviewReply,
 	addReviewThread,
 	createPendingReview,
@@ -322,12 +323,6 @@ async function openPendingReview(
 	review: GitHubReview,
 ): Promise<{ reviewNodeId: string; created: boolean }> {
 	if (review.pendingReviewNodeId !== null) {
-		if (review.pendingReviewCommitOid !== review.headRefOid) {
-			throw new ReviewError(
-				"Your pending GitHub review belongs to an earlier PR version. Submit or discard it on GitHub before commenting on this run.",
-				409,
-			);
-		}
 		return { reviewNodeId: review.pendingReviewNodeId, created: false };
 	}
 	return {
@@ -761,28 +756,49 @@ function reportPromotionCleanupFailure(action: string, error: unknown): void {
 	process.stderr.write(`Failed to ${action}: ${message}\n`);
 }
 
-export interface PendingCommentAnchor {
+export interface GitHubCommentAnchor {
 	filePath: string;
 	side: DiffSide;
 	startLine: number;
 	endLine: number;
 	body: string;
+	pending: boolean;
 }
 
 /**
- * Create a comment directly on the PR as a pending (draft) review comment, opening
- * the viewer's review if needed. This is the "Comment on the PR" path — unlike
- * `addLocalThreadToReview`, nothing is stored locally; the comment lives only on
- * GitHub. GitHub anchors it to the PR's current diff, rejecting out-of-diff lines.
+ * Create a comment directly on the PR, either in the viewer's pending review or as
+ * an immediately published comment. Unlike `addLocalThreadToReview`, nothing is
+ * stored locally; GitHub owns the thread from the start.
  */
-export async function addPendingComment(
+export async function addGitHubComment(
 	run: ChapterRunRow,
-	anchor: PendingCommentAnchor,
+	anchor: GitHubCommentAnchor,
 ): Promise<void> {
-	await withLockedReviewTarget(run, async ({ review }) => {
-		assertPushable(run, review);
+	await withLockedReviewTarget(run, async ({ repo, prNumber, review }) => {
+		if (anchor.pending) assertGitHubWritable(run, review);
+		else {
+			assertGitHubWritable(run, review);
+			if (review.pendingReviewNodeId !== null) {
+				throw new ReviewError(
+					"A pending GitHub review now exists. Refresh to add this comment to it.",
+					409,
+				);
+			}
+		}
 		const side = toGitHubSide(anchor.side);
 		const startLine = anchor.endLine !== anchor.startLine ? anchor.startLine : null;
+		if (!anchor.pending) {
+			await addImmediateReviewComment(run.repoRoot, repo, prNumber, {
+				commitOid: review.headRefOid,
+				path: anchor.filePath,
+				body: anchor.body,
+				line: anchor.endLine,
+				side,
+				startLine,
+				startSide: startLine !== null ? side : null,
+			});
+			return;
+		}
 		await withPendingReview(run, review, (reviewNodeId) =>
 			addReviewThread(run.repoRoot, {
 				pullRequestNodeId: review.pullRequestNodeId,

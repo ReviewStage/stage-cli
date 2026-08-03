@@ -12,8 +12,6 @@ export interface CommentDraft {
 /** A draft plus the last submit error for its composer (null while clean). */
 export interface DraftState extends CommentDraft {
 	error: string | null;
-	/** The user's current destination preference, initialized from availability when opened. */
-	toGitHub: boolean;
 }
 
 /**
@@ -62,41 +60,15 @@ export function findDraftAt(
 	return drafts.find((draft) => isSameAnchor(draft, side, endLine));
 }
 
-/** GitHub can appear later, but only drafts opened with it available default to sending there. */
-export function getDraftGitHubDestination(
-	draft: DraftState,
-	canPushToReview: boolean,
-): { available: boolean; defaultOn: boolean } {
-	return {
-		available: canPushToReview,
-		defaultOn: canPushToReview && draft.toGitHub,
-	};
-}
-
-export function setDraftGitHubPreference(
-	drafts: readonly DraftState[],
-	side: DiffSide,
-	endLine: number,
-	toGitHub: boolean,
-): DraftState[] {
-	return drafts.map((draft) =>
-		isSameAnchor(draft, side, endLine) ? { ...draft, toGitHub } : draft,
-	);
-}
-
 /**
  * Opens a composer for the anchor. Since a row holds at most one composer, re-opening
  * the same `(side, endLine)` doesn't duplicate it — instead it adopts the new range's
  * `startLine` (a re-drag that shares the end line but widens/narrows the span) and
  * clears any stale submit error.
  */
-export function upsertDraft(
-	drafts: readonly DraftState[],
-	anchor: CommentDraft,
-	toGitHub: boolean,
-): DraftState[] {
+export function upsertDraft(drafts: readonly DraftState[], anchor: CommentDraft): DraftState[] {
 	if (!findDraftAt(drafts, anchor.side, anchor.endLine)) {
-		return [...drafts, { ...anchor, error: null, toGitHub }];
+		return [...drafts, { ...anchor, error: null }];
 	}
 	return drafts.map((draft) =>
 		isSameAnchor(draft, anchor.side, anchor.endLine)

@@ -95,12 +95,13 @@ describe("useReview promotion", () => {
 
 		let mutationSettled = false;
 		const mutation = result.current
-			.createPendingComment({
+			.createGitHubComment({
 				filePath: "src/foo.ts",
 				side: "additions",
 				startLine: 3,
 				endLine: 3,
 				body: "Pending comment",
+				pending: true,
 			})
 			.finally(() => {
 				mutationSettled = true;

@@ -598,6 +598,16 @@ export interface AddReviewThreadInput {
 	startSide: GitHubDiffSide | null;
 }
 
+export interface AddImmediateReviewCommentInput {
+	commitOid: string;
+	path: string;
+	body: string;
+	line: number;
+	side: GitHubDiffSide;
+	startLine: number | null;
+	startSide: GitHubDiffSide | null;
+}
+
 const AddedThreadSchema = z.object({
 	data: z.object({
 		addPullRequestReviewThread: z.object({
@@ -642,6 +652,39 @@ export async function addReviewThread(
 		rootCommentNodeId: root.id,
 		viewerCanResolve: thread.viewerCanResolve,
 	};
+}
+
+/** Publish a line-anchored review comment immediately, outside a pending review. */
+export async function addImmediateReviewComment(
+	repoRoot: string,
+	repo: GitHubRepo,
+	pullRequestNumber: number,
+	input: AddImmediateReviewCommentInput,
+): Promise<void> {
+	const endpoint = `repos/${repo.owner}/${repo.repo}/pulls/${pullRequestNumber}/comments`;
+	const args = [
+		"api",
+		"--method",
+		"POST",
+		endpoint,
+		"-f",
+		`body=${input.body}`,
+		"-f",
+		`commit_id=${input.commitOid}`,
+		"-f",
+		`path=${input.path}`,
+		"-F",
+		`line=${input.line}`,
+		"-f",
+		`side=${input.side}`,
+	];
+	if (input.startLine !== null) {
+		args.push("-F", `start_line=${input.startLine}`);
+	}
+	if (input.startSide !== null) {
+		args.push("-f", `start_side=${input.startSide}`);
+	}
+	await ghWriteOrThrow(args, repoRoot);
 }
 
 /** Reply to an existing thread, attaching the reply to a pending review when one is open. */

@@ -3,6 +3,7 @@ import { commentThread } from "../db/schema/index.js";
 import {
 	EMPTY_REVIEW,
 	HEAD,
+	makeStalePendingReview,
 	REVIEW_QUERY_RESULT,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -62,6 +63,87 @@ describe("review API — writes", () => {
 		expect(res.status).toBe(200);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 		expect((await harness.logLines()).some((line) => line.startsWith("add-thread"))).toBe(true);
+	});
+
+	it("publishes a PR comment immediately without opening a review", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW);
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/comment`,
+			{
+				filePath: "src/foo.ts",
+				side: "additions",
+				startLine: 2,
+				endLine: 3,
+				body: "Publish now",
+				pending: false,
+			},
+		);
+
+		expect(res.status, res.body).toBe(200);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+		const logs = await harness.logLines();
+		const create = logs.find((line) => line.startsWith("create-immediate-comment"));
+		expect(create).toContain(`commit_id=${HEAD}`);
+		expect(create).toContain("path=src/foo.ts");
+		expect(create).toContain("line=3");
+		expect(create).toContain("side=RIGHT");
+		expect(create).toContain("start_line=2");
+		expect(create).toContain("start_side=RIGHT");
+		expect(logs.some((line) => line.startsWith("create-review"))).toBe(false);
+		expect(logs.some((line) => line.startsWith("add-thread"))).toBe(false);
+	});
+
+	it("adds a current-head comment to an older pending review", async () => {
+		await harness.writeGhShim(makeStalePendingReview());
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/comment`,
+			{
+				filePath: "src/foo.ts",
+				side: "additions",
+				startLine: 3,
+				endLine: 3,
+				body: "Join the existing review",
+			},
+		);
+
+		expect(res.status, res.body).toBe(200);
+		const logs = await harness.logLines();
+		expect(logs).toContainEqual(expect.stringMatching(/^add-thread/));
+		expect(logs).not.toContainEqual(expect.stringMatching(/^create-review/));
+		expect(logs).not.toContainEqual(expect.stringMatching(/^create-immediate-comment/));
+	});
+
+	it("does not publish immediately when a pending review appeared after fetch", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT);
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/comment`,
+			{
+				filePath: "src/foo.ts",
+				side: "additions",
+				startLine: 3,
+				endLine: 3,
+				body: "Refresh before deciding",
+				pending: false,
+			},
+		);
+
+		expect(res.status).toBe(409);
+		expect(JSON.parse(res.body).error).toMatch(/pending GitHub review now exists/i);
+		expect(await harness.logLines()).not.toContainEqual(
+			expect.stringMatching(/^create-immediate-comment/),
+		);
 	});
 
 	it("rejects PR comments from a working-tree run", async () => {

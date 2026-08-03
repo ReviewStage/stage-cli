@@ -9,6 +9,7 @@ import {
 import {
 	COMMENT_STATE,
 	GITHUB_REVIEW_STATUS,
+	type GitHubCommentCreateBody,
 	type GitHubReviewStatus,
 	type LocalReviewComment,
 	type LocalReviewThread,
@@ -100,8 +101,8 @@ export interface UseReviewResult {
 	error: unknown;
 	// Local comments (CLI-only, work offline).
 	createLocalThread: (input: CreateCommentThreadBody) => Promise<unknown>;
-	// Create a comment directly on the PR as a pending review comment.
-	createPendingComment: (input: CreateCommentThreadBody) => Promise<void>;
+	// Create a comment directly on the PR, either pending or immediately published.
+	createGitHubComment: (input: GitHubCommentCreateBody) => Promise<void>;
 	replyLocal: (input: { threadId: string; body: string }) => Promise<void>;
 	editLocalComment: (input: { commentId: string; body: string }) => Promise<void>;
 	deleteLocalThread: (threadId: string) => Promise<void>;
@@ -249,9 +250,9 @@ export function useReview(runId: string): UseReviewResult {
 						: [...threads, toReviewThread(thread)],
 				),
 		}),
-		createPendingComment: useMutation({
+		createGitHubComment: useMutation({
 			onMutate: captureMutationOrigin,
-			mutationFn: (input: CreateCommentThreadBody) =>
+			mutationFn: (input: GitHubCommentCreateBody) =>
 				jsonFetch(runPath("/review/comment"), jsonRequest("POST", input)),
 			onSuccess: (_data, _input, origin) => invalidateGitHub(origin),
 		}),
@@ -391,7 +392,7 @@ export function useReview(runId: string): UseReviewResult {
 		isLoading,
 		error,
 		createLocalThread: m.createLocalThread.mutateAsync,
-		createPendingComment: async (i) => void (await m.createPendingComment.mutateAsync(i)),
+		createGitHubComment: async (i) => void (await m.createGitHubComment.mutateAsync(i)),
 		replyLocal: async (i) => void (await m.replyLocal.mutateAsync(i)),
 		editLocalComment: async (i) => void (await m.editLocalComment.mutateAsync(i)),
 		deleteLocalThread: async (id) => void (await m.deleteLocalThread.mutateAsync(id)),

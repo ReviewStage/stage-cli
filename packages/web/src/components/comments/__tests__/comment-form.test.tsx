@@ -1,77 +1,71 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommentForm } from "../comment-form";
 
 afterEach(cleanup);
 
-describe("comment destination", () => {
-	it("always explains when a new comment stays local", () => {
-		render(
-			<CommentForm
-				label="Comment"
-				destination={{
-					label: "Local only",
-					description: "Saved on this machine and never sent to GitHub.",
-					isGitHub: false,
-				}}
-				onSubmit={vi.fn()}
-				onCancel={vi.fn()}
-			/>,
-		);
+function CommentControlsHarness() {
+	const [local, setLocal] = useState(false);
+	const [startReview, setStartReview] = useState(true);
+	return (
+		<CommentForm
+			label="Comment"
+			allowsSuggestedChanges
+			controls={{
+				local: { checked: local, onCheckedChange: setLocal },
+				...(local
+					? {}
+					: {
+							startReview: { checked: startReview, onCheckedChange: setStartReview },
+						}),
+			}}
+			onSubmit={vi.fn()}
+			onCancel={vi.fn()}
+		/>
+	);
+}
 
-		expect(screen.getByText("Local only")).toBeTruthy();
-		expect(screen.getByText("Saved on this machine and never sent to GitHub.")).toBeTruthy();
+describe("comment controls", () => {
+	it("shows the hosted-style controls without a destination card", () => {
+		render(<CommentControlsHarness />);
+
+		expect(screen.getByRole("checkbox", { name: "Local" }).getAttribute("data-state")).toBe(
+			"unchecked",
+		);
+		expect(
+			screen.getByRole("checkbox", { name: "Start a review" }).getAttribute("data-state"),
+		).toBe("checked");
+		expect(screen.queryByText("Destination")).toBeNull();
 	});
 
-	it("updates the explanation when the GitHub review toggle changes", () => {
-		const onToggleChange = vi.fn();
-		render(
-			<CommentForm
-				label="Comment"
-				allowsSuggestedChanges
-				destination={{
-					toggleLabel: "Add to GitHub review",
-					on: {
-						label: "Pending on GitHub",
-						description: "Only you can see it until you submit your review.",
-						isGitHub: true,
-					},
-					off: {
-						label: "Local only",
-						description: "Saved on this machine and never sent to GitHub.",
-						isGitHub: false,
-					},
-				}}
-				onToggleChange={onToggleChange}
-				onSubmit={vi.fn()}
-				onCancel={vi.fn()}
-			/>,
-		);
+	it("hides Start a review and suggested changes when Local is checked", () => {
+		render(<CommentControlsHarness />);
 
-		expect(screen.getByText("Pending on GitHub")).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Suggestion" })).toBeTruthy();
-		fireEvent.click(screen.getByRole("checkbox", { name: "Add to GitHub review" }));
-		expect(screen.getByText("Local only")).toBeTruthy();
+		fireEvent.click(screen.getByRole("checkbox", { name: "Local" }));
+
+		expect(screen.getByRole("checkbox", { name: "Local" }).getAttribute("data-state")).toBe(
+			"checked",
+		);
+		expect(screen.queryByRole("checkbox", { name: "Start a review" })).toBeNull();
 		expect(screen.queryByRole("button", { name: "Suggestion" })).toBeNull();
-		expect(onToggleChange).toHaveBeenCalledWith(false);
 	});
 
-	it("hides suggested changes for GitHub reply composers", () => {
+	it("can show a fixed local destination when GitHub is unavailable", () => {
 		render(
 			<CommentForm
-				label="Reply"
-				destination={{
-					label: "Published on GitHub",
-					description: "Everyone viewing the pull request can see it immediately.",
-					isGitHub: true,
-				}}
+				label="Comment"
+				controls={{ local: { checked: true, disabled: true } }}
 				onSubmit={vi.fn()}
 				onCancel={vi.fn()}
 			/>,
 		);
 
-		expect(screen.queryByRole("button", { name: "Suggestion" })).toBeNull();
+		const local = screen.getByRole("checkbox", { name: "Local" });
+		expect(local.getAttribute("data-state")).toBe("checked");
+		expect(local.hasAttribute("disabled")).toBe(true);
 	});
 });

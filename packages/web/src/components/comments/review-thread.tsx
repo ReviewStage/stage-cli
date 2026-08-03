@@ -29,6 +29,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Markdown } from "@/components/ui/markdown";
 import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useCommentPreferences } from "@/lib/comment-preferences";
 import { formatTimeAgo } from "@/lib/format";
 import { useReviewContext } from "@/lib/review-context";
 import { GITHUB_REVIEW_STATUS } from "@/lib/use-review";
@@ -157,7 +158,6 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 	const replies = thread.comments.slice(1);
 	const idle = !activeIsReplying && activeEditingId === null;
 	const publishesImmediately = isGitHub && canPublishReplyImmediately(thread);
-	const forceImmediateReply = publishesImmediately && !canPushToReview;
 
 	function setOpenError(message: string | null) {
 		setError(message);
@@ -367,48 +367,13 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 					)}
 
 					{activeIsReplying && (
-						<CommentForm
-							label="Reply"
-							placeholder="Write a reply…"
+						<ReplyCommentForm
+							isGitHub={isGitHub}
+							publishesImmediately={publishesImmediately}
+							hasPendingReview={review.hasPendingReview}
+							canPushToReview={canPushToReview}
 							error={error}
-							destination={
-								isGitHub
-									? publishesImmediately
-										? canPushToReview
-											? {
-													toggleLabel: "Start a review",
-													on: {
-														label: "Pending on GitHub",
-														description: "Only you can see it until you submit your review.",
-														isGitHub: true,
-													},
-													off: {
-														label: "Published on GitHub",
-														description:
-															"Everyone viewing the pull request can see it immediately.",
-														isGitHub: true,
-													},
-												}
-											: {
-													label: "Published on GitHub",
-													description: "Everyone viewing the pull request can see it immediately.",
-													isGitHub: true,
-												}
-										: {
-												label: "Pending on GitHub",
-												description:
-													"This thread is still a draft. Your reply will publish with the review.",
-												isGitHub: true,
-											}
-									: {
-											label: "Local only",
-											description: "Saved on this machine and never sent to GitHub.",
-											isGitHub: false,
-										}
-							}
-							onSubmit={(body, startReview) =>
-								submitReply(body, forceImmediateReply ? false : startReview)
-							}
+							onSubmit={submitReply}
 							onCancel={() => {
 								setIsReplying(false);
 								setOpenError(null);
@@ -425,6 +390,52 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 				onConfirm={confirmDelete}
 			/>
 		</Collapsible>
+	);
+}
+
+function ReplyCommentForm({
+	isGitHub,
+	publishesImmediately,
+	hasPendingReview,
+	canPushToReview,
+	error,
+	onSubmit,
+	onCancel,
+}: {
+	isGitHub: boolean;
+	publishesImmediately: boolean;
+	hasPendingReview: boolean;
+	canPushToReview: boolean;
+	error: string | null;
+	onSubmit: (body: string, pending: boolean) => Promise<void>;
+	onCancel: () => void;
+}) {
+	const { setStartReview, startReview } = useCommentPreferences();
+	const hasUsablePendingReview = hasPendingReview && canPushToReview;
+	const showStartReview = isGitHub && publishesImmediately && !hasPendingReview && canPushToReview;
+	const pending =
+		isGitHub &&
+		(!publishesImmediately || hasUsablePendingReview || (showStartReview && startReview));
+	return (
+		<CommentForm
+			label="Reply"
+			placeholder="Write a reply…"
+			error={error}
+			controls={
+				!isGitHub
+					? { local: { checked: true, disabled: true } }
+					: showStartReview
+						? {
+								startReview: {
+									checked: startReview,
+									onCheckedChange: setStartReview,
+								},
+							}
+						: undefined
+			}
+			onSubmit={(body) => onSubmit(body, pending)}
+			onCancel={onCancel}
+		/>
 	);
 }
 

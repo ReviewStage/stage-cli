@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DIFF_SIDE } from "./chapters.ts";
+import { CreateCommentThreadBodySchema } from "./comments.ts";
 
 // A comment's lifecycle state. `local` lives only in the CLI; `pending` is a draft
 // on the viewer's unsubmitted GitHub review (only they see it); `submitted` is
@@ -141,6 +142,11 @@ export const AddToReviewBodySchema = z.object({
 	localThreadId: z.string().min(1),
 });
 export type AddToReviewBody = z.infer<typeof AddToReviewBodySchema>;
+
+export const GitHubCommentCreateBodySchema = CreateCommentThreadBodySchema.extend({
+	pending: z.boolean().default(true),
+});
+export type GitHubCommentCreateBody = z.infer<typeof GitHubCommentCreateBodySchema>;
 
 export const SubmitReviewBodySchema = z.object({
 	event: z.enum(REVIEW_EVENT),

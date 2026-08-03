@@ -7,10 +7,8 @@ import {
 	type DraftBodies,
 	type DraftState,
 	findDraftAt,
-	getDraftGitHubDestination,
 	isSameAnchor,
 	readDraftBody,
-	setDraftGitHubPreference,
 	upsertDraft,
 	writeDraftBody,
 } from "../comment-drafts";
@@ -30,13 +28,8 @@ function makeThread(
 	};
 }
 
-function draftState(
-	side: CommentDraft["side"],
-	startLine: number,
-	endLine: number,
-	toGitHub = false,
-): DraftState {
-	return { side, startLine, endLine, error: null, toGitHub };
+function draftState(side: CommentDraft["side"], startLine: number, endLine: number): DraftState {
+	return { side, startLine, endLine, error: null };
 }
 
 function rowFor(
@@ -103,25 +96,18 @@ describe("draft anchor helpers", () => {
 
 describe("upsertDraft", () => {
 	it("appends a new draft when no composer occupies the row", () => {
-		const result = upsertDraft(
-			[draftState("additions", 5, 5)],
-			draftState("deletions", 8, 10),
-			true,
-		);
+		const result = upsertDraft([draftState("additions", 5, 5)], draftState("deletions", 8, 10));
 		expect(result).toHaveLength(2);
 		expect(findDraftAt(result, "deletions", 10)?.startLine).toBe(8);
-		expect(findDraftAt(result, "deletions", 10)?.toGitHub).toBe(true);
 	});
 
 	it("adopts the new startLine when re-opening the same (side, endLine) row", () => {
 		const existing = { ...draftState("additions", 3, 10), error: "boom" as string | null };
-		const result = upsertDraft([existing], draftState("additions", 7, 10), true);
+		const result = upsertDraft([existing], draftState("additions", 7, 10));
 		expect(result).toHaveLength(1);
 		expect(result[0]?.startLine).toBe(7);
 		// A re-drag clears any stale submit error.
 		expect(result[0]?.error).toBeNull();
-		// GitHub becoming available must not change an already-open local-only composer.
-		expect(result[0]?.toGitHub).toBe(false);
 	});
 
 	it("leaves other open drafts untouched when updating one", () => {
@@ -129,50 +115,14 @@ describe("upsertDraft", () => {
 		const result = upsertDraft(
 			[other, draftState("additions", 3, 10)],
 			draftState("additions", 7, 10),
-			true,
 		);
 		expect(result).toContain(other);
 		expect(findDraftAt(result, "additions", 10)?.startLine).toBe(7);
 	});
 
 	it("opens a separate composer for a different endLine", () => {
-		const result = upsertDraft(
-			[draftState("additions", 3, 10)],
-			draftState("additions", 3, 15),
-			false,
-		);
+		const result = upsertDraft([draftState("additions", 3, 10)], draftState("additions", 3, 15));
 		expect(result).toHaveLength(2);
-	});
-});
-
-describe("getDraftGitHubDestination", () => {
-	it("offers GitHub as an explicit opt-in when it becomes available after opening", () => {
-		expect(getDraftGitHubDestination(draftState("additions", 5, 5), true)).toEqual({
-			available: true,
-			defaultOn: false,
-		});
-	});
-
-	it("withdraws GitHub when it becomes unavailable after opening", () => {
-		expect(getDraftGitHubDestination(draftState("additions", 5, 5, true), false)).toEqual({
-			available: false,
-			defaultOn: false,
-		});
-	});
-
-	it("restores the user's local choice when GitHub returns", () => {
-		const opened = [draftState("additions", 5, 5, true)];
-		const switchedLocal = setDraftGitHubPreference(opened, "additions", 5, false);
-		const draft = switchedLocal[0];
-
-		expect(draft && getDraftGitHubDestination(draft, false)).toEqual({
-			available: false,
-			defaultOn: false,
-		});
-		expect(draft && getDraftGitHubDestination(draft, true)).toEqual({
-			available: true,
-			defaultOn: false,
-		});
 	});
 });
 

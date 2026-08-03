@@ -1,6 +1,6 @@
-import { CreateCommentThreadBodySchema } from "@stagereview/types/comments";
 import {
 	AddToReviewBodySchema,
+	GitHubCommentCreateBodySchema,
 	GitHubCommentDeleteBodySchema,
 	GitHubCommentEditBodySchema,
 	GitHubReplyBodySchema,
@@ -12,8 +12,8 @@ import type { z } from "zod";
 import type { StageDb } from "../db/client.js";
 import { type ChapterRunRow, chapterRun } from "../db/schema/index.js";
 import {
+	addGitHubComment,
 	addLocalThreadToReview,
-	addPendingComment,
 	deleteGitHubComment,
 	discardRunReview,
 	editGitHubComment,
@@ -49,12 +49,12 @@ export function reviewRoutes(db: StageDb): Route[] {
 				),
 		},
 		{
-			// Create a comment directly on the PR as a pending (draft) review comment.
+			// Create a pending review comment or publish one directly on the PR.
 			method: "POST",
 			pattern: "/api/runs/:runId/review/comment",
 			handler: (req, res, params) =>
-				withRunBody(db, req, res, params.runId, CreateCommentThreadBodySchema, (run, body) =>
-					addPendingComment(run, body),
+				withRunBody(db, req, res, params.runId, GitHubCommentCreateBodySchema, (run, body) =>
+					addGitHubComment(run, body),
 				),
 		},
 		{

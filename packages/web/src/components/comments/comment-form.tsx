@@ -3,26 +3,21 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CommentMarkdownEditor } from "./comment-markdown-editor";
 
-type DestinationDetails = {
-	label: string;
-	description: string;
-	isGitHub: boolean;
-};
+interface CheckboxControl {
+	checked: boolean;
+	disabled?: boolean;
+	onCheckedChange?: (checked: boolean) => void;
+}
 
-type CommentDestination =
-	| DestinationDetails
-	| {
-			toggleLabel: string;
-			on: DestinationDetails;
-			off: DestinationDetails;
-			defaultOn?: boolean;
-	  };
+interface CommentFormControls {
+	local?: CheckboxControl;
+	startReview?: CheckboxControl;
+}
 
 interface CommentFormProps {
 	/** Label for the primary submit button (e.g. "Comment", "Reply", "Update"). */
 	label: string;
-	/** `toggleOn` carries the optional checkbox state; it's `true` when no toggle is shown. */
-	onSubmit: (body: string, toggleOn: boolean) => void | Promise<void>;
+	onSubmit: (body: string) => void | Promise<void>;
 	onCancel: () => void;
 	placeholder?: string;
 	error?: string | null;
@@ -30,11 +25,9 @@ interface CommentFormProps {
 	initialBody?: string;
 	/** Reports each edit so a parent can persist an in-progress draft across remounts. */
 	onBodyChange?: (body: string) => void;
-	/** Reports destination changes so a parent can preserve them across remounts. */
-	onToggleChange?: (toggleOn: boolean) => void;
 	autoFocus?: boolean;
-	/** Explains where a new comment goes, with an optional checkbox to switch destinations. */
-	destination?: CommentDestination;
+	/** Compact destination/review choices shown in the editor footer. */
+	controls?: CommentFormControls;
 	/** Enables suggested changes for a new line-anchored GitHub comment. */
 	allowsSuggestedChanges?: boolean;
 }
@@ -47,29 +40,17 @@ export function CommentForm({
 	error,
 	initialBody,
 	onBodyChange,
-	onToggleChange,
 	autoFocus = true,
-	destination,
+	controls,
 	allowsSuggestedChanges = false,
 }: CommentFormProps) {
 	const [body, setBody] = useState(initialBody ?? "");
 	const [isSubmitting, setIsSubmitting] = useState(false);
-	const hasDestinationToggle = destination !== undefined && "toggleLabel" in destination;
-	const [toggleOn, setToggleOn] = useState(
-		hasDestinationToggle ? (destination.defaultOn ?? true) : true,
-	);
-	const toggleId = useId();
+	const localId = useId();
+	const startReviewId = useId();
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const submittingRef = useRef(false);
 	const hasContent = body.trim().length > 0;
-	const activeDestination =
-		destination === undefined
-			? undefined
-			: hasDestinationToggle
-				? toggleOn
-					? destination.on
-					: destination.off
-				: destination;
 
 	useEffect(() => {
 		if (!autoFocus) return;
@@ -86,7 +67,7 @@ export function CommentForm({
 		submittingRef.current = true;
 		setIsSubmitting(true);
 		try {
-			await onSubmit(trimmed, hasDestinationToggle ? toggleOn : true);
+			await onSubmit(trimmed);
 			setBody("");
 		} catch {
 			// The caller surfaces the error; preserve the body so the user can retry.
@@ -124,39 +105,42 @@ export function CommentForm({
 				className="rounded-xl border border-border bg-card transition-shadow has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring/20"
 				textareaClassName="max-h-[12rem] overflow-y-auto"
 				previewClassName="max-h-[12rem] overflow-y-auto"
-				showSuggestion={allowsSuggestedChanges && activeDestination?.isGitHub === true}
+				showSuggestion={allowsSuggestedChanges && controls?.local?.checked !== true}
 			>
 				{error && <p className="mt-2 text-destructive text-xs">{error}</p>}
-				{activeDestination && (
-					<div className="mt-2 rounded-lg bg-muted/60 px-2.5 py-2 text-xs">
-						<p className="flex flex-wrap items-baseline gap-x-1.5">
-							<span className="font-medium text-muted-foreground">Destination</span>
-							<span className="font-semibold text-foreground">{activeDestination.label}</span>
-						</p>
-						<p className="mt-0.5 text-muted-foreground">{activeDestination.description}</p>
-					</div>
-				)}
 				<div className="mt-2 flex items-center justify-between gap-2">
-					{hasDestinationToggle ? (
-						<label
-							htmlFor={toggleId}
-							className="flex cursor-pointer select-none items-center gap-1.5"
-						>
-							<Checkbox
-								id={toggleId}
-								checked={toggleOn}
-								onCheckedChange={(checked) => {
-									const next = checked === true;
-									setToggleOn(next);
-									onToggleChange?.(next);
-								}}
-								disabled={isSubmitting}
-							/>
-							<span className="text-muted-foreground text-xs">{destination.toggleLabel}</span>
-						</label>
-					) : (
-						<div />
-					)}
+					<div className="flex items-center gap-3">
+						{controls?.local && (
+							<label
+								htmlFor={localId}
+								className="flex cursor-pointer select-none items-center gap-1.5 has-[:disabled]:cursor-not-allowed"
+							>
+								<Checkbox
+									id={localId}
+									checked={controls.local.checked}
+									onCheckedChange={(checked) => controls.local?.onCheckedChange?.(checked === true)}
+									disabled={isSubmitting || controls.local.disabled}
+								/>
+								<span className="text-muted-foreground text-xs">Local</span>
+							</label>
+						)}
+						{controls?.startReview && (
+							<label
+								htmlFor={startReviewId}
+								className="flex cursor-pointer select-none items-center gap-1.5 has-[:disabled]:cursor-not-allowed"
+							>
+								<Checkbox
+									id={startReviewId}
+									checked={controls.startReview.checked}
+									onCheckedChange={(checked) =>
+										controls.startReview?.onCheckedChange?.(checked === true)
+									}
+									disabled={isSubmitting || controls.startReview.disabled}
+								/>
+								<span className="text-muted-foreground text-xs">Start a review</span>
+							</label>
+						)}
+					</div>
 					<div className="flex items-center gap-2">
 						<Button variant="ghost" size="sm" onClick={onCancel} disabled={isSubmitting}>
 							Cancel

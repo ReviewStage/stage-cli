@@ -502,6 +502,12 @@ if (args.some((arg) => arg.includes("/compare/"))) {
     process.exit(1);
   }
   emit(${options.discoveredPullRequest ? `{ number: 5, title: "Other branch", body: "", url: "https://github.com/owner/repo/pull/5", state: "OPEN", isDraft: false, mergedAt: null, createdAt: "2026-01-01T00:00:00Z", author: { login: "octocat" }, headRefName: "other", headRefOid: ${JSON.stringify(HEAD)}, baseRefName: "main" }` : "{}"});
+} else if (
+  args.includes("--method") &&
+  args.some((arg) => arg.includes("/pulls/") && arg.endsWith("/comments"))
+) {
+  fs.appendFileSync(log, "create-immediate-comment " + fields + "\\n");
+  emit({ id: 123, node_id: "COMMENT_immediate" });
 } else if (query.includes("query GetReviewThreadComments")) {
   fs.appendFileSync(log, "get-thread-comments\\n");
   if (${options.failThreadComments ? "true" : "false"}) { process.stderr.write("gh: follow-up page failed\\n"); process.exit(1); }

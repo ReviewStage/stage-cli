@@ -27,13 +27,12 @@ import {
 	type DraftBodies,
 	type DraftState,
 	findDraftAt,
-	getDraftGitHubDestination,
 	isSameAnchor,
 	readDraftBody,
-	setDraftGitHubPreference,
 	upsertDraft,
 	writeDraftBody,
 } from "@/lib/comment-drafts";
+import { resolveCommentControls, useCommentPreferences } from "@/lib/comment-preferences";
 import {
 	type AnnotatedLineRef,
 	COMMENT_SIDE,
@@ -202,8 +201,8 @@ export function PierreDiffViewer({
 
 	// ---- Line-anchored comments ----
 	const comments = useReviewContext();
-	const { createLocalThread, createPendingComment } = comments;
-	const canPushToReview = comments.canPushToReview;
+	const { createGitHubComment, createLocalThread } = comments;
+	const { local, setLocal, setStartReview, startReview } = useCommentPreferences();
 	const fileThreads = useMemo(
 		() => (filePath ? (comments.threadsByFile.get(filePath) ?? []) : []),
 		[comments.threadsByFile, filePath],
@@ -229,13 +228,9 @@ export function PierreDiffViewer({
 
 	// Open a composer at an anchor. A row holds at most one composer, so re-opening the
 	// same (side, endLine) adopts the new range's startLine rather than duplicating it.
-	const openDraft = useCallback(
-		(anchor: CommentDraft) => {
-			const canSendToGitHub = canPushToReview && isGitHubReviewAnchor(diffHunks, anchor);
-			setDrafts((prev) => upsertDraft(prev, anchor, canSendToGitHub));
-		},
-		[canPushToReview, diffHunks],
-	);
+	const openDraft = useCallback((anchor: CommentDraft) => {
+		setDrafts((prev) => upsertDraft(prev, anchor));
+	}, []);
 
 	const closeDraft = useCallback((draft: CommentDraft) => {
 		clearDraftBody(draftBodiesRef.current, draft.side, draft.endLine);
@@ -243,7 +238,7 @@ export function PierreDiffViewer({
 	}, []);
 
 	const handleCreateComment = useCallback(
-		async (draft: DraftState, body: string, onPr: boolean) => {
+		async (draft: DraftState, body: string, isLocal: boolean, pending: boolean) => {
 			if (!filePath) return;
 			const setError = (error: string | null) =>
 				setDrafts((prev) =>
@@ -258,16 +253,15 @@ export function PierreDiffViewer({
 				body,
 			};
 			try {
-				// "Comment on the PR" creates a pending GitHub comment; otherwise it stays local.
-				if (onPr) await createPendingComment(anchor);
-				else await createLocalThread(anchor);
+				if (isLocal) await createLocalThread(anchor);
+				else await createGitHubComment({ ...anchor, pending });
 				closeDraft(draft);
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Failed to add comment");
 				throw err; // keep the composer open with the body intact
 			}
 		},
-		[filePath, createLocalThread, createPendingComment, closeDraft],
+		[filePath, createLocalThread, createGitHubComment, closeDraft],
 	);
 
 	const handleThreadMouseEnter = useCallback((thread: CommentThread) => {
@@ -285,11 +279,18 @@ export function PierreDiffViewer({
 			const threads = annotation.metadata ?? [];
 			const draft = findDraftAt(drafts, annotation.side, annotation.lineNumber);
 			if (threads.length === 0 && !draft) return null;
-			const canSendDraftToGitHub = draft !== undefined && isGitHubReviewAnchor(diffHunks, draft);
-			const githubDestination =
+			const controls =
 				draft === undefined
 					? null
-					: getDraftGitHubDestination(draft, canPushToReview && canSendDraftToGitHub);
+					: resolveCommentControls(
+							{ local, startReview },
+							{
+								canPushToReview: comments.canPushToReview,
+								canWriteToGitHub: comments.canWriteToGitHub,
+								hasPendingReview: comments.hasPendingReview,
+								isGitHubAnchor: isGitHubReviewAnchor(diffHunks, draft),
+							},
+						);
 			return (
 				<div
 					className="space-y-2 px-3 py-2 font-sans"
@@ -316,7 +317,7 @@ export function PierreDiffViewer({
 						// by its anchor to force a clean remount (re-reading its own draft text)
 						// instead of inheriting another composer's in-progress state.
 						<CommentForm
-							key={`draft-${draft.side}-${draft.endLine}-${githubDestination?.available}`}
+							key={`draft-${draft.side}-${draft.endLine}`}
 							label="Comment"
 							allowsSuggestedChanges
 							placeholder="Leave a comment…"
@@ -325,35 +326,28 @@ export function PierreDiffViewer({
 							onBodyChange={(body) =>
 								writeDraftBody(draftBodiesRef.current, draft.side, draft.endLine, body)
 							}
-							onToggleChange={(toGitHub) =>
-								setDrafts((prev) =>
-									setDraftGitHubPreference(prev, draft.side, draft.endLine, toGitHub),
-								)
-							}
-							destination={
-								githubDestination?.available
+							controls={{
+								local: {
+									checked: controls?.local === true,
+									disabled: controls?.localDisabled,
+									onCheckedChange: setLocal,
+								},
+								...(controls?.showStartReview
 									? {
-											toggleLabel: "Add to GitHub review",
-											defaultOn: githubDestination.defaultOn,
-											on: {
-												label: "Pending on GitHub",
-												description: "Only you can see it until you submit your review.",
-												isGitHub: true,
-											},
-											off: {
-												label: "Local only",
-												description: "Saved on this machine and never sent to GitHub.",
-												isGitHub: false,
+											startReview: {
+												checked: controls.startReview,
+												onCheckedChange: setStartReview,
 											},
 										}
-									: {
-											label: "Local only",
-											description: "Saved on this machine and never sent to GitHub.",
-											isGitHub: false,
-										}
-							}
-							onSubmit={(body, onPr) =>
-								handleCreateComment(draft, body, onPr && githubDestination?.available === true)
+									: {}),
+							}}
+							onSubmit={(body) =>
+								handleCreateComment(
+									draft,
+									body,
+									controls?.local === true,
+									controls?.startReview === true,
+								)
 							}
 							onCancel={() => closeDraft(draft)}
 						/>
@@ -363,8 +357,14 @@ export function PierreDiffViewer({
 		},
 		[
 			drafts,
-			canPushToReview,
+			comments.canPushToReview,
+			comments.canWriteToGitHub,
+			comments.hasPendingReview,
 			diffHunks,
+			local,
+			startReview,
+			setLocal,
+			setStartReview,
 			handleCreateComment,
 			closeDraft,
 			handleThreadMouseEnter,
