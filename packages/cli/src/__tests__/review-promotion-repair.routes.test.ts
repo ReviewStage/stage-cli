@@ -1,7 +1,12 @@
 import { asc, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { comment, commentInsertionOrder } from "../db/schema/index.js";
-import { EMPTY_REVIEW, ReviewRouteHarness } from "./review-test-harness.js";
+import { comment, commentInsertionOrder, commentThread } from "../db/schema/index.js";
+import {
+	EMPTY_REVIEW,
+	makeInterruptedPromotionReview,
+	makeInterruptedPromotionReviewWithSubmittedReply,
+	ReviewRouteHarness,
+} from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
 
@@ -42,7 +47,98 @@ describe("review API — failed promotion repair", () => {
 			harness.db.select().from(comment).where(eq(comment.threadId, localThreadId)).all(),
 		).toHaveLength(1);
 	});
+
+	it("allows a checkpointed reply to be repaired after its GitHub comment is deleted", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReview());
+		const { port, localThreadId, comments } = await seedCheckpointedThread();
+		harness.db
+			.update(commentThread)
+			.set({ promotionReplyCount: 1, promotionReplyNodeIds: ["COMMENT_deleted_reply"] })
+			.where(eq(commentThread.id, localThreadId))
+			.run();
+
+		const edit = await harness.request(port, "PATCH", `/api/comments/${comments[1]}`, {
+			body: "Replacement reply",
+		});
+
+		expect(edit.status, edit.body).toBe(200);
+	});
+
+	it("freezes a published remote prefix while allowing its unpromoted suffix", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReviewWithSubmittedReply(), {
+			recoveryRootState: "COMMENTED",
+		});
+		const { port, localThreadId } = await seedCheckpointedThread();
+		harness.db.insert(comment).values({ threadId: localThreadId, body: "Rejected reply" }).run();
+		harness.db
+			.update(commentThread)
+			.set({
+				promotionRootPublished: true,
+				promotionReplyCount: 1,
+				promotionReplyNodeIds: ["COMMENT_reply"],
+			})
+			.where(eq(commentThread.id, localThreadId))
+			.run();
+		const comments = commentIds(localThreadId);
+
+		const statuses = await Promise.all(
+			comments.map(
+				async (commentId) =>
+					(
+						await harness.request(port, "PATCH", `/api/comments/${commentId}`, {
+							body: "Changed",
+						})
+					).status,
+			),
+		);
+
+		expect(statuses).toEqual([409, 409, 200]);
+	});
+
+	it("returns unavailable without changing a reply when GitHub cannot verify it", async () => {
+		const { port, replyId } = await seedFailedReplyPromotion();
+		await harness.writeFailingGhShim();
+
+		const edit = await harness.request(port, "PATCH", `/api/comments/${replyId}`, {
+			body: "Changed while offline",
+		});
+
+		expect(edit.status).toBe(503);
+		expect(harness.db.select().from(comment).where(eq(comment.id, replyId)).get()?.body).toBe(
+			"Reply",
+		);
+	});
 });
+
+async function seedCheckpointedThread(): Promise<{
+	port: number;
+	localThreadId: string;
+	comments: string[];
+}> {
+	harness.insertRun();
+	const localThreadId = harness.seedLocalThread({ withReply: true });
+	harness.db
+		.update(commentThread)
+		.set({
+			promotionPullRequestNodeId: "PR_node",
+			promotionThreadNodeId: "THREAD_new",
+			promotionRootCommentNodeId: "COMMENT_new",
+			promotionViewerLogin: "octocat",
+		})
+		.where(eq(commentThread.id, localThreadId))
+		.run();
+	return { port: await harness.start(), localThreadId, comments: commentIds(localThreadId) };
+}
+
+function commentIds(localThreadId: string): string[] {
+	return harness.db
+		.select({ id: comment.id })
+		.from(comment)
+		.where(eq(comment.threadId, localThreadId))
+		.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
+		.all()
+		.map((row) => row.id);
+}
 
 async function seedFailedReplyPromotion(): Promise<{
 	port: number;
@@ -57,14 +153,9 @@ async function seedFailedReplyPromotion(): Promise<{
 	const promotion = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
 		localThreadId,
 	});
-	const comments = harness.db
-		.select({ id: comment.id })
-		.from(comment)
-		.where(eq(comment.threadId, localThreadId))
-		.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
-		.all();
-	const rootId = comments[0]?.id;
-	const replyId = comments[1]?.id;
+	const comments = commentIds(localThreadId);
+	const rootId = comments[0];
+	const replyId = comments[1];
 	if (!rootId || !replyId) throw new Error("Expected local promotion comments");
 	expect(promotion.status).toBe(500);
 	return { port, localThreadId, rootId, replyId };

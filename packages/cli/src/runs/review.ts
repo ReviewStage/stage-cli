@@ -369,7 +369,7 @@ class PromotionCoordinator {
 			.where(eq(commentThread.id, localThreadId))
 			.limit(1)
 			.all();
-		if (!thread || thread.promotionRootPublished) return false;
+		if (!thread) return false;
 		const checkpoint = readPromotionCheckpoint(thread);
 		if (checkpoint === null) return false;
 
@@ -381,9 +381,7 @@ class PromotionCoordinator {
 			.all();
 		const commentIndex = localComments.findIndex((candidate) => candidate.id === commentId);
 		if (commentIndex === -1) return false;
-		// The root and checkpointed reply prefix already exist on GitHub. Replies
-		// after the first uncheckpointed one cannot have been attempted yet.
-		if (commentIndex <= thread.promotionReplyCount) return true;
+		// Replies after the first uncheckpointed one cannot have been attempted yet.
 		if (commentIndex > thread.promotionReplyCount + 1) return false;
 
 		const remote = await getPromotionThreadState(thread.repoRoot, checkpoint.threadNodeId);
@@ -394,9 +392,9 @@ class PromotionCoordinator {
 		) {
 			return false;
 		}
+		if (commentIndex === 0) return true;
 		if (!remote.rootIsPending) {
 			markPromotionRootPublished(db, localThreadId);
-			return false;
 		}
 		const review = await getReview(thread.repoRoot, remote.repo, remote.pullRequestNumber);
 		const remoteThread = review.threads.find(

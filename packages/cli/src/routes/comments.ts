@@ -1,3 +1,4 @@
+import type { ServerResponse } from "node:http";
 import {
 	CommentBodySchema,
 	type Comment as CommentDto,
@@ -220,10 +221,7 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 						writeJson(res, 404, { error: `Comment ${commentId} not found` });
 						return;
 					}
-					if (await isLocalCommentPromotionPending(db, existing.threadId, commentId)) {
-						writeJson(res, 409, { error: "This comment thread is being added to the review." });
-						return;
-					}
+					if (await blockPromotionCommentMutation(db, res, existing.threadId, commentId)) return;
 					const [updated] = db
 						.update(comment)
 						.set({ body: body.body })
@@ -262,11 +260,9 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 						.all();
 					if (
 						existing &&
-						(await isLocalCommentPromotionPending(db, existing.threadId, commentId))
-					) {
-						writeJson(res, 409, { error: "This comment thread is being added to the review." });
+						(await blockPromotionCommentMutation(db, res, existing.threadId, commentId))
+					)
 						return;
-					}
 					// Deleting the last comment removes its now-empty thread so no
 					// dangling anchors linger. Idempotent for an absent comment.
 					db.transaction((tx) => {
@@ -303,6 +299,25 @@ function findCommentThreadId(db: StageDb, commentId: string): string | null {
 		.limit(1)
 		.all();
 	return row?.threadId ?? null;
+}
+
+async function blockPromotionCommentMutation(
+	db: StageDb,
+	res: ServerResponse,
+	threadId: string,
+	commentId: string,
+): Promise<boolean> {
+	try {
+		if (!(await isLocalCommentPromotionPending(db, threadId, commentId))) return false;
+		writeJson(res, 409, { error: "This comment is already part of the GitHub review." });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		process.stderr.write(`Unable to verify GitHub promotion state: ${message}\n`);
+		writeJson(res, 503, {
+			error: "GitHub is unavailable, so this comment cannot be safely changed yet.",
+		});
+	}
+	return true;
 }
 
 function resolveRunScope(db: StageDb, runId: string | undefined): LocalThreadScope | null {
