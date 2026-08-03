@@ -389,6 +389,7 @@ class PromotionCoordinator {
 			.limit(1)
 			.all();
 		if (!thread) return false;
+		if (readPromotionIntent(thread) !== null) return true;
 		const checkpoint = readPromotionCheckpoint(thread);
 		if (checkpoint === null) return false;
 
@@ -540,6 +541,7 @@ async function promoteLocalThread(
 	const root = comments[0];
 	if (!root) throw new ReviewError("Thread has no comments to add to the review.", 400);
 	const replies = comments.slice(1);
+	let intent = readPromotionIntent(thread);
 	let checkpoint = readPromotionCheckpoint(thread);
 	let initialReplyCount = thread.promotionReplyCount;
 	let initialReplyNodeIds = thread.promotionReplyNodeIds;
@@ -559,6 +561,62 @@ async function promoteLocalThread(
 
 	await withLockedReviewTarget(run, async (target) => {
 		const { review } = target;
+		const side = toGitHubSide(thread.side);
+		const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
+		let recoveredFromIntent = false;
+		let liveCheckpointRemote = checkpointRemote;
+		if (intent !== null) {
+			if (intent.viewerLogin !== null && intent.viewerLogin !== review.viewerLogin) {
+				throw new ReviewError(
+					`This comment promotion belongs to GitHub user ${intent.viewerLogin}. Switch back to that account to resume it.`,
+					409,
+				);
+			}
+			if (intent.pullRequestNodeId !== review.pullRequestNodeId) {
+				throw new ReviewError("This comment promotion belongs to another pull request.", 409);
+			}
+			const recoveredThread = findPromotionIntentThread(
+				review,
+				thread,
+				localThreadId,
+				side,
+				startLine,
+			);
+			if (recoveredThread !== null) {
+				const recoveredRoot = recoveredThread.comments[0];
+				if (!recoveredRoot) {
+					throw new ReviewError("The GitHub promotion thread has no root comment.", 409);
+				}
+				checkpoint = {
+					pullRequestNodeId: intent.pullRequestNodeId,
+					threadNodeId: recoveredThread.threadNodeId,
+					rootCommentNodeId: recoveredRoot.nodeId,
+					viewerLogin: intent.viewerLogin ?? review.viewerLogin,
+				};
+				const persisted = db
+					.update(commentThread)
+					.set({
+						promotionThreadNodeId: checkpoint.threadNodeId,
+						promotionRootCommentNodeId: checkpoint.rootCommentNodeId,
+						promotionViewerLogin: checkpoint.viewerLogin,
+					})
+					.where(eq(commentThread.id, localThreadId))
+					.run();
+				if (persisted.changes !== 1) {
+					throw new Error("Local promotion checkpoint was not saved");
+				}
+				liveCheckpointRemote = {
+					repo: target.repo,
+					pullRequestNodeId: checkpoint.pullRequestNodeId,
+					pullRequestNumber: target.prNumber,
+					rootCommentNodeId: checkpoint.rootCommentNodeId,
+					rootAuthorLogin: recoveredRoot.authorLogin,
+					rootIsPending: recoveredRoot.isPending,
+				};
+				recoveredFromIntent = true;
+				intent = null;
+			}
+		}
 		// A pending thread owned by another account can be invisible to this viewer.
 		// Enforce the durable identity before treating a null point lookup as deletion.
 		if (checkpoint?.viewerLogin && checkpoint.viewerLogin !== review.viewerLogin) {
@@ -567,9 +625,10 @@ async function promoteLocalThread(
 				409,
 			);
 		}
-		let liveCheckpointRemote = checkpointRemote;
 		if (checkpoint !== null) {
-			const current = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
+			const current = recoveredFromIntent
+				? liveCheckpointRemote
+				: await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
 			if (
 				current === null ||
 				current.pullRequestNodeId !== checkpoint.pullRequestNodeId ||
@@ -610,8 +669,6 @@ async function promoteLocalThread(
 			}
 			throw error;
 		}
-		const side = toGitHubSide(thread.side);
-		const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
 		const wasUnassigned = thread.repoRoot === UNASSIGNED_REPO_ROOT;
 		if (wasUnassigned) {
 			const [claimed] = db
@@ -677,11 +734,28 @@ async function promoteLocalThread(
 			}
 			if (addedThread === null) {
 				if (reviewNodeId === null) throw new Error("Pending review was not opened");
+				if (intent === null) {
+					const persisted = db
+						.update(commentThread)
+						.set({
+							promotionPullRequestNodeId: review.pullRequestNodeId,
+							promotionViewerLogin: review.viewerLogin,
+						})
+						.where(eq(commentThread.id, localThreadId))
+						.run();
+					if (persisted.changes !== 1) {
+						throw new Error("Local promotion intent was not saved");
+					}
+					intent = {
+						pullRequestNodeId: review.pullRequestNodeId,
+						viewerLogin: review.viewerLogin,
+					};
+				}
 				const createdThread = await addReviewThread(run.repoRoot, {
 					pullRequestNodeId: review.pullRequestNodeId,
 					reviewNodeId,
 					path: thread.filePath,
-					body: root.body,
+					body: promotionRootBody(root.body, localThreadId),
 					line: thread.endLine,
 					side,
 					startLine,
@@ -751,14 +825,38 @@ interface PromotionCheckpoint {
 	viewerLogin: string | null;
 }
 
+interface PromotionIntent {
+	pullRequestNodeId: string;
+	viewerLogin: string | null;
+}
+
+function readPromotionIntent(thread: typeof commentThread.$inferSelect): PromotionIntent | null {
+	if (
+		thread.promotionPullRequestNodeId === null ||
+		thread.promotionThreadNodeId !== null ||
+		thread.promotionRootCommentNodeId !== null
+	) {
+		return null;
+	}
+	if (thread.promotionReplyCount !== 0 || thread.promotionReplyNodeIds.length !== 0) {
+		throw new ReviewError(
+			"This comment has incomplete promotion state and cannot be resumed.",
+			409,
+		);
+	}
+	return {
+		pullRequestNodeId: thread.promotionPullRequestNodeId,
+		viewerLogin: thread.promotionViewerLogin,
+	};
+}
+
 function readPromotionCheckpoint(
 	thread: typeof commentThread.$inferSelect,
 ): PromotionCheckpoint | null {
 	const pullRequestNodeId = thread.promotionPullRequestNodeId;
 	const threadNodeId = thread.promotionThreadNodeId;
 	const rootCommentNodeId = thread.promotionRootCommentNodeId;
-	if (pullRequestNodeId === null && threadNodeId === null && rootCommentNodeId === null)
-		return null;
+	if (threadNodeId === null && rootCommentNodeId === null) return null;
 	if (pullRequestNodeId === null || threadNodeId === null || rootCommentNodeId === null) {
 		throw new ReviewError(
 			"This comment has incomplete promotion state and cannot be resumed.",
@@ -771,6 +869,43 @@ function readPromotionCheckpoint(
 		rootCommentNodeId,
 		viewerLogin: thread.promotionViewerLogin,
 	};
+}
+
+function promotionRootMarker(localThreadId: string): string {
+	return `<!-- stagereview-promotion:${localThreadId} -->`;
+}
+
+function promotionRootBody(body: string, localThreadId: string): string {
+	return `${body}\n\n${promotionRootMarker(localThreadId)}`;
+}
+
+function findPromotionIntentThread(
+	review: GitHubReview,
+	thread: typeof commentThread.$inferSelect,
+	localThreadId: string,
+	side: GitHubDiffSide,
+	startLine: number | null,
+): GitHubApiReviewThread | null {
+	const marker = promotionRootMarker(localThreadId);
+	const matches = review.threads.filter((candidate) => {
+		const root = candidate.comments[0];
+		return (
+			candidate.path === thread.filePath &&
+			candidate.line === thread.endLine &&
+			candidate.side === side &&
+			candidate.startLine === startLine &&
+			candidate.startSide === (startLine === null ? null : side) &&
+			root?.authorLogin === review.viewerLogin &&
+			root.body.includes(marker)
+		);
+	});
+	if (matches.length > 1) {
+		throw new ReviewError(
+			"More than one GitHub thread matches this interrupted comment promotion.",
+			409,
+		);
+	}
+	return matches[0] ?? null;
 }
 
 async function releaseCrossPullRequestPromotion(

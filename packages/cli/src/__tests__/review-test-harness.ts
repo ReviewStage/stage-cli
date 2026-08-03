@@ -476,6 +476,7 @@ interface GhShimOptions {
 	addThreadDelayMs?: number;
 	discoveredPullRequest?: boolean;
 	failAddThread?: boolean;
+	failAddThreadAfterWrite?: boolean;
 	addConcurrentPendingCommentOnThreadFailure?: boolean;
 	addConcurrentPendingReplyOnResolveFailure?: boolean;
 	failAddReply?: boolean;
@@ -683,8 +684,14 @@ if (args.some((arg) => arg.includes("/compare/"))) {
     process.exit(1);
 	  }
 	  const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-	  review.data.repository.pullRequest.reviewThreads.nodes.push(${JSON.stringify(promotionThread)});
+	  const createdThread = ${JSON.stringify(promotionThread)};
+	  createdThread.comments.nodes[0].body = inputFields.body;
+	  review.data.repository.pullRequest.reviewThreads.nodes.push(createdThread);
 	  fs.writeFileSync(reviewPath, JSON.stringify(review));
+	  if (${options.failAddThreadAfterWrite ? "true" : "false"}) {
+	    process.stderr.write("gh: connection closed after mutation\\n");
+	    process.exit(1);
+	  }
 	  emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", viewerCanResolve: ${options.addedThreadCanResolve === false ? "false" : "true"}, comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
 } else if (query.includes("mutation ResolveThread")) {
   fs.appendFileSync(log, "resolve-thread\\n");
