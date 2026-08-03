@@ -590,7 +590,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 	} } });
 } else if (query.includes("query GetReview")) {
   sleep(${options.reviewQueryDelayMs ?? 0});
-  const commentFields = query.slice(query.indexOf("comments(first: 100)"), query.indexOf("author {"));
+  const commentFields = query.slice(query.indexOf("comments(first:"), query.indexOf("author {"));
   const illegalCommentField = ["databaseId", "diffSide", "startDiffSide"].find((field) => commentFields.includes(field));
   if (illegalCommentField) {
     process.stderr.write("gh: PullRequestReviewComment has no field " + illegalCommentField + "\\n");

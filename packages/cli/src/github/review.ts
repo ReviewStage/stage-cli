@@ -20,6 +20,9 @@ export type GitHubDiffSide = (typeof GITHUB_DIFF_SIDE)[keyof typeof GITHUB_DIFF_
 // with its comments. Each comment's `pullRequestReview.state` distinguishes a
 // PENDING (draft, viewer-only) comment from a submitted one — no REST list or
 // local mirror required.
+const REVIEW_THREAD_PAGE_SIZE = 10;
+const EMBEDDED_COMMENT_PAGE_SIZE = 1;
+const THREAD_COMMENT_PAGE_SIZE = 10;
 const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   viewer { login }
   repository(owner: $owner, name: $repo) {
@@ -30,7 +33,7 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
       headRefOid
       baseRefOid
       reviews(states: PENDING, first: 1) { nodes { id body commit { oid } } }
-      reviewThreads(first: 50, after: $cursor) {
+	  reviewThreads(first: ${REVIEW_THREAD_PAGE_SIZE}, after: $cursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
           id
@@ -42,7 +45,7 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
           startLine
           diffSide
           startDiffSide
-          comments(first: 100) {
+		  comments(first: ${EMBEDDED_COMMENT_PAGE_SIZE}) {
             pageInfo { hasNextPage endCursor }
             nodes {
               id
@@ -63,7 +66,7 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
 const REVIEW_THREAD_COMMENTS_QUERY = `query GetReviewThreadComments($threadId: ID!, $cursor: String) {
   node(id: $threadId) {
     ... on PullRequestReviewThread {
-      comments(first: 100, after: $cursor) {
+	  comments(first: ${THREAD_COMMENT_PAGE_SIZE}, after: $cursor) {
         pageInfo { hasNextPage endCursor }
         nodes {
           id

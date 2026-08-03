@@ -96,6 +96,18 @@ describe("review API — read", () => {
 			"COMMENT_late",
 		]);
 		expect(await harness.logLines()).toContain("get-thread-comments");
+		const queries = (await harness.ghArgvCalls()).flatMap((args) =>
+			args.filter((arg) => arg.startsWith("query=")),
+		);
+		expect(queries.find((query) => query.includes("query GetReview("))).toContain(
+			"reviewThreads(first: 10",
+		);
+		expect(queries.find((query) => query.includes("query GetReview("))).toContain(
+			"comments(first: 1)",
+		);
+		expect(queries.find((query) => query.includes("GetReviewThreadComments"))).toContain(
+			"comments(first: 10",
+		);
 	});
 
 	it("reports offline when a follow-up comment page fails", async () => {
