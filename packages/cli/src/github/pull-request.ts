@@ -137,10 +137,11 @@ export async function getPullRequestOrThrow(
 ): Promise<GitHubPullRequest | null> {
 	const repo = parseGitHubRepo(originUrl);
 	if (!repo) return null;
+	const repository = `${repo.owner}/${repo.repo}`;
 	const viewArgs =
 		prNumber === null
-			? ["pr", "view", "--json", PR_FIELDS.join(",")]
-			: ["pr", "view", String(prNumber), "--json", PR_FIELDS.join(",")];
+			? ["pr", "view", "--json", PR_FIELDS.join(","), "--repo", repository]
+			: ["pr", "view", String(prNumber), "--json", PR_FIELDS.join(","), "--repo", repository];
 	let stdout: string;
 	try {
 		stdout = await ghReadOrThrow(viewArgs, repoRoot);

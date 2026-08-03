@@ -281,6 +281,8 @@ describe("pull-request API", () => {
 			head: { ref: "feature", sha: SHA },
 			base: { ref: "main" },
 		});
+		const argv = await fs.readFile(path.join(binDir, "gh-argv.log"), "utf8");
+		expect(argv).toContain("--repo owner/repo");
 	});
 
 	it("coerces a null gh body to an empty string instead of dropping the PR", async () => {
@@ -302,6 +304,7 @@ describe("pull-request API", () => {
 		// The PR number is forwarded to gh as a positional arg (branch detection omits it).
 		const argv = await fs.readFile(path.join(binDir, "gh-argv.log"), "utf8");
 		expect(argv).toContain("pr view 7 --json");
+		expect(argv).toContain("--repo owner/repo");
 	});
 
 	it("returns null when gh finds no PR for the branch", async () => {
