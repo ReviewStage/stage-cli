@@ -78,7 +78,7 @@ describe("review API — concurrency", () => {
 		expect((await promotion).status).toBe(200);
 	});
 
-	it("freezes a local thread while its promotion is queued for the checkout", async () => {
+	it("freezes a local thread while its promotion is queued for that thread", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW);
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread();
@@ -90,15 +90,15 @@ describe("review API — concurrency", () => {
 			.all();
 		if (!run) throw new Error("seeded run was not found");
 		const port = await harness.start();
-		let releaseCheckout: (() => void) | undefined;
+		let releaseThread: (() => void) | undefined;
 		const blocker = reviewActions.run(
-			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot },
+			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: localThreadId },
 			() =>
 				new Promise<void>((resolve) => {
-					releaseCheckout = resolve;
+					releaseThread = resolve;
 				}),
 		);
-		await expect.poll(() => releaseCheckout !== undefined).toBe(true);
+		await expect.poll(() => releaseThread !== undefined).toBe(true);
 
 		const promotion = addLocalThreadToReview(harness.db, run, localThreadId);
 		expect(isLocalThreadPromotionPending(harness.db, localThreadId)).toBe(true);
@@ -110,7 +110,7 @@ describe("review API — concurrency", () => {
 		);
 
 		expect(reply.status).toBe(409);
-		releaseCheckout?.();
+		releaseThread?.();
 		await blocker;
 		await promotion;
 	});
@@ -127,20 +127,20 @@ describe("review API — concurrency", () => {
 			.all();
 		if (!run || !root) throw new Error("seeded review data was not found");
 		const port = await harness.start();
-		let releaseCheckout: (() => void) | undefined;
+		let releaseThread: (() => void) | undefined;
 		const blocker = reviewActions.run(
-			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot },
+			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: localThreadId },
 			() =>
 				new Promise<void>((resolve) => {
-					releaseCheckout = resolve;
+					releaseThread = resolve;
 				}),
 		);
-		await expect.poll(() => releaseCheckout !== undefined).toBe(true);
+		await expect.poll(() => releaseThread !== undefined).toBe(true);
 		const promotion = addLocalThreadToReview(harness.db, run, localThreadId);
 
 		const edit = harness.request(port, "PATCH", `/api/comments/${root.id}`, { body: "Too late" });
 		const deletion = harness.request(port, "DELETE", `/api/comments/${root.id}`);
-		releaseCheckout?.();
+		releaseThread?.();
 		const [editResponse, deleteResponse] = await Promise.all([edit, deletion]);
 		await blocker;
 		await promotion;
@@ -148,7 +148,7 @@ describe("review API — concurrency", () => {
 		expect([editResponse.status, deleteResponse.status]).toEqual([409, 409]);
 	});
 
-	it("promotes an edit that wins the checkout lock before promotion", async () => {
+	it("promotes an edit that wins the thread lock before promotion", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW);
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread();
@@ -161,7 +161,7 @@ describe("review API — concurrency", () => {
 		if (!run) throw new Error("seeded run was not found");
 
 		const edit = reviewActions.run(
-			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot },
+			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: localThreadId },
 			async () => {
 				if (isLocalThreadPromoting(harness.db, localThreadId)) {
 					throw new Error("Winning edit was incorrectly rejected as mid-promotion");

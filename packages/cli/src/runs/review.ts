@@ -460,7 +460,7 @@ class PromotionCoordinator {
 		this.#queued.add(localThreadId);
 		try {
 			await reviewActions.run(
-				{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: run.repoRoot },
+				{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: localThreadId },
 				async () => {
 					this.#active.add(localThreadId);
 					try {

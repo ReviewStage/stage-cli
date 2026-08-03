@@ -37,7 +37,7 @@ export async function show(jsonPath: string, options: DiffScopeOptions): Promise
 		routes: [
 			...runRoutes(db),
 			...viewStateRoutes(db),
-			...commentRoutes(db, repoContext.root),
+			...commentRoutes(db),
 			...reviewRoutes(db),
 			...viewerRoutes(),
 			...diffRoutes(db),

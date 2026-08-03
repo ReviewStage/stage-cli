@@ -66,6 +66,37 @@ describe("ReviewActionQueue", () => {
 		expect(events).toEqual(["first:start", "first:end", "second"]);
 	});
 
+	it("serializes one local thread across independent queue instances", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-review-lock-"));
+		tempDirs.push(tempDir);
+		const lockDirectory = path.join(tempDir, "locks");
+		let releaseFirst = () => {};
+		let firstStarted = false;
+		let secondRan = false;
+		const first = new ReviewActionQueue(lockDirectory).run(
+			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: "thread-1" },
+			async () => {
+				firstStarted = true;
+				await new Promise<void>((resolve) => {
+					releaseFirst = resolve;
+				});
+			},
+		);
+		await expect.poll(() => firstStarted).toBe(true);
+		const second = new ReviewActionQueue(lockDirectory).run(
+			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: "thread-1" },
+			async () => {
+				secondRan = true;
+			},
+		);
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		expect(secondRan).toBe(false);
+
+		releaseFirst();
+		await Promise.all([first, second]);
+		expect(secondRan).toBe(true);
+	});
+
 	it("serializes the same pull request across checkout-specific queue instances", async () => {
 		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-review-lock-"));
 		tempDirs.push(tempDir);

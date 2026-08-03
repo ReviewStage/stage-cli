@@ -31,7 +31,7 @@ import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
 import { enforceSameOrigin } from "./pull-request-shared.js";
 
-export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
+export function commentRoutes(db: StageDb): Route[] {
 	return [
 		// Threads are anchored to a repository + diff scope, not a run, so they
 		// survive re-imports without crossing into a fork that shares the same SHAs.
@@ -103,7 +103,7 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 					return;
 				}
 
-				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
+				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
 					if (isLocalThreadPromoting(db, threadId)) {
 						writeJson(res, 409, { error: "This comment thread is being added to the review." });
 						return;
@@ -149,7 +149,7 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 					return;
 				}
 
-				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
+				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
 					if (isLocalThreadPromoting(db, threadId)) {
 						writeJson(res, 409, { error: "This comment thread is being added to the review." });
 						return;
@@ -185,7 +185,7 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 					writeJson(res, 409, { error: "This comment thread is being added to the review." });
 					return;
 				}
-				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
+				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
 					if (
 						isLocalThreadPromoting(db, threadId) ||
 						hasLocalThreadPromotionCheckpoint(db, threadId)
@@ -213,11 +213,15 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 				const body = await parseJsonBody(req, res, CommentBodySchema);
 				if (!body) return;
 				const threadId = findCommentThreadId(db, commentId);
-				if (threadId !== null && isLocalThreadPromotionInFlight(threadId)) {
+				if (threadId === null) {
+					writeJson(res, 404, { error: `Comment ${commentId} not found` });
+					return;
+				}
+				if (isLocalThreadPromotionInFlight(threadId)) {
 					writeJson(res, 409, { error: "This comment thread is being added to the review." });
 					return;
 				}
-				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
+				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
 					const [existing] = db
 						.select({ threadId: comment.threadId })
 						.from(comment)
@@ -254,11 +258,15 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 					return;
 				}
 				const threadId = findCommentThreadId(db, commentId);
-				if (threadId !== null && isLocalThreadPromotionInFlight(threadId)) {
+				if (threadId === null) {
+					writeJson(res, 200, {});
+					return;
+				}
+				if (isLocalThreadPromotionInFlight(threadId)) {
 					writeJson(res, 409, { error: "This comment thread is being added to the review." });
 					return;
 				}
-				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
+				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
 					const [existing] = db
 						.select({ threadId: comment.threadId })
 						.from(comment)

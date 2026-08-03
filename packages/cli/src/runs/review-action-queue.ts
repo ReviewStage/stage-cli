@@ -16,6 +16,7 @@ const LOCK_RETRIES = {
 
 export const REVIEW_ACTION_SCOPE = {
 	CHECKOUT: "checkout",
+	LOCAL_THREAD: "localThread",
 	PULL_REQUEST: "pullRequest",
 } as const;
 
@@ -23,6 +24,10 @@ export type ReviewActionScope =
 	| {
 			kind: typeof REVIEW_ACTION_SCOPE.CHECKOUT;
 			repoRoot: string;
+	  }
+	| {
+			kind: typeof REVIEW_ACTION_SCOPE.LOCAL_THREAD;
+			threadId: string;
 	  }
 	| {
 			kind: typeof REVIEW_ACTION_SCOPE.PULL_REQUEST;
@@ -113,6 +118,8 @@ function scopeKey(scope: ReviewActionScope): string {
 	switch (scope.kind) {
 		case REVIEW_ACTION_SCOPE.CHECKOUT:
 			return JSON.stringify([scope.kind, path.resolve(scope.repoRoot)]);
+		case REVIEW_ACTION_SCOPE.LOCAL_THREAD:
+			return JSON.stringify([scope.kind, scope.threadId]);
 		case REVIEW_ACTION_SCOPE.PULL_REQUEST:
 			return JSON.stringify([
 				scope.kind,

@@ -879,7 +879,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 	async start(): Promise<number> {
 		const handle = await startServer({
 			webDistPath: this.webDist,
-			routes: [...commentRoutes(this.db, this.repoRoot), ...reviewRoutes(this.db)],
+			routes: [...commentRoutes(this.db), ...reviewRoutes(this.db)],
 		});
 		this.handles.push(handle);
 		return handle.port;

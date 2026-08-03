@@ -47,7 +47,7 @@ export class CommentRouteHarness {
 	async start(): Promise<number> {
 		const handle = await startServer({
 			webDistPath: this.webDist,
-			routes: commentRoutes(this.db, this.tmpDir),
+			routes: commentRoutes(this.db),
 		});
 		this.handles.push(handle);
 		return handle.port;
