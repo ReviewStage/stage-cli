@@ -40,13 +40,16 @@ describe("gh execution", () => {
 
 	it("rejects normally when gh exits before consuming mutation input", async () => {
 		const shimPath = path.join(tmpDir, "gh");
-		await fs.writeFile(shimPath, "#!/bin/sh\nexit 1\n");
+		await fs.writeFile(
+			shimPath,
+			"#!/bin/sh\nprintf 'gh: authentication required\\n' >&2\nexit 1\n",
+		);
 		await fs.chmod(shimPath, 0o755);
 
 		await expect(
 			ghWriteOrThrow(["api", "graphql", "--input", "-"], tmpDir, {
 				stdin: "x".repeat(2 * 1024 * 1024),
 			}),
-		).rejects.toThrow();
+		).rejects.toThrow("gh: authentication required");
 	});
 });

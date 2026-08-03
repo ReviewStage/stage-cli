@@ -14,6 +14,7 @@ export interface GhExecOptions {
 async function execGh(args: string[], cwd: string, options: GhExecOptions): Promise<string> {
 	if (options.stdin !== undefined) {
 		return await new Promise((resolve, reject) => {
+			let stdinError: Error | undefined;
 			const child = execFile(
 				"gh",
 				args,
@@ -27,10 +28,13 @@ async function execGh(args: string[], cwd: string, options: GhExecOptions): Prom
 					if (error) {
 						Object.assign(error, { stdout, stderr });
 						reject(error);
-					} else resolve(stdout);
+					} else if (stdinError) reject(stdinError);
+					else resolve(stdout);
 				},
 			);
-			child.stdin?.once("error", reject);
+			child.stdin?.once("error", (error) => {
+				stdinError = error;
+			});
 			child.stdin?.end(options.stdin);
 		});
 	}
