@@ -692,7 +692,6 @@ async function promoteLocalThread(
 		let addedThread: Pick<AddedReviewThread, "threadNodeId" | "rootCommentNodeId"> | null =
 			checkpoint;
 		let promotedReplyNodeIds = [...initialReplyNodeIds];
-		let promotedReplyCount = initialReplyCount;
 		let reviewNodeId: string | null = null;
 		let remoteThreadIsResolved = false;
 		let remoteThreadCanResolve = false;
@@ -718,13 +717,12 @@ async function promoteLocalThread(
 						remoteThread,
 						review.viewerLogin,
 						replies,
-						promotedReplyCount,
+						initialReplyCount,
 						promotedReplyNodeIds,
 					);
-					promotedReplyCount = promotedReplyNodeIds.filter(Boolean).length;
 					db.update(commentThread)
 						.set({
-							promotionReplyCount: promotedReplyCount,
+							promotionReplyCount: 0,
 							promotionReplyNodeIds: compactPromotionReplyNodeIds(promotedReplyNodeIds),
 						})
 						.where(eq(commentThread.id, localThreadId))
@@ -812,11 +810,10 @@ async function promoteLocalThread(
 					reviewNodeId,
 				);
 				promotedReplyNodeIds[index] = replyNodeId;
-				promotedReplyCount = promotedReplyNodeIds.filter(Boolean).length;
 				const persisted = db
 					.update(commentThread)
 					.set({
-						promotionReplyCount: promotedReplyCount,
+						promotionReplyCount: 0,
 						promotionReplyNodeIds: compactPromotionReplyNodeIds(promotedReplyNodeIds),
 					})
 					.where(eq(commentThread.id, localThreadId))

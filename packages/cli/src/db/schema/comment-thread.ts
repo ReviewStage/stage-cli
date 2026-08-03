@@ -30,7 +30,7 @@ export const commentThread = sqliteTable(
 		promotionRootBaselineThreadNodeIds: text({ mode: "json" }).$type<string[]>(),
 		/** The checkpoint root has already been published and no longer freezes local replies. */
 		promotionRootPublished: integer({ mode: "boolean" }).notNull().default(false),
-		/** Number of local replies already copied to the promotion thread. */
+		/** Legacy contiguous reply count for checkpoints created before node ids were saved. */
 		promotionReplyCount: integer().notNull().default(0),
 		/** GitHub node ids for copied replies, in local reply order. */
 		promotionReplyNodeIds: text({ mode: "json" }).$type<(string | null)[]>().notNull().default([]),

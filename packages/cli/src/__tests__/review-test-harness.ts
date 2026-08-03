@@ -387,6 +387,45 @@ export function makeInterruptedPromotionReviewWithUnrelatedViewerReply(): unknow
 	);
 }
 
+export function makeInterruptedPromotionReviewWithSparseReplies(): unknown {
+	const root = {
+		...pendingThread.comments.nodes[0],
+		id: "COMMENT_new",
+		body: "Root",
+	};
+	const firstReply = {
+		...root,
+		id: "COMMENT_first",
+		body: "Reply",
+	};
+	const unrelatedMiddleReply = {
+		...root,
+		id: "COMMENT_unrelated_middle",
+		body: "Second reply",
+	};
+	const thirdReply = {
+		...root,
+		id: "COMMENT_third",
+		body: "Third reply",
+	};
+	return makeReview(
+		[
+			{
+				...pendingThread,
+				id: "THREAD_new",
+				path: "src/foo.ts",
+				line: 3,
+				diffSide: "RIGHT",
+				comments: {
+					...pendingThread.comments,
+					nodes: [root, firstReply, unrelatedMiddleReply, thirdReply],
+				},
+			},
+		],
+		"REVIEW_pending",
+	);
+}
+
 export function makeInterruptedPromotionReviewWithSubmittedReply(): unknown {
 	const root = {
 		...submittedThread.comments.nodes[0],

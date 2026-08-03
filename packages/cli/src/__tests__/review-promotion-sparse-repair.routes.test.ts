@@ -2,6 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { comment, commentInsertionOrder, commentThread } from "../db/schema/index.js";
 import {
+	makeInterruptedPromotionReviewWithSparseReplies,
 	makeInterruptedPromotionReviewWithSubmittedReply,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -18,6 +19,48 @@ afterEach(async () => {
 });
 
 describe("review API — sparse promotion repair", () => {
+	it("does not rematch a cleared middle reply on the next resume", async () => {
+		const review = makeInterruptedPromotionReviewWithSparseReplies();
+		await harness.writeGhShim(review, { failAddReply: true });
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true });
+		harness.db.insert(comment).values({ threadId: localThreadId, body: "Second reply" }).run();
+		harness.db.insert(comment).values({ threadId: localThreadId, body: "Third reply" }).run();
+		harness.db
+			.update(commentThread)
+			.set({
+				promotionPullRequestNodeId: "PR_node",
+				promotionThreadNodeId: "THREAD_new",
+				promotionRootCommentNodeId: "COMMENT_new",
+				promotionViewerLogin: "octocat",
+				promotionReplyCount: 3,
+				promotionReplyNodeIds: ["COMMENT_first", "COMMENT_deleted", "COMMENT_third"],
+			})
+			.where(eq(commentThread.id, localThreadId))
+			.run();
+		const port = await harness.start();
+
+		const interrupted = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+		const checkpoint = harness.db
+			.select()
+			.from(commentThread)
+			.where(eq(commentThread.id, localThreadId))
+			.get();
+		await harness.writeGhShim(review);
+		const resumed = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+
+		expect(interrupted.status).toBe(500);
+		expect(checkpoint?.promotionReplyCount).toBe(0);
+		expect(checkpoint?.promotionReplyNodeIds).toEqual(["COMMENT_first", null, "COMMENT_third"]);
+		expect(resumed.status, resumed.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(2);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
 	it("keeps a later reply frozen when its sparse saved node still exists", async () => {
 		await harness.writeGhShim(makeInterruptedPromotionReviewWithSubmittedReply(), {
 			recoveryRootState: "COMMENTED",
