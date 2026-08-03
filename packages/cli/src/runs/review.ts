@@ -756,16 +756,36 @@ async function promoteLocalThread(
 						baselineThreadNodeIds,
 					};
 				}
-				const createdThread = await addReviewThread(run.repoRoot, {
-					pullRequestNodeId: review.pullRequestNodeId,
-					reviewNodeId,
-					path: thread.filePath,
-					body: promotionRootBody(root.body, localThreadId),
-					line: thread.endLine,
-					side,
-					startLine,
-					startSide: startLine !== null ? side : null,
-				});
+				const activeIntent = intent;
+				if (activeIntent === null) throw new Error("Local promotion intent was not saved");
+				let createdThread: AddedReviewThread;
+				try {
+					createdThread = await addReviewThread(run.repoRoot, {
+						pullRequestNodeId: review.pullRequestNodeId,
+						reviewNodeId,
+						path: thread.filePath,
+						body: promotionRootBody(root.body, localThreadId),
+						line: thread.endLine,
+						side,
+						startLine,
+						startSide: startLine !== null ? side : null,
+					});
+				} catch (error) {
+					const refreshedReview = await getReview(run.repoRoot, target.repo, target.prNumber);
+					const uncertainRoot = findPromotionIntentThread(
+						refreshedReview,
+						thread,
+						localThreadId,
+						activeIntent.baselineThreadNodeIds,
+						side,
+						startLine,
+					);
+					if (uncertainRoot === null) {
+						clearPromotionProgress(db, localThreadId);
+						intent = null;
+					}
+					throw error;
+				}
 				addedThread = createdThread;
 				remoteThreadCanResolve = createdThread.viewerCanResolve;
 				const persisted = db
