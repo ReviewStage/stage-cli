@@ -10,6 +10,7 @@ describe("getThreadHoverRange", () => {
 			threadNodeId: "thread",
 			viewerCanResolve: true,
 			viewerCanUnresolve: true,
+			viewerCanReply: true,
 			filePath: "src/file.ts",
 			startSide: "deletions",
 			side: "additions",

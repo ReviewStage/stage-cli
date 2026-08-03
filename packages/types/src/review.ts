@@ -95,6 +95,7 @@ export const GitHubReviewThreadSchema = ReviewThreadBaseSchema.extend({
 	startSide: z.enum(DIFF_SIDE),
 	viewerCanResolve: z.boolean(),
 	viewerCanUnresolve: z.boolean(),
+	viewerCanReply: z.boolean(),
 	comments: z.array(GitHubReviewCommentSchema),
 });
 export type GitHubReviewThread = z.infer<typeof GitHubReviewThreadSchema>;

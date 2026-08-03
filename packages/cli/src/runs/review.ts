@@ -170,6 +170,7 @@ function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
 		isResolved: t.isResolved,
 		viewerCanResolve: t.viewerCanResolve,
 		viewerCanUnresolve: t.viewerCanUnresolve,
+		viewerCanReply: t.viewerCanReply,
 		comments: t.comments.map(
 			(c): GitHubReviewCommentDto => ({
 				id: c.nodeId,
@@ -1120,7 +1121,10 @@ export async function replyToGitHubThread(
 		const { review } = target;
 		if (pending) assertPushable(run, review);
 		else assertGitHubWritable(run, review);
-		requireReviewThread(review, threadNodeId);
+		const thread = requireReviewThread(review, threadNodeId);
+		if (!thread.viewerCanReply) {
+			throw new ReviewError("GitHub doesn't allow you to reply to this review thread.", 403);
+		}
 		if (!pending) {
 			await addReviewReply(run.repoRoot, threadNodeId, body, null);
 			return;

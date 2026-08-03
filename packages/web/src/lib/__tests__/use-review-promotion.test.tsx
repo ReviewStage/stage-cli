@@ -33,6 +33,7 @@ const REMOTE_THREAD: ReviewThread = {
 	threadNodeId: "THREAD_remote",
 	viewerCanResolve: true,
 	viewerCanUnresolve: true,
+	viewerCanReply: true,
 	filePath: "src/foo.ts",
 	side: "additions",
 	startSide: "additions",

@@ -40,6 +40,7 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
           isResolved
           viewerCanResolve
           viewerCanUnresolve
+		  viewerCanReply
           path
           line
           startLine
@@ -120,6 +121,7 @@ const GqlReviewThreadSchema = z.object({
 	isResolved: z.boolean(),
 	viewerCanResolve: z.boolean(),
 	viewerCanUnresolve: z.boolean(),
+	viewerCanReply: z.boolean(),
 	path: z.string(),
 	line: z.number().nullable(),
 	startLine: z.number().nullable(),
@@ -216,6 +218,7 @@ export interface ReviewThread {
 	isResolved: boolean;
 	viewerCanResolve: boolean;
 	viewerCanUnresolve: boolean;
+	viewerCanReply: boolean;
 	path: string;
 	line: number;
 	startLine: number | null;
@@ -362,6 +365,7 @@ export async function getReview(
 				isResolved: node.isResolved,
 				viewerCanResolve: node.viewerCanResolve,
 				viewerCanUnresolve: node.viewerCanUnresolve,
+				viewerCanReply: node.viewerCanReply,
 				path: node.path,
 				line: node.line,
 				startLine: node.startLine,

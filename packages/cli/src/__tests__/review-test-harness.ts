@@ -28,6 +28,7 @@ const submittedThread = {
 	isResolved: false,
 	viewerCanResolve: true,
 	viewerCanUnresolve: true,
+	viewerCanReply: true,
 	path: "src/foo.ts",
 	line: 10,
 	startLine: null,
@@ -54,6 +55,7 @@ const pendingThread = {
 	isResolved: false,
 	viewerCanResolve: true,
 	viewerCanUnresolve: true,
+	viewerCanReply: true,
 	path: "src/bar.ts",
 	line: 4,
 	startLine: null,
@@ -81,6 +83,7 @@ function makePromotionThread(rootState: "PENDING" | "COMMENTED") {
 		isResolved: false,
 		viewerCanResolve: true,
 		viewerCanUnresolve: true,
+		viewerCanReply: true,
 		path: "src/foo.ts",
 		line: 3,
 		startLine: null,
@@ -196,6 +199,18 @@ export function makeUnresolvableReview(): unknown {
 			{
 				...submittedThread,
 				viewerCanResolve: false,
+			},
+		],
+		null,
+	);
+}
+
+export function makeUnreplyableReview(): unknown {
+	return makeReview(
+		[
+			{
+				...submittedThread,
+				viewerCanReply: false,
 			},
 		],
 		null,
@@ -431,6 +446,7 @@ export function makeAnchorlessPendingReview(): unknown {
 				isResolved: false,
 				viewerCanResolve: true,
 				viewerCanUnresolve: true,
+				viewerCanReply: true,
 				path: "src/foo.ts",
 				line: null,
 				startLine: null,

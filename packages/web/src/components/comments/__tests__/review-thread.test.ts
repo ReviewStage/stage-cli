@@ -44,6 +44,16 @@ describe("GitHub reply destination", () => {
 		expect(canReplyToGitHubThread(makeThread([COMMENT_STATE.SUBMITTED]), false, false)).toBe(false);
 	});
 
+	it("disables replies when GitHub denies permission for the thread", () => {
+		expect(
+			canReplyToGitHubThread(
+				{ ...makeThread([COMMENT_STATE.SUBMITTED]), viewerCanReply: false },
+				true,
+				false,
+			),
+		).toBe(false);
+	});
+
 	it("clears an active reply when the thread becomes read-only", () => {
 		expect(activeReplyingState(true, true)).toBe(true);
 		expect(activeReplyingState(true, false)).toBe(false);
@@ -136,6 +146,7 @@ function makeThread(states: GitHubReviewComment["state"][]): GitHubReviewThread 
 		threadNodeId: "thread",
 		viewerCanResolve: true,
 		viewerCanUnresolve: true,
+		viewerCanReply: true,
 		filePath: "src/file.ts",
 		side: "additions",
 		startSide: "additions",

@@ -33,6 +33,7 @@ const GITHUB_THREAD: ReviewThread = {
 	threadNodeId: "THREAD_github",
 	viewerCanResolve: true,
 	viewerCanUnresolve: true,
+	viewerCanReply: true,
 	filePath: "src/github.ts",
 	side: "additions",
 	startSide: "additions",

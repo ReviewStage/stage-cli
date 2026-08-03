@@ -98,7 +98,12 @@ export function canReplyToGitHubThread(
 	canWriteToGitHub: boolean,
 	canPushToReview: boolean,
 ): boolean {
-	return canWriteToGitHub && (canPushToReview || canPublishReplyImmediately(thread));
+	return (
+		thread.source === THREAD_SOURCE.GITHUB &&
+		thread.viewerCanReply &&
+		canWriteToGitHub &&
+		(canPushToReview || canPublishReplyImmediately(thread))
+	);
 }
 
 export function canToggleThreadResolution(
