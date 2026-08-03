@@ -30,6 +30,7 @@ async function execGh(args: string[], cwd: string, options: GhExecOptions): Prom
 					} else resolve(stdout);
 				},
 			);
+			child.stdin?.once("error", reject);
 			child.stdin?.end(options.stdin);
 		});
 	}
