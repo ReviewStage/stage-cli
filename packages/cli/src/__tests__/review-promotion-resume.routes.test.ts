@@ -106,6 +106,22 @@ describe("review API — promotion resume", () => {
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 
+	it("recognizes a checkpointed reply after it is edited on GitHub", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReview("Edited remotely"));
+		const { runId, localThreadId } = seedInterruptedPromotion();
+		harness.db
+			.update(commentThread)
+			.set({ promotionReplyCount: 1, promotionReplyNodeIds: ["COMMENT_reply"] })
+			.where(eq(commentThread.id, localThreadId))
+			.run();
+
+		const promotion = await promote(runId, localThreadId);
+
+		expect(promotion.status, promotion.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(0);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
 	it("reconciles a viewer reply after its review was submitted", async () => {
 		await harness.writeGhShim(makeInterruptedPromotionReviewWithSubmittedReply());
 		const { runId, localThreadId } = seedInterruptedPromotion();

@@ -834,12 +834,7 @@ function reconcilePromotionReplyNodeIds(
 	for (const [index, localReply] of localReplies.entries()) {
 		const storedNodeId = checkpointNodeIds[index];
 		if (storedNodeId) {
-			const remoteIndex = remoteReplies.findIndex(
-				(candidate) =>
-					candidate.nodeId === storedNodeId &&
-					candidate.authorLogin === viewerLogin &&
-					candidate.body === localReply.body,
-			);
+			const remoteIndex = remoteReplies.findIndex((candidate) => candidate.nodeId === storedNodeId);
 			if (remoteIndex !== -1) {
 				reconciled[index] = storedNodeId;
 				usedRemoteIds.add(storedNodeId);
