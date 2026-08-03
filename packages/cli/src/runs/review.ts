@@ -1298,6 +1298,12 @@ export async function replyToGitHubThread(
 			return;
 		}
 		if (!pending) {
+			if (review.pendingReviewNodeId !== null) {
+				throw new ReviewError(
+					"A pending GitHub review now exists. Refresh to add this reply to it.",
+					409,
+				);
+			}
 			await addReviewReply(run.repoRoot, threadNodeId, markedBody, null);
 			return;
 		}

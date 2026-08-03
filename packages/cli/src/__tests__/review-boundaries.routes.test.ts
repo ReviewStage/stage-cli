@@ -41,7 +41,7 @@ describe("review API — GitHub boundaries", () => {
 		expect(await harness.logLines()).not.toContainEqual(expect.stringMatching(/^edit-comment/));
 	});
 
-	it("keeps an older pending review writable on the current PR diff", async () => {
+	it("keeps an older pending review writable without publishing a direct reply", async () => {
 		await harness.writeGhShim(makeStalePendingReview());
 		const runId = harness.insertRun();
 		const port = await harness.start();
@@ -67,9 +67,12 @@ describe("review API — GitHub boundaries", () => {
 		expect(JSON.parse(read.body).canPushToReview).toBe(true);
 		expect(JSON.parse(read.body).canWriteToGitHub).toBe(true);
 		expect(reply.status).toBe(200);
-		expect(immediateReply.status).toBe(200);
+		expect(immediateReply.status).toBe(409);
+		expect(JSON.parse(immediateReply.body).error).toMatch(/pending GitHub review now exists/i);
 		expect(resolve.status).toBe(200);
-		expect(await harness.logLines()).toEqual(expect.arrayContaining(["reply", "resolve-thread"]));
+		const log = await harness.logLines();
+		expect(log).toEqual(expect.arrayContaining(["reply", "resolve-thread"]));
+		expect(log.filter((line) => line === "reply")).toHaveLength(1);
 	});
 
 	it("keeps stale-run pending review controls available in read-only mode", async () => {
