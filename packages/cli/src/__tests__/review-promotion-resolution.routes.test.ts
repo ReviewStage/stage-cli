@@ -17,6 +17,36 @@ afterEach(async () => {
 });
 
 describe("review API — promotion resolution recovery", () => {
+	it("exposes interrupted promotion recovery on a stale run", async () => {
+		const review = makeResolvedInterruptedPromotionReview() as {
+			data: { repository: { pullRequest: { headRefOid: string } } };
+		};
+		review.data.repository.pullRequest.headRefOid = "d".repeat(40);
+		await harness.writeGhShim(review);
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread();
+		harness.db
+			.update(commentThread)
+			.set({
+				promotionPullRequestNodeId: "PR_node",
+				promotionThreadNodeId: "THREAD_new",
+				promotionRootCommentNodeId: "COMMENT_new",
+			})
+			.run();
+
+		const response = await harness.request(
+			await harness.start(),
+			"GET",
+			`/api/runs/${runId}/review`,
+		);
+		const localThread = JSON.parse(response.body).threads.find(
+			(thread: { id: string }) => thread.id === localThreadId,
+		);
+
+		expect(response.status).toBe(200);
+		expect(localThread).toMatchObject({ hasPromotionRecovery: true });
+	});
+
 	it("reopens a recovered GitHub thread when the local thread was reopened", async () => {
 		await harness.writeGhShim(makeResolvedInterruptedPromotionReview());
 		const runId = harness.insertRun();

@@ -45,6 +45,7 @@ const toReviewThread = (thread: CommentThread): LocalReviewThread => ({
 	id: thread.id,
 	source: "local",
 	threadNodeId: null,
+	hasPromotionRecovery: false,
 	filePath: thread.filePath,
 	side: thread.side,
 	startLine: thread.startLine,

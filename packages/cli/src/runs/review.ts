@@ -136,6 +136,10 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 			id: thread.id,
 			source: THREAD_SOURCE.LOCAL,
 			threadNodeId: null,
+			hasPromotionRecovery:
+				thread.promotionPullRequestNodeId !== null ||
+				thread.promotionThreadNodeId !== null ||
+				thread.promotionRootCommentNodeId !== null,
 			filePath: thread.filePath,
 			side: thread.side,
 			startLine: thread.startLine,

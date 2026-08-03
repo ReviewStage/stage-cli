@@ -20,6 +20,7 @@ function makeThread(
 		id: `t-${over.side}-${over.endLine}`,
 		source: "local",
 		threadNodeId: null,
+		hasPromotionRecovery: false,
 		filePath: "a.ts",
 		startLine: over.endLine,
 		isResolved: false,

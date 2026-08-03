@@ -115,6 +115,19 @@ export function canToggleThreadResolution(
 	return thread.isResolved ? thread.viewerCanUnresolve : thread.viewerCanResolve;
 }
 
+export function canAddLocalThreadToReview(
+	thread: ReviewThread,
+	githubAvailable: boolean,
+	canPushToReview: boolean,
+	githubAnchorEligible: boolean,
+): boolean {
+	return (
+		thread.source === THREAD_SOURCE.LOCAL &&
+		githubAvailable &&
+		(thread.hasPromotionRecovery || (canPushToReview && githubAnchorEligible))
+	);
+}
+
 export function activeReplyingState(isReplying: boolean, canReply: boolean): boolean {
 	return isReplying && canReply;
 }
@@ -283,7 +296,12 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 					<StateBadge state={root.state} />
 					{idle && (
 						<div className="flex shrink-0 items-center gap-0.5">
-							{root.state === COMMENT_STATE.LOCAL && canPushToReview && githubAnchorEligible && (
+							{canAddLocalThreadToReview(
+								thread,
+								githubAvailable,
+								canPushToReview,
+								githubAnchorEligible,
+							) && (
 								<Tooltip>
 									<TooltipTrigger asChild>
 										<Button
@@ -296,7 +314,11 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 											<GitPullRequestArrow className="size-3.5" />
 										</Button>
 									</TooltipTrigger>
-									<TooltipContent>Add to GitHub review (pending)</TooltipContent>
+									<TooltipContent>
+										{thread.source === THREAD_SOURCE.LOCAL && thread.hasPromotionRecovery
+											? "Resume adding to GitHub review"
+											: "Add to GitHub review (pending)"}
+									</TooltipContent>
 								</Tooltip>
 							)}
 							{(!isGitHub || githubAvailable) && canReply && (

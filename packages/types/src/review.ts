@@ -85,6 +85,9 @@ const ReviewThreadBaseSchema = z.object({
 export const LocalReviewThreadSchema = ReviewThreadBaseSchema.extend({
 	source: z.literal(THREAD_SOURCE.LOCAL),
 	threadNodeId: z.null(),
+	// An interrupted local-to-GitHub promotion can be resumed even when the run's
+	// original diff is stale, because the server has already saved its GitHub identity.
+	hasPromotionRecovery: z.boolean(),
 	comments: z.array(LocalReviewCommentSchema),
 });
 export type LocalReviewThread = z.infer<typeof LocalReviewThreadSchema>;

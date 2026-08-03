@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
 	activeEditingCommentId,
 	activeReplyingState,
+	canAddLocalThreadToReview,
 	canEditReviewComment,
 	canPublishReplyImmediately,
 	canReplyToGitHubThread,
@@ -96,6 +97,29 @@ describe("GitHub thread resolution", () => {
 	});
 });
 
+describe("local promotion recovery", () => {
+	it("keeps interrupted promotion available when the run is stale", () => {
+		const thread = ReviewThreadSchema.parse({
+			id: "local-thread",
+			source: THREAD_SOURCE.LOCAL,
+			threadNodeId: null,
+			hasPromotionRecovery: true,
+			filePath: "src/file.ts",
+			side: "additions",
+			startLine: 1,
+			endLine: 1,
+			isResolved: false,
+			comments: [],
+		});
+		if (thread.source !== THREAD_SOURCE.LOCAL) throw new Error("Expected a local thread");
+
+		expect(canAddLocalThreadToReview(thread, true, false, false)).toBe(true);
+		expect(
+			canAddLocalThreadToReview({ ...thread, hasPromotionRecovery: false }, true, false, false),
+		).toBe(false);
+	});
+});
+
 describe("review thread source invariants", () => {
 	const base = {
 		id: "thread",
@@ -123,6 +147,7 @@ describe("review thread source invariants", () => {
 				...base,
 				source: THREAD_SOURCE.LOCAL,
 				threadNodeId: "THREAD_github",
+				hasPromotionRecovery: false,
 			}).success,
 		).toBe(false);
 	});
