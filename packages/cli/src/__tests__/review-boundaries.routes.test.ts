@@ -48,11 +48,13 @@ describe("review API — GitHub boundaries", () => {
 
 		const read = await harness.request(port, "GET", `/api/runs/${runId}/review`);
 		const reply = await harness.request(port, "POST", `/api/runs/${runId}/review/reply`, {
+			creationId: "00000000-0000-4000-8000-000000000001",
 			threadNodeId: "THREAD_pending",
 			body: "Nope",
 			pending: true,
 		});
 		const immediateReply = await harness.request(port, "POST", `/api/runs/${runId}/review/reply`, {
+			creationId: "00000000-0000-4000-8000-000000000002",
 			threadNodeId: "THREAD_sub",
 			body: "Published now",
 			pending: false,
@@ -161,7 +163,16 @@ describe("review API — GitHub boundaries", () => {
 	});
 
 	it.each([
-		["reply", "/reply", { threadNodeId: "THREAD_other", body: "Nope", pending: false }],
+		[
+			"reply",
+			"/reply",
+			{
+				creationId: "00000000-0000-4000-8000-000000000001",
+				threadNodeId: "THREAD_other",
+				body: "Nope",
+				pending: false,
+			},
+		],
 		["resolve", "/resolve", { threadNodeId: "THREAD_other", resolved: true }],
 	])("rejects a foreign thread id for %s", async (_name, suffix, body) => {
 		await harness.writeGhShim(REVIEW_QUERY_RESULT);

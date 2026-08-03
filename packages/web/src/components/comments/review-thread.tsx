@@ -190,13 +190,18 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 		setIsOpen(open);
 	}
 
-	async function submitReply(body: string, startReview: boolean) {
+	async function submitReply(body: string, startReview: boolean, creationId: string) {
 		setOpenError(null);
 		try {
 			if (thread.source === THREAD_SOURCE.GITHUB) {
 				// Published threads may choose pending vs immediate; draft-only threads
 				// always pass true because CommentForm has no destination toggle.
-				await review.replyGitHub({ threadNodeId: thread.threadNodeId, body, pending: startReview });
+				await review.replyGitHub({
+					creationId,
+					threadNodeId: thread.threadNodeId,
+					body,
+					pending: startReview,
+				});
 			} else {
 				await review.replyLocal({ threadId: thread.id, body });
 			}
@@ -412,10 +417,11 @@ function ReplyCommentForm({
 	hasPendingReview: boolean;
 	canPushToReview: boolean;
 	error: string | null;
-	onSubmit: (body: string, pending: boolean) => Promise<void>;
+	onSubmit: (body: string, pending: boolean, creationId: string) => Promise<void>;
 	onCancel: () => void;
 }) {
 	const { setStartReview, startReview } = useCommentPreferences();
+	const [creationId] = useState(() => crypto.randomUUID());
 	const hasUsablePendingReview = hasPendingReview && canPushToReview;
 	const showStartReview = isGitHub && publishesImmediately && !hasPendingReview && canPushToReview;
 	const pending =
@@ -438,7 +444,7 @@ function ReplyCommentForm({
 							}
 						: undefined
 			}
-			onSubmit={(body) => onSubmit(body, pending)}
+			onSubmit={(body) => onSubmit(body, pending, creationId)}
 			onCancel={onCancel}
 		/>
 	);

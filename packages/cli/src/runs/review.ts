@@ -1247,6 +1247,7 @@ export async function replyToGitHubThread(
 	threadNodeId: string,
 	body: string,
 	pending: boolean,
+	creationId: string,
 ): Promise<void> {
 	await withLockedReviewTarget(run, async (target) => {
 		const { review } = target;
@@ -1256,14 +1257,45 @@ export async function replyToGitHubThread(
 		if (!thread.viewerCanReply) {
 			throw new ReviewError("GitHub doesn't allow you to reply to this review thread.", 403);
 		}
+		const markedBody = directReplyBody(body, creationId);
+		const recovered = findDirectReply(thread, review.viewerLogin, creationId);
+		if (recovered !== null) {
+			if (recovered.body !== markedBody) {
+				await updateReviewComment(run.repoRoot, recovered.nodeId, markedBody);
+			}
+			return;
+		}
 		if (!pending) {
-			await addReviewReply(run.repoRoot, threadNodeId, body, null);
+			await addReviewReply(run.repoRoot, threadNodeId, markedBody, null);
 			return;
 		}
 		await withPendingReview(run, target, (reviewNodeId) =>
-			addReviewReply(run.repoRoot, threadNodeId, body, reviewNodeId),
+			addReviewReply(run.repoRoot, threadNodeId, markedBody, reviewNodeId),
 		);
 	});
+}
+
+function directReplyMarker(creationId: string): string {
+	return `<!-- stagereview-direct-reply ${JSON.stringify(creationId)} -->`;
+}
+
+function directReplyBody(body: string, creationId: string): string {
+	return `${body}\n\n${directReplyMarker(creationId)}`;
+}
+
+function findDirectReply(
+	thread: GitHubApiReviewThread,
+	viewerLogin: string,
+	creationId: string,
+): GitHubApiReviewThread["comments"][number] | null {
+	const marker = directReplyMarker(creationId);
+	const matches = thread.comments
+		.slice(1)
+		.filter((comment) => comment.authorLogin === viewerLogin && comment.body.includes(marker));
+	if (matches.length > 1) {
+		throw new ReviewError("More than one GitHub reply matches this comment creation.", 409);
+	}
+	return matches[0] ?? null;
 }
 
 /** Submit the viewer's pending review with the chosen event, opening one if needed (e.g. a bare approval). */

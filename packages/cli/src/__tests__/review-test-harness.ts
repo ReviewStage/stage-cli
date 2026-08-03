@@ -797,7 +797,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   if (${options.failAddReply ? "true" : "false"}) { process.stderr.write("gh: reply failed\\n"); process.exit(1); }
   if (${options.failAddReplyAfterWrite ? "true" : "false"}) {
 	const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-	const thread = review.data.repository.pullRequest.reviewThreads.nodes.find((entry) => entry.id === "THREAD_new");
+	const thread = review.data.repository.pullRequest.reviewThreads.nodes.find((entry) => entry.id === inputFields.threadId);
 	thread.comments.nodes.push({
 	  id: "COMMENT_reply_after_write",
 	  url: "https://github.com/owner/repo/pull/5#discussion_r5",

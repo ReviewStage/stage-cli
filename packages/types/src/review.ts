@@ -159,6 +159,7 @@ export type SubmitReviewBody = z.infer<typeof SubmitReviewBodySchema>;
 // Reply to a github thread. `pending` (default) adds the reply to the viewer's
 // pending review; false posts it immediately as a single comment.
 export const GitHubReplyBodySchema = z.object({
+	creationId: z.string().uuid(),
 	threadNodeId: z.string().min(1),
 	body: z.string().min(1),
 	pending: z.boolean().default(true),

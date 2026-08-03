@@ -10,6 +10,7 @@ import {
 	COMMENT_STATE,
 	GITHUB_REVIEW_STATUS,
 	type GitHubCommentCreateBody,
+	type GitHubReplyBody,
 	type GitHubReviewStatus,
 	type LocalReviewComment,
 	type LocalReviewThread,
@@ -113,7 +114,7 @@ export interface UseReviewResult {
 	addToReview: (localThreadId: string) => Promise<void>;
 	submitReview: (input: { event: ReviewEvent; body: string }) => Promise<void>;
 	discardReview: () => Promise<void>;
-	replyGitHub: (input: { threadNodeId: string; body: string; pending: boolean }) => Promise<void>;
+	replyGitHub: (input: GitHubReplyBody) => Promise<void>;
 	editGitHubComment: (input: { nodeId: string; body: string }) => Promise<void>;
 	deleteGitHubComment: (nodeId: string) => Promise<void>;
 	resolveGitHub: (input: { threadNodeId: string; resolved: boolean }) => Promise<void>;
@@ -369,7 +370,7 @@ export function useReview(runId: string): UseReviewResult {
 		}),
 		replyGitHub: useMutation({
 			onMutate: captureMutationOrigin,
-			mutationFn: (input: { threadNodeId: string; body: string; pending: boolean }) =>
+			mutationFn: (input: GitHubReplyBody) =>
 				jsonFetch(runPath("/review/reply"), jsonRequest("POST", input)),
 			onSuccess: (_data, _input, origin) => invalidateGitHub(origin),
 		}),
