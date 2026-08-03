@@ -499,6 +499,7 @@ interface GhShimOptions {
 	failAddReply?: boolean;
 	failResolve?: boolean;
 	failThreadComments?: boolean;
+	identityQueryPendingReviewId?: string | null;
 	mergeBaseOid?: string;
 	noPullRequest?: boolean;
 	persistCreatedReview?: boolean;
@@ -647,6 +648,13 @@ if (args.some((arg) => arg.includes("/compare/"))) {
     }] }
   }`
 	} } });
+} else if (query.includes("query GetReviewIdentity")) {
+  const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+  if (${options.identityQueryPendingReviewId !== undefined ? "true" : "false"}) {
+    const pendingReviewId = ${JSON.stringify(options.identityQueryPendingReviewId ?? null)};
+    review.data.repository.pullRequest.reviews.nodes = pendingReviewId === null ? [] : [{ id: pendingReviewId, body: "", commit: { oid: review.data.repository.pullRequest.headRefOid } }];
+  }
+  emit(review);
 } else if (query.includes("query GetReview")) {
   sleep(${options.reviewQueryDelayMs ?? 0});
   const commentFields = query.slice(query.indexOf("comments(first:"), query.indexOf("author {"));

@@ -1,6 +1,10 @@
 import { ReviewResponseSchema } from "@stagereview/types/review";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { REVIEW_QUERY_RESULT, ReviewRouteHarness } from "./review-test-harness.js";
+import {
+	makePaginatedThreadReview,
+	REVIEW_QUERY_RESULT,
+	ReviewRouteHarness,
+} from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
 
@@ -15,6 +19,26 @@ afterEach(async () => {
 });
 
 describe("review API — paginated snapshots", () => {
+	it("rejects a pending review submitted during nested comment pagination", async () => {
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		await harness.writeGhShim(makePaginatedThreadReview(), {
+			identityQueryPendingReviewId: null,
+		});
+		const runId = harness.insertRun();
+
+		const response = await harness.request(
+			await harness.start(),
+			"GET",
+			`/api/runs/${runId}/review`,
+		);
+		const review = ReviewResponseSchema.parse(JSON.parse(response.body));
+
+		expect(review.github).toBe("offline");
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringContaining("Pull request changed while GitHub review pages were loading"),
+		);
+	});
+
 	it("keeps loading when the draft summary changes between thread pages", async () => {
 		await harness.writeGhShim(REVIEW_QUERY_RESULT, {
 			secondReviewPagePendingReviewBody: "Updated draft summary",

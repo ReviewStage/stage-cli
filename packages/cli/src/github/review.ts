@@ -64,6 +64,20 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
   }
 }`;
 
+const REVIEW_IDENTITY_QUERY = `query GetReviewIdentity($owner: String!, $repo: String!, $number: Int!) {
+  viewer { login }
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      id
+      state
+      viewerDidAuthor
+      headRefOid
+      baseRefOid
+      reviews(states: PENDING, first: 1) { nodes { id body commit { oid } } }
+    }
+  }
+}`;
+
 const REVIEW_THREAD_COMMENTS_QUERY = `query GetReviewThreadComments($threadId: ID!, $cursor: String) {
   node(id: $threadId) {
     ... on PullRequestReviewThread {
@@ -130,35 +144,43 @@ const GqlReviewThreadSchema = z.object({
 	comments: GqlReviewCommentsPageSchema,
 });
 
+const GqlPullRequestIdentitySchema = z.object({
+	id: z.string(),
+	state: z.enum(["OPEN", "CLOSED", "MERGED"]),
+	viewerDidAuthor: z.boolean(),
+	headRefOid: z.string(),
+	baseRefOid: z.string(),
+	reviews: z.object({
+		nodes: z.array(
+			z.object({
+				id: z.string(),
+				body: z.string(),
+				commit: z.object({ oid: z.string() }).nullable(),
+			}),
+		),
+	}),
+});
+
 const ReviewQuerySchema = z.object({
 	data: z.object({
 		viewer: z.object({ login: z.string() }),
 		repository: z
 			.object({
-				pullRequest: z
-					.object({
-						id: z.string(),
-						state: z.enum(["OPEN", "CLOSED", "MERGED"]),
-						viewerDidAuthor: z.boolean(),
-						headRefOid: z.string(),
-						baseRefOid: z.string(),
-						reviews: z.object({
-							nodes: z.array(
-								z.object({
-									id: z.string(),
-									body: z.string(),
-									commit: z.object({ oid: z.string() }).nullable(),
-								}),
-							),
-						}),
-						reviewThreads: z.object({
-							pageInfo: GqlPageInfoSchema,
-							nodes: z.array(GqlReviewThreadSchema),
-						}),
-					})
-					.nullable(),
+				pullRequest: GqlPullRequestIdentitySchema.extend({
+					reviewThreads: z.object({
+						pageInfo: GqlPageInfoSchema,
+						nodes: z.array(GqlReviewThreadSchema),
+					}),
+				}).nullable(),
 			})
 			.nullable(),
+	}),
+});
+
+const ReviewIdentityQuerySchema = z.object({
+	data: z.object({
+		viewer: z.object({ login: z.string() }),
+		repository: z.object({ pullRequest: GqlPullRequestIdentitySchema.nullable() }).nullable(),
 	}),
 });
 
@@ -271,6 +293,86 @@ export interface PromotionThreadState {
 const PENDING_STATE = "PENDING";
 const THREAD_COMMENT_LOAD_CONCURRENCY = 5;
 
+interface ReviewSnapshotIdentity {
+	viewerLogin: string;
+	pullRequestNodeId: string;
+	state: GitHubReview["state"];
+	viewerDidAuthor: boolean;
+	headRefOid: string;
+	baseRefOid: string;
+	pendingReviewNodeId: string | null;
+	pendingReviewCommitOid: string | null;
+}
+
+interface ReviewSnapshot {
+	identity: ReviewSnapshotIdentity;
+	pendingReviewBody: string;
+}
+
+function toReviewSnapshot(
+	viewerLogin: string,
+	pullRequest: z.infer<typeof GqlPullRequestIdentitySchema>,
+): ReviewSnapshot {
+	const pendingReview = pullRequest.reviews.nodes[0];
+	return {
+		identity: {
+			viewerLogin,
+			pullRequestNodeId: pullRequest.id,
+			state: pullRequest.state,
+			viewerDidAuthor: pullRequest.viewerDidAuthor,
+			headRefOid: pullRequest.headRefOid,
+			baseRefOid: pullRequest.baseRefOid,
+			pendingReviewNodeId: pendingReview?.id ?? null,
+			pendingReviewCommitOid: pendingReview?.commit?.oid ?? null,
+		},
+		pendingReviewBody: pendingReview?.body ?? "",
+	};
+}
+
+function assertSameReviewIdentity(
+	expected: ReviewSnapshotIdentity,
+	actual: ReviewSnapshotIdentity,
+): void {
+	if (
+		actual.viewerLogin !== expected.viewerLogin ||
+		actual.pullRequestNodeId !== expected.pullRequestNodeId ||
+		actual.headRefOid !== expected.headRefOid ||
+		actual.baseRefOid !== expected.baseRefOid ||
+		actual.state !== expected.state ||
+		actual.viewerDidAuthor !== expected.viewerDidAuthor ||
+		actual.pendingReviewNodeId !== expected.pendingReviewNodeId ||
+		actual.pendingReviewCommitOid !== expected.pendingReviewCommitOid
+	) {
+		throw new Error("Pull request changed while GitHub review pages were loading");
+	}
+}
+
+async function loadReviewSnapshot(
+	repoRoot: string,
+	repo: GitHubRepo,
+	prNumber: number,
+): Promise<ReviewSnapshot> {
+	const args = [
+		"api",
+		"graphql",
+		"-f",
+		`query=${REVIEW_IDENTITY_QUERY}`,
+		"-f",
+		`owner=${repo.owner}`,
+		"-f",
+		`repo=${repo.repo}`,
+		"-F",
+		`number=${prNumber}`,
+	];
+	const parsed = ReviewIdentityQuerySchema.safeParse(
+		JSON.parse(await ghReadOrThrow(args, repoRoot)),
+	);
+	if (!parsed.success) throw new Error("Unexpected response shape from GitHub review query");
+	const pullRequest = parsed.data.data.repository?.pullRequest;
+	if (!pullRequest) throw new Error("Pull request not found on GitHub");
+	return toReviewSnapshot(parsed.data.data.viewer.login, pullRequest);
+}
+
 /**
  * The PR's review threads (pending + submitted) as the viewer sees them, plus the
  * ids the write mutations need. Threads with no anchorable line (outdated or
@@ -281,18 +383,12 @@ export async function getReview(
 	repo: GitHubRepo,
 	prNumber: number,
 ): Promise<GitHubReview> {
-	let pullRequestNodeId = "";
-	let viewerLogin = "";
-	let state: GitHubReview["state"] = "OPEN";
-	let viewerDidAuthor = false;
-	let headRefOid = "";
-	let baseRefOid = "";
-	let pendingReviewNodeId: string | null = null;
-	let pendingReviewCommitOid: string | null = null;
+	let snapshotIdentity: ReviewSnapshotIdentity | null = null;
 	let pendingReviewBody = "";
 	let pendingCommentCount = 0;
 	const pendingComments: PendingReviewComment[] = [];
 	const threads: ReviewThread[] = [];
+	let loadedNestedCommentPage = false;
 	let cursor: string | null = null;
 
 	do {
@@ -314,38 +410,16 @@ export async function getReview(
 		if (cursor !== null) args.push("-f", `cursor=${cursor}`);
 		const parsed = ReviewQuerySchema.safeParse(JSON.parse(await ghReadOrThrow(args, repoRoot)));
 		if (!parsed.success) throw new Error("Unexpected response shape from GitHub review query");
-		const pageViewerLogin = parsed.data.data.viewer.login;
 		const pr = parsed.data.data.repository?.pullRequest;
 		if (!pr) break;
-		const pagePendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
-		const pagePendingReviewCommitOid = pr.reviews.nodes[0]?.commit?.oid ?? null;
-		const pagePendingReviewBody = pr.reviews.nodes[0]?.body ?? "";
-		if (pullRequestNodeId === "") {
-			viewerLogin = pageViewerLogin;
-			pullRequestNodeId = pr.id;
-			state = pr.state;
-			viewerDidAuthor = pr.viewerDidAuthor;
-			headRefOid = pr.headRefOid;
-			baseRefOid = pr.baseRefOid;
-			pendingReviewNodeId = pagePendingReviewNodeId;
-			pendingReviewCommitOid = pagePendingReviewCommitOid;
-			pendingReviewBody = pagePendingReviewBody;
-		} else if (
-			pageViewerLogin !== viewerLogin ||
-			pr.id !== pullRequestNodeId ||
-			pr.headRefOid !== headRefOid ||
-			pr.baseRefOid !== baseRefOid ||
-			pr.state !== state ||
-			pr.viewerDidAuthor !== viewerDidAuthor ||
-			pagePendingReviewNodeId !== pendingReviewNodeId ||
-			pagePendingReviewCommitOid !== pendingReviewCommitOid
-		) {
-			throw new Error("Pull request changed while GitHub review pages were loading");
-		}
-		pendingReviewBody = pagePendingReviewBody;
+		const pageSnapshot = toReviewSnapshot(parsed.data.data.viewer.login, pr);
+		if (snapshotIdentity === null) snapshotIdentity = pageSnapshot.identity;
+		else assertSameReviewIdentity(snapshotIdentity, pageSnapshot.identity);
+		pendingReviewBody = pageSnapshot.pendingReviewBody;
 
 		const nodesWithComments = await loadThreadCommentsInBatches(repoRoot, pr.reviewThreads.nodes);
-		for (const { node, comments } of nodesWithComments) {
+		for (const { node, comments, loadedAdditionalPage } of nodesWithComments) {
+			loadedNestedCommentPage ||= loadedAdditionalPage;
 			// Count pending (draft) comments across every thread, including outdated/whole-file
 			// ones dropped below — so the tray count and the empty-review check don't undercount.
 			for (const c of comments) {
@@ -380,7 +454,22 @@ export async function getReview(
 	// No `pullRequest` in the response (stale/unknown PR number, or repo no longer
 	// resolves) — treat as unavailable rather than handing back an empty node id that
 	// later write mutations would post against.
-	if (pullRequestNodeId === "") throw new Error("Pull request not found on GitHub");
+	if (snapshotIdentity === null) throw new Error("Pull request not found on GitHub");
+	if (loadedNestedCommentPage) {
+		const finalSnapshot = await loadReviewSnapshot(repoRoot, repo, prNumber);
+		assertSameReviewIdentity(snapshotIdentity, finalSnapshot.identity);
+		pendingReviewBody = finalSnapshot.pendingReviewBody;
+	}
+	const {
+		viewerLogin,
+		pullRequestNodeId,
+		state,
+		viewerDidAuthor,
+		headRefOid,
+		baseRefOid,
+		pendingReviewNodeId,
+		pendingReviewCommitOid,
+	} = snapshotIdentity;
 	const mergeBaseOid = await getPullRequestMergeBase(repoRoot, repo, baseRefOid, headRefOid);
 
 	return {
@@ -449,20 +538,22 @@ async function loadThreadCommentsInBatches(
 	{
 		node: z.infer<typeof GqlReviewThreadSchema>;
 		comments: z.infer<typeof GqlReviewCommentSchema>[];
+		loadedAdditionalPage: boolean;
 	}[]
 > {
 	const loaded: {
 		node: z.infer<typeof GqlReviewThreadSchema>;
 		comments: z.infer<typeof GqlReviewCommentSchema>[];
+		loadedAdditionalPage: boolean;
 	}[] = [];
 	for (let start = 0; start < nodes.length; start += THREAD_COMMENT_LOAD_CONCURRENCY) {
 		const batch = nodes.slice(start, start + THREAD_COMMENT_LOAD_CONCURRENCY);
 		loaded.push(
 			...(await Promise.all(
-				batch.map(async (node) => ({
-					node,
-					comments: await loadReviewThreadComments(repoRoot, node.id, node.comments),
-				})),
+				batch.map(async (node) => {
+					const loadedComments = await loadReviewThreadComments(repoRoot, node.id, node.comments);
+					return { node, ...loadedComments };
+				}),
 			)),
 		);
 	}
@@ -473,9 +564,13 @@ async function loadReviewThreadComments(
 	repoRoot: string,
 	threadNodeId: string,
 	firstPage: z.infer<typeof GqlReviewCommentsPageSchema>,
-): Promise<z.infer<typeof GqlReviewCommentSchema>[]> {
+): Promise<{
+	comments: z.infer<typeof GqlReviewCommentSchema>[];
+	loadedAdditionalPage: boolean;
+}> {
 	const comments = [...firstPage.nodes];
 	let cursor = nextCursor(firstPage.pageInfo);
+	const loadedAdditionalPage = cursor !== null;
 	while (cursor !== null) {
 		try {
 			const args = [
@@ -504,7 +599,7 @@ async function loadReviewThreadComments(
 			);
 		}
 	}
-	return comments;
+	return { comments, loadedAdditionalPage };
 }
 
 function nextCursor(pageInfo: z.infer<typeof GqlPageInfoSchema>): string | null {
