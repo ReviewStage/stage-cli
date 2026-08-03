@@ -19,6 +19,7 @@ import {
 } from "../db/schema/index.js";
 import { type LocalThreadScope, loadLocalThreadRecords } from "../runs/local-comment-threads.js";
 import {
+	hasLocalThreadPromotionCheckpoint,
 	isLocalCommentPromotionPending,
 	isLocalThreadPromoting,
 	isLocalThreadPromotionInFlight,
@@ -177,12 +178,18 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 					writeJson(res, 400, { error: "Missing threadId" });
 					return;
 				}
-				if (isLocalThreadPromotionPending(db, threadId)) {
+				if (
+					isLocalThreadPromotionPending(db, threadId) ||
+					hasLocalThreadPromotionCheckpoint(db, threadId)
+				) {
 					writeJson(res, 409, { error: "This comment thread is being added to the review." });
 					return;
 				}
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot }, async () => {
-					if (isLocalThreadPromoting(db, threadId)) {
+					if (
+						isLocalThreadPromoting(db, threadId) ||
+						hasLocalThreadPromotionCheckpoint(db, threadId)
+					) {
 						writeJson(res, 409, { error: "This comment thread is being added to the review." });
 						return;
 					}

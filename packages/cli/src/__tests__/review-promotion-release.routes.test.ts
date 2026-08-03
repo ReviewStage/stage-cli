@@ -74,10 +74,12 @@ describe("review API — promotion checkpoint release", () => {
 			`/api/comment-threads/${localThreadId}/replies`,
 			{ body: "Continue locally" },
 		);
+		const deletion = await harness.request(port, "DELETE", `/api/comment-threads/${localThreadId}`);
 		const [savedThread] = harness.db.select().from(commentThread).all();
 
 		expect(promotion.status, promotion.body).toBe(409);
 		expect(reply.status).toBe(201);
+		expect(deletion.status).toBe(409);
 		expect(savedThread?.promotionPullRequestNodeId).toBe("PR_node");
 		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
 		expect(savedThread?.promotionRootPublished).toBe(true);

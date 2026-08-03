@@ -361,6 +361,25 @@ class PromotionCoordinator {
 		return this.#queued.has(localThreadId) || this.#active.has(localThreadId);
 	}
 
+	hasCheckpoint(db: StageDb, localThreadId: string): boolean {
+		const [thread] = db
+			.select({
+				pullRequestNodeId: commentThread.promotionPullRequestNodeId,
+				threadNodeId: commentThread.promotionThreadNodeId,
+				rootCommentNodeId: commentThread.promotionRootCommentNodeId,
+			})
+			.from(commentThread)
+			.where(eq(commentThread.id, localThreadId))
+			.limit(1)
+			.all();
+		return (
+			thread !== undefined &&
+			(thread.pullRequestNodeId !== null ||
+				thread.threadNodeId !== null ||
+				thread.rootCommentNodeId !== null)
+		);
+	}
+
 	async isCommentFrozen(db: StageDb, localThreadId: string, commentId: string): Promise<boolean> {
 		if (this.#queued.has(localThreadId) || this.#active.has(localThreadId)) return true;
 		const [thread] = db
@@ -450,6 +469,11 @@ export function isLocalThreadPromotionPending(db: StageDb, localThreadId: string
 /** True only for a promotion queued or running in this process. */
 export function isLocalThreadPromotionInFlight(localThreadId: string): boolean {
 	return promotionCoordinator.isInFlight(localThreadId);
+}
+
+/** True while a local thread retains any recoverable remote promotion identity. */
+export function hasLocalThreadPromotionCheckpoint(db: StageDb, localThreadId: string): boolean {
+	return promotionCoordinator.hasCheckpoint(db, localThreadId);
 }
 
 /** Whether a local comment is already remote or could be landing during promotion. */
