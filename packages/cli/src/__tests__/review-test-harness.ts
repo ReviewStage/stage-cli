@@ -439,6 +439,7 @@ interface GhShimOptions {
 	discoveredPullRequest?: boolean;
 	failAddThread?: boolean;
 	addConcurrentPendingCommentOnThreadFailure?: boolean;
+	addConcurrentPendingCommentOnResolveFailure?: boolean;
 	failAddReply?: boolean;
 	failDeleteComment?: boolean;
 	failDiscardReview?: boolean;
@@ -623,7 +624,15 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", viewerCanResolve: ${options.addedThreadCanResolve === false ? "false" : "true"}, comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
 } else if (query.includes("mutation ResolveThread")) {
   fs.appendFileSync(log, "resolve-thread\\n");
-  if (${options.failResolve ? "true" : "false"}) { process.stderr.write("gh: resolve failed\\n"); process.exit(1); }
+  if (${options.failResolve ? "true" : "false"}) {
+    if (${options.addConcurrentPendingCommentOnResolveFailure ? "true" : "false"}) {
+      const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+      review.data.repository.pullRequest.reviewThreads.nodes.push(${JSON.stringify(pendingThread)});
+      fs.writeFileSync(reviewPath, JSON.stringify(review));
+    }
+    process.stderr.write("gh: resolve failed\\n");
+    process.exit(1);
+  }
   emit({ data: { resolveReviewThread: { thread: { id: "THREAD_new" } } } });
 } else if (query.includes("mutation DeleteReviewComment")) {
   fs.appendFileSync(log, "delete-comment\\n");

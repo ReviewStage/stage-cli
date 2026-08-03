@@ -344,14 +344,7 @@ async function withPendingReview<T>(
 	} catch (err) {
 		if (created) {
 			try {
-				const current = await getReview(run.repoRoot, target.repo, target.prNumber);
-				if (
-					current.pendingReviewNodeId === reviewNodeId &&
-					current.pendingCommentCount === 0 &&
-					current.pendingReviewBody.trim() === ""
-				) {
-					await discardReview(run.repoRoot, reviewNodeId);
-				}
+				await discardCreatedReviewIfOwned(run, target, reviewNodeId, []);
 			} catch (discardError) {
 				const message = discardError instanceof Error ? discardError.message : String(discardError);
 				process.stderr.write(
@@ -361,6 +354,26 @@ async function withPendingReview<T>(
 		}
 		throw err;
 	}
+}
+
+/** Discard a Stage-created review only while every remaining draft still belongs to Stage. */
+async function discardCreatedReviewIfOwned(
+	run: ChapterRunRow,
+	target: Pick<ReviewTarget, "repo" | "prNumber">,
+	reviewNodeId: string,
+	ownedCommentNodeIds: string[],
+): Promise<boolean> {
+	const current = await getReview(run.repoRoot, target.repo, target.prNumber);
+	const owned = new Set(ownedCommentNodeIds);
+	if (
+		current.pendingReviewNodeId !== reviewNodeId ||
+		current.pendingReviewBody.trim() !== "" ||
+		current.pendingComments.some((candidate) => !owned.has(candidate.id))
+	) {
+		return false;
+	}
+	await discardReview(run.repoRoot, reviewNodeId);
+	return true;
 }
 
 // Queued ids reject duplicate promotion requests immediately. The active set starts
@@ -480,7 +493,8 @@ async function promoteLocalThread(
 		initialReplyNodeIds = [];
 	}
 
-	await withLockedReviewTarget(run, async ({ review }) => {
+	await withLockedReviewTarget(run, async (target) => {
+		const { review } = target;
 		let liveCheckpointRemote = checkpointRemote;
 		if (checkpoint !== null) {
 			const current = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
@@ -681,17 +695,22 @@ async function promoteLocalThread(
 			}
 			if (created && reviewNodeId !== null && !remoteRootWasPublished) {
 				try {
-					await discardReview(run.repoRoot, reviewNodeId);
-					if (rootCreatedThisAttempt) {
-						remoteRootRolledBack = true;
-					} else if (!remoteRootRolledBack) {
-						db.update(commentThread)
-							.set({
-								promotionReplyCount: rollbackReplyCount,
-								promotionReplyNodeIds: compactPromotionReplyNodeIds(rollbackReplyNodeIds),
-							})
-							.where(eq(commentThread.id, localThreadId))
-							.run();
+					const ownedCommentNodeIds = [
+						addedThread?.rootCommentNodeId,
+						...promotedReplyNodeIds,
+					].filter((nodeId): nodeId is string => nodeId !== null && nodeId !== undefined);
+					if (await discardCreatedReviewIfOwned(run, target, reviewNodeId, ownedCommentNodeIds)) {
+						if (rootCreatedThisAttempt) {
+							remoteRootRolledBack = true;
+						} else if (!remoteRootRolledBack) {
+							db.update(commentThread)
+								.set({
+									promotionReplyCount: rollbackReplyCount,
+									promotionReplyNodeIds: compactPromotionReplyNodeIds(rollbackReplyNodeIds),
+								})
+								.where(eq(commentThread.id, localThreadId))
+								.run();
+						}
 					}
 				} catch (discardError) {
 					reportPromotionCleanupFailure("discard promotion review", discardError);

@@ -45,7 +45,7 @@ describe("review API — promotion rollback", () => {
 	});
 
 	it("rolls back a new remote root when preserving resolution fails", async () => {
-		await harness.writeGhShim(EMPTY_REVIEW, { failResolve: true });
+		await harness.writeGhShim(EMPTY_REVIEW, { failResolve: true, persistCreatedReview: true });
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ resolved: true });
 
@@ -54,6 +54,21 @@ describe("review API — promotion rollback", () => {
 		expect(res.status).toBe(500);
 		expect((await harness.logLines()).filter((line) => line === "delete-comment")).toHaveLength(1);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(1);
+	});
+
+	it("preserves concurrent draft work when promotion rollback fails", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, {
+			failResolve: true,
+			persistCreatedReview: true,
+			addConcurrentPendingCommentOnResolveFailure: true,
+		});
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ resolved: true });
+		const res = await promote(runId, localThreadId);
+		const logs = await harness.logLines();
+		expect(res.status).toBe(500);
+		expect(logs).toContain("delete-comment");
+		expect(logs).not.toContain("discard-review");
 	});
 
 	it("keeps the whole local thread when a promoted reply fails", async () => {
@@ -81,6 +96,7 @@ describe("review API — promotion rollback", () => {
 			failResolve: true,
 			failDeleteComment: true,
 			failDiscardReview: true,
+			persistCreatedReview: true,
 		});
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ withReply: true, resolved: true });
@@ -137,6 +153,7 @@ describe("review API — promotion rollback", () => {
 		await harness.writeGhShim(EMPTY_REVIEW, {
 			failResolve: true,
 			recoveryRootState: "COMMENTED",
+			persistCreatedReview: true,
 		});
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ resolved: true });
@@ -157,6 +174,7 @@ describe("review API — promotion rollback", () => {
 			failAddReply: true,
 			failDeleteComment: true,
 			failDiscardReview: true,
+			persistCreatedReview: true,
 		});
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ withReply: true });

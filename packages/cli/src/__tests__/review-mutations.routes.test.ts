@@ -107,7 +107,11 @@ describe("review API — GitHub mutations", () => {
 
 	it("restores a legacy claim when discarding a fresh review completes rollback", async () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-		await harness.writeGhShim(EMPTY_REVIEW, { failAddReply: true, failDeleteComment: true });
+		await harness.writeGhShim(EMPTY_REVIEW, {
+			failAddReply: true,
+			failDeleteComment: true,
+			persistCreatedReview: true,
+		});
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ repoRoot: "", withReply: true });
 
