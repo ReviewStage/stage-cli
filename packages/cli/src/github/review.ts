@@ -314,6 +314,9 @@ export async function getReview(
 		const pageViewerLogin = parsed.data.data.viewer.login;
 		const pr = parsed.data.data.repository?.pullRequest;
 		if (!pr) break;
+		const pagePendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
+		const pagePendingReviewCommitOid = pr.reviews.nodes[0]?.commit?.oid ?? null;
+		const pagePendingReviewBody = pr.reviews.nodes[0]?.body ?? "";
 		if (pullRequestNodeId === "") {
 			viewerLogin = pageViewerLogin;
 			pullRequestNodeId = pr.id;
@@ -321,15 +324,19 @@ export async function getReview(
 			viewerDidAuthor = pr.viewerDidAuthor;
 			headRefOid = pr.headRefOid;
 			baseRefOid = pr.baseRefOid;
-			pendingReviewNodeId = pr.reviews.nodes[0]?.id ?? null;
-			pendingReviewCommitOid = pr.reviews.nodes[0]?.commit?.oid ?? null;
-			pendingReviewBody = pr.reviews.nodes[0]?.body ?? "";
+			pendingReviewNodeId = pagePendingReviewNodeId;
+			pendingReviewCommitOid = pagePendingReviewCommitOid;
+			pendingReviewBody = pagePendingReviewBody;
 		} else if (
 			pageViewerLogin !== viewerLogin ||
 			pr.id !== pullRequestNodeId ||
 			pr.headRefOid !== headRefOid ||
 			pr.baseRefOid !== baseRefOid ||
-			pr.state !== state
+			pr.state !== state ||
+			pr.viewerDidAuthor !== viewerDidAuthor ||
+			pagePendingReviewNodeId !== pendingReviewNodeId ||
+			pagePendingReviewCommitOid !== pendingReviewCommitOid ||
+			pagePendingReviewBody !== pendingReviewBody
 		) {
 			throw new Error("Pull request changed while GitHub review pages were loading");
 		}

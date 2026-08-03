@@ -486,6 +486,7 @@ interface GhShimOptions {
 	persistCreatedReview?: boolean;
 	reviewQueryDelayMs?: number;
 	secondReviewPageHeadRefOid?: string;
+	secondReviewPagePendingReviewId?: string | null;
 	secondReviewPageState?: "OPEN" | "CLOSED" | "MERGED";
 	recoveryPullRequestNodeId?: string;
 	recoveryPullRequestNumber?: number;
@@ -636,10 +637,20 @@ if (args.some((arg) => arg.includes("/compare/"))) {
     process.exit(1);
   }
 	const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-	if (${options.secondReviewPageHeadRefOid || options.secondReviewPageState ? "true" : "false"}) {
+	if (${
+		options.secondReviewPageHeadRefOid ||
+		options.secondReviewPageState ||
+		options.secondReviewPagePendingReviewId !== undefined
+			? "true"
+			: "false"
+	}) {
 	  if (args.includes("cursor=THREAD_PAGE_2")) {
 	    if (${options.secondReviewPageHeadRefOid ? "true" : "false"}) review.data.repository.pullRequest.headRefOid = ${JSON.stringify(options.secondReviewPageHeadRefOid ?? HEAD)};
 	    if (${options.secondReviewPageState ? "true" : "false"}) review.data.repository.pullRequest.state = ${JSON.stringify(options.secondReviewPageState ?? "OPEN")};
+	    if (${options.secondReviewPagePendingReviewId !== undefined ? "true" : "false"}) {
+	      const pendingReviewId = ${JSON.stringify(options.secondReviewPagePendingReviewId ?? null)};
+	      review.data.repository.pullRequest.reviews.nodes = pendingReviewId === null ? [] : [{ id: pendingReviewId, body: "", commit: { oid: review.data.repository.pullRequest.headRefOid } }];
+	    }
 	    review.data.repository.pullRequest.reviewThreads.pageInfo = { hasNextPage: false, endCursor: null };
 	    review.data.repository.pullRequest.reviewThreads.nodes = [];
 	  } else {
