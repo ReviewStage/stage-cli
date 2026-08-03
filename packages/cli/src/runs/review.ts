@@ -920,13 +920,13 @@ function findPromotionIntentThread(
 	if (baselineThreadNodeIds === null) return null;
 	const baseline = new Set(baselineThreadNodeIds);
 	const newMatches = anchoredMatches.filter((candidate) => !baseline.has(candidate.threadNodeId));
-	if (newMatches.length > 1) {
+	if (newMatches.length > 0) {
 		throw new ReviewError(
-			"More than one new GitHub thread matches this interrupted comment promotion.",
+			"A new unmarked GitHub thread matches this interrupted comment promotion. Restore its Stage recovery marker or remove it before retrying.",
 			409,
 		);
 	}
-	return newMatches[0] ?? null;
+	return null;
 }
 
 async function releaseCrossPullRequestPromotion(
