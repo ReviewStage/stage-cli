@@ -487,6 +487,7 @@ interface GhShimOptions {
 	persistCreatedReview?: boolean;
 	reviewQueryDelayMs?: number;
 	secondReviewPageHeadRefOid?: string;
+	secondReviewPagePendingReviewBody?: string;
 	secondReviewPagePendingReviewId?: string | null;
 	secondReviewPageState?: "OPEN" | "CLOSED" | "MERGED";
 	recoveryPullRequestNodeId?: string;
@@ -641,6 +642,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 	if (${
 		options.secondReviewPageHeadRefOid ||
 		options.secondReviewPageState ||
+		options.secondReviewPagePendingReviewBody !== undefined ||
 		options.secondReviewPagePendingReviewId !== undefined
 			? "true"
 			: "false"
@@ -652,6 +654,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 	      const pendingReviewId = ${JSON.stringify(options.secondReviewPagePendingReviewId ?? null)};
 	      review.data.repository.pullRequest.reviews.nodes = pendingReviewId === null ? [] : [{ id: pendingReviewId, body: "", commit: { oid: review.data.repository.pullRequest.headRefOid } }];
 	    }
+	    if (${options.secondReviewPagePendingReviewBody !== undefined ? "true" : "false"}) review.data.repository.pullRequest.reviews.nodes[0].body = ${JSON.stringify(options.secondReviewPagePendingReviewBody ?? "")};
 	    review.data.repository.pullRequest.reviewThreads.pageInfo = { hasNextPage: false, endCursor: null };
 	    review.data.repository.pullRequest.reviewThreads.nodes = [];
 	  } else {

@@ -15,6 +15,23 @@ afterEach(async () => {
 });
 
 describe("review API — paginated snapshots", () => {
+	it("keeps loading when the draft summary changes between thread pages", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, {
+			secondReviewPagePendingReviewBody: "Updated draft summary",
+		});
+		const runId = harness.insertRun();
+
+		const response = await harness.request(
+			await harness.start(),
+			"GET",
+			`/api/runs/${runId}/review`,
+		);
+		const review = ReviewResponseSchema.parse(JSON.parse(response.body));
+
+		expect(review.github).toBe("available");
+		expect(review.pendingReviewBody).toBe("Updated draft summary");
+	});
+
 	it("rejects thread pages fetched from different pull request heads", async () => {
 		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 		await harness.writeGhShim(REVIEW_QUERY_RESULT, {

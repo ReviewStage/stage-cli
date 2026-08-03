@@ -335,11 +335,11 @@ export async function getReview(
 			pr.state !== state ||
 			pr.viewerDidAuthor !== viewerDidAuthor ||
 			pagePendingReviewNodeId !== pendingReviewNodeId ||
-			pagePendingReviewCommitOid !== pendingReviewCommitOid ||
-			pagePendingReviewBody !== pendingReviewBody
+			pagePendingReviewCommitOid !== pendingReviewCommitOid
 		) {
 			throw new Error("Pull request changed while GitHub review pages were loading");
 		}
+		pendingReviewBody = pagePendingReviewBody;
 
 		const nodesWithComments = await loadThreadCommentsInBatches(repoRoot, pr.reviewThreads.nodes);
 		for (const { node, comments } of nodesWithComments) {
