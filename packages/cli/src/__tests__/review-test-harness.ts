@@ -652,7 +652,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   args.includes("--method") &&
   args.some((arg) => arg.includes("/pulls/") && arg.endsWith("/comments"))
 ) {
-  fs.appendFileSync(log, "create-immediate-comment " + fields + "\\n");
+  fs.appendFileSync(log, "create-immediate-comment " + fields.replaceAll("\\n", "\\\\n") + "\\n");
   emit({ id: 123, node_id: "COMMENT_immediate" });
 } else if (query.includes("query GetReviewThreadComments")) {
   fs.appendFileSync(log, "get-thread-comments\\n");

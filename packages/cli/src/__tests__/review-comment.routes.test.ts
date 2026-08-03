@@ -1,3 +1,4 @@
+import type { GitHubCommentCreateBody } from "@stagereview/types/review";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { commentThread } from "../db/schema/index.js";
 import {
@@ -9,6 +10,20 @@ import {
 } from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
+const CREATION_ID = "00000000-0000-4000-8000-000000000001";
+
+function commentInput(overrides: Partial<GitHubCommentCreateBody> = {}): GitHubCommentCreateBody {
+	return {
+		creationId: CREATION_ID,
+		filePath: "src/foo.ts",
+		side: "additions",
+		startLine: 3,
+		endLine: 3,
+		body: "On the PR",
+		pending: true,
+		...overrides,
+	};
+}
 
 beforeEach(async () => {
 	harness = new ReviewRouteHarness();
@@ -27,7 +42,7 @@ describe("review API — create comment", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/comment`,
-			{ filePath: "src/foo.ts", side: "additions", startLine: 3, endLine: 3, body: "On the PR" },
+			commentInput(),
 		);
 
 		expect(res.status).toBe(200);
@@ -44,7 +59,7 @@ describe("review API — create comment", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/comment`,
-			{ filePath: "src/foo.ts", side: "additions", startLine: 3, endLine: 3, body: marker },
+			commentInput({ body: marker }),
 		);
 
 		expect(res.status, res.body).toBe(200);
@@ -60,14 +75,7 @@ describe("review API — create comment", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/comment`,
-			{
-				filePath: "src/foo.ts",
-				side: "additions",
-				startLine: 2,
-				endLine: 3,
-				body: "Publish now",
-				pending: false,
-			},
+			commentInput({ startLine: 2, body: "Publish now", pending: false }),
 		);
 
 		expect(res.status, res.body).toBe(200);
@@ -91,13 +99,7 @@ describe("review API — create comment", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/comment`,
-			{
-				filePath: "src/foo.ts",
-				side: "additions",
-				startLine: 3,
-				endLine: 3,
-				body: "Join the existing review",
-			},
+			commentInput({ body: "Join the existing review" }),
 		);
 
 		expect(res.status, res.body).toBe(200);
@@ -114,14 +116,7 @@ describe("review API — create comment", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/comment`,
-			{
-				filePath: "src/foo.ts",
-				side: "additions",
-				startLine: 3,
-				endLine: 3,
-				body: "Refresh before deciding",
-				pending: false,
-			},
+			commentInput({ body: "Refresh before deciding", pending: false }),
 		);
 
 		expect(res.status).toBe(409);
@@ -138,7 +133,7 @@ describe("review API — create comment", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/comment`,
-			{ filePath: "src/foo.ts", side: "additions", startLine: 3, endLine: 3, body: "On the PR" },
+			commentInput(),
 		);
 
 		expect(res.status).toBe(409);
@@ -152,7 +147,7 @@ describe("review API — create comment", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/comment`,
-			{ filePath: "src/foo.ts", side: "additions", startLine: 3, endLine: 3, body: "On the PR" },
+			commentInput(),
 		);
 
 		expect(res.status).toBe(409);
@@ -166,7 +161,7 @@ describe("review API — create comment", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/comment`,
-			{ filePath: "src/foo.ts", side: "additions", startLine: 4, endLine: 3, body: "Bad range" },
+			commentInput({ startLine: 4, body: "Bad range" }),
 		);
 
 		expect(res.status).toBe(400);

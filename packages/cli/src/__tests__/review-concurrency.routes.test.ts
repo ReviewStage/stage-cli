@@ -37,8 +37,14 @@ describe("review API — concurrency", () => {
 		};
 
 		const responses = await Promise.all([
-			harness.request(port, "POST", `/api/runs/${runId}/review/comment`, body),
-			harness.request(port, "POST", `/api/runs/${runId}/review/comment`, body),
+			harness.request(port, "POST", `/api/runs/${runId}/review/comment`, {
+				...body,
+				creationId: "00000000-0000-4000-8000-000000000001",
+			}),
+			harness.request(port, "POST", `/api/runs/${runId}/review/comment`, {
+				...body,
+				creationId: "00000000-0000-4000-8000-000000000002",
+			}),
 		]);
 
 		expect(responses.map((res) => res.status)).toEqual([200, 200]);

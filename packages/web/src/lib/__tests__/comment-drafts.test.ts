@@ -29,7 +29,7 @@ function makeThread(
 }
 
 function draftState(side: CommentDraft["side"], startLine: number, endLine: number): DraftState {
-	return { side, startLine, endLine, error: null };
+	return { side, startLine, endLine, creationId: `draft-${side}-${endLine}`, error: null };
 }
 
 function rowFor(
@@ -106,6 +106,7 @@ describe("upsertDraft", () => {
 		const result = upsertDraft([existing], draftState("additions", 7, 10));
 		expect(result).toHaveLength(1);
 		expect(result[0]?.startLine).toBe(7);
+		expect(result[0]?.creationId).toBe(existing.creationId);
 		// A re-drag clears any stale submit error.
 		expect(result[0]?.error).toBeNull();
 	});

@@ -145,6 +145,7 @@ export const AddToReviewBodySchema = z.object({
 export type AddToReviewBody = z.infer<typeof AddToReviewBodySchema>;
 
 export const GitHubCommentCreateBodySchema = CreateCommentThreadBodySchema.safeExtend({
+	creationId: z.string().uuid(),
 	pending: z.boolean().default(true),
 });
 export type GitHubCommentCreateBody = z.infer<typeof GitHubCommentCreateBodySchema>;

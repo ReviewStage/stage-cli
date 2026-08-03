@@ -255,7 +255,7 @@ export function PierreDiffViewer({
 			};
 			try {
 				if (isLocal) await createLocalThread(anchor);
-				else await createGitHubComment({ ...anchor, pending });
+				else await createGitHubComment({ ...anchor, creationId: draft.creationId, pending });
 				closeDraft(draft);
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Failed to add comment");

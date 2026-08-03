@@ -1134,6 +1134,7 @@ function compactPromotionReplyNodeIds(ids: (string | null)[]): (string | null)[]
 }
 
 export interface GitHubCommentAnchor {
+	creationId: string;
 	filePath: string;
 	side: DiffSide;
 	startLine: number;
@@ -1153,6 +1154,16 @@ export async function addGitHubComment(
 ): Promise<void> {
 	await withLockedReviewTarget(run, async (target) => {
 		const { repo, prNumber, review } = target;
+		const markedBody = directCommentBody(anchor.body, anchor.creationId);
+		const recovered = findDirectComment(review, anchor.creationId);
+		if (recovered !== null) {
+			const root = recovered.comments[0];
+			if (!root) throw new Error("Recovered GitHub thread has no root comment");
+			if (root.body !== markedBody) {
+				await updateReviewComment(run.repoRoot, root.nodeId, markedBody);
+			}
+			return;
+		}
 		if (anchor.pending) assertGitHubWritable(run, review);
 		else {
 			assertGitHubWritable(run, review);
@@ -1169,7 +1180,7 @@ export async function addGitHubComment(
 			await addImmediateReviewComment(run.repoRoot, repo, prNumber, {
 				commitOid: review.headRefOid,
 				path: anchor.filePath,
-				body: anchor.body,
+				body: markedBody,
 				line: anchor.endLine,
 				side,
 				startLine,
@@ -1182,7 +1193,7 @@ export async function addGitHubComment(
 				pullRequestNodeId: review.pullRequestNodeId,
 				reviewNodeId,
 				path: anchor.filePath,
-				body: anchor.body,
+				body: markedBody,
 				line: anchor.endLine,
 				side,
 				startLine,
@@ -1190,6 +1201,26 @@ export async function addGitHubComment(
 			}),
 		);
 	});
+}
+
+function directCommentMarker(creationId: string): string {
+	return `<!-- stagereview-direct-comment ${JSON.stringify(creationId)} -->`;
+}
+
+function directCommentBody(body: string, creationId: string): string {
+	return `${body}\n\n${directCommentMarker(creationId)}`;
+}
+
+function findDirectComment(review: GitHubReview, creationId: string): GitHubApiReviewThread | null {
+	const marker = directCommentMarker(creationId);
+	const matches = review.threads.filter((thread) => {
+		const root = thread.comments[0];
+		return root?.authorLogin === review.viewerLogin && root.body.includes(marker);
+	});
+	if (matches.length > 1) {
+		throw new ReviewError("More than one GitHub thread matches this comment creation.", 409);
+	}
+	return matches[0] ?? null;
 }
 
 /** Reply to a GitHub thread, adding to the viewer's pending review (or as a single comment). */
