@@ -48,7 +48,7 @@ import type { ReviewThread as CommentThread } from "@/lib/use-review";
 import { toSingleSideSelection, useTextSelection } from "@/lib/use-text-selection";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
 import { TextSelectionPopup } from "./text-selection-popup";
-import { getThreadHoverRange } from "./thread-hover-range";
+import { useThreadHover } from "./use-thread-hover";
 
 type AppTheme = "light" | "dark";
 
@@ -216,11 +216,14 @@ export function PierreDiffViewer({
 	const draftBodiesRef = useRef<DraftBodies>(new Map());
 	const { selectionInfo, clearSelection } = useTextSelection(diffContainerRef);
 
-	// Hovering a thread highlights its anchored lines. Highlighting sets Pierre's
-	// `selectedLines`, which makes Pierre fire `onLineSelected` — the ref lets us
-	// tell that apart from a genuine drag so a hover doesn't open the composer.
-	const [hoverLines, setHoverLines] = useState<SelectedLineRange | null>(null);
-	const isHoveringRef = useRef(false);
+	// Hovering a thread highlights its anchored lines. The hook also clears the
+	// synthetic selection if a mutation removes the hovered thread before mouseleave.
+	const {
+		enter: handleThreadMouseEnter,
+		hoverLines,
+		isHovering,
+		leave: handleThreadMouseLeave,
+	} = useThreadHover(fileThreads);
 
 	const lineAnnotations = useMemo(
 		() => buildCommentAnnotations(fileThreads, drafts),
@@ -265,16 +268,6 @@ export function PierreDiffViewer({
 		[filePath, createLocalThread, createGitHubComment, closeDraft],
 	);
 
-	const handleThreadMouseEnter = useCallback((thread: CommentThread) => {
-		isHoveringRef.current = true;
-		setHoverLines(getThreadHoverRange(thread));
-	}, []);
-
-	const handleThreadMouseLeave = useCallback(() => {
-		isHoveringRef.current = false;
-		setHoverLines(null);
-	}, []);
-
 	const renderAnnotation = useCallback(
 		(annotation: DiffLineAnnotation<CommentThread[]>): ReactNode => {
 			const threads = annotation.metadata ?? [];
@@ -301,7 +294,7 @@ export function PierreDiffViewer({
 						<div
 							key={thread.id}
 							onMouseEnter={() => handleThreadMouseEnter(thread)}
-							onMouseLeave={handleThreadMouseLeave}
+							onMouseLeave={() => handleThreadMouseLeave(thread.id)}
 						>
 							<ReviewThreadView
 								model={{
@@ -418,13 +411,13 @@ export function PierreDiffViewer({
 	const handleLineSelected = useCallback(
 		(range: SelectedLineRange | null) => {
 			// Bail only while hovering a thread, whose highlight also fires onLineSelected.
-			if (isHoveringRef.current || !range) return;
+			if (isHovering() || !range) return;
 			// A thread anchors to one side, so cross-side gutter drags are ignored.
 			const selection = toSingleSideSelection(range);
 			if (!selection) return;
 			openDraft(selection);
 		},
-		[openDraft],
+		[openDraft, isHovering],
 	);
 
 	const options = useMemo(
