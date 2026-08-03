@@ -37,6 +37,7 @@ import {
 	type AnnotatedLineRef,
 	COMMENT_SIDE,
 	DIFF_SIDE,
+	type DiffSide,
 	type LineRef,
 	SIDE_TO_DIFF,
 } from "@/lib/diff-types";
@@ -318,7 +319,7 @@ export function PierreDiffViewer({
 						<CommentForm
 							key={`draft-${draft.side}-${draft.endLine}`}
 							label="Comment"
-							allowsSuggestedChanges
+							allowsSuggestedChanges={canSuggestChanges(draft.side)}
 							placeholder="Leave a comment…"
 							error={draft.error}
 							initialBody={readDraftBody(draftBodiesRef.current, draft.side, draft.endLine)}
@@ -559,6 +560,11 @@ export function isGitHubReviewAnchor(hunks: Hunk[], anchor: CommentDraft): boole
 	const startHunk = findContainingHunk(hunks, anchor.startLine, anchor.side);
 	if (!startHunk) return false;
 	return findContainingHunk(hunks, anchor.endLine, anchor.side) === startHunk;
+}
+
+/** GitHub suggestions can only target the head/right side of a diff. */
+export function canSuggestChanges(side: DiffSide): boolean {
+	return side === DIFF_SIDE.ADDITIONS;
 }
 
 /**
