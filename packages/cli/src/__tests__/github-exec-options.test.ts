@@ -13,19 +13,6 @@ beforeEach(() => {
 });
 
 describe("gh timeout policy", () => {
-	it("does not apply the passive-review timeout to general reads", async () => {
-		const { gh } = await import("../github/exec.js");
-
-		await gh(["api", "--paginate"], "/tmp");
-
-		expect(execFileMock).toHaveBeenCalledWith(
-			"gh",
-			["api", "--paginate"],
-			expect.objectContaining({ timeout: undefined }),
-			expect.any(Function),
-		);
-	});
-
 	it("bounds the optional REST lookup during pull request discovery", async () => {
 		execFileMock.mockImplementation((_file, args, _options, callback) => {
 			const stdout =

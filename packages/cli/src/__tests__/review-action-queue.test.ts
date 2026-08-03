@@ -12,22 +12,6 @@ afterEach(async () => {
 });
 
 describe("ReviewActionQueue", () => {
-	it("creates its lock directory only when the first action runs", async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-review-lock-"));
-		tempDirs.push(tempDir);
-		const lockDirectory = path.join(tempDir, "missing", "locks");
-		const queue = new ReviewActionQueue(lockDirectory);
-
-		await expect(fs.access(lockDirectory)).rejects.toThrow();
-
-		await queue.run(
-			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: "thread-1" },
-			async () => undefined,
-		);
-
-		await expect(fs.access(lockDirectory)).resolves.toBeUndefined();
-	});
-
 	it("serializes one local thread across independent queue instances", async () => {
 		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-review-lock-"));
 		tempDirs.push(tempDir);

@@ -556,7 +556,7 @@ export function isGitHubReviewAnchor(hunks: Hunk[], anchor: CommentDraft): boole
 }
 
 /** GitHub suggestions can only target the head/right side of a diff. */
-export function canSuggestChanges(side: DiffSide): boolean {
+function canSuggestChanges(side: DiffSide): boolean {
 	return side === DIFF_SIDE.ADDITIONS;
 }
 

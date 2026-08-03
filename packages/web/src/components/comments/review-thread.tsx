@@ -85,10 +85,6 @@ function StateBadge({ state }: { state: ReviewComment["state"] }) {
 	return null;
 }
 
-export function threadChevronClassName(isOpen: boolean): string {
-	return cn("size-3.5 transition-transform duration-200", isOpen && "rotate-90");
-}
-
 export function canPublishReplyImmediately(thread: ReviewThread): boolean {
 	return thread.comments.some((comment) => comment.state === COMMENT_STATE.SUBMITTED);
 }
@@ -119,10 +115,6 @@ export function canAddLocalThreadToReview(
 	);
 }
 
-export function activeReplyingState(isReplying: boolean, canReply: boolean): boolean {
-	return isReplying && canReply;
-}
-
 export function deleteRemovesReplies(thread: ReviewThread, comment: ReviewComment): boolean {
 	return thread.comments.length > 1 && thread.comments[0]?.id === comment.id;
 }
@@ -147,7 +139,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 
 	const activeEditingId = activeEditingCommentId(thread.comments, editingId, canWriteToGitHub);
 	const canReply = !isGitHub || canReplyToGitHubThread(thread, canWriteToGitHub);
-	const activeIsReplying = activeReplyingState(isReplying, canReply);
+	const activeIsReplying = isReplying && canReply;
 	useEffect(() => {
 		if (editingId !== null && activeEditingId === null) {
 			setEditingId(null);
@@ -268,7 +260,12 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 								aria-label={isOpen ? "Collapse thread" : "Expand thread"}
 								className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 							>
-								<ChevronRight className={threadChevronClassName(isOpen)} />
+								<ChevronRight
+									className={cn(
+										"size-3.5 transition-transform duration-200",
+										isOpen && "rotate-90",
+									)}
+								/>
 							</CollapsibleTrigger>
 						</TooltipTrigger>
 						<TooltipContent>{isOpen ? "Collapse thread" : "Expand thread"}</TooltipContent>

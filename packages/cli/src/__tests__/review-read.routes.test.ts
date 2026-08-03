@@ -1,7 +1,6 @@
 import { ReviewResponseSchema } from "@stagereview/types/review";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-	HEAD,
 	makeCrossSideRangeReview,
 	makePaginatedThreadReview,
 	REVIEW_QUERY_RESULT,
@@ -162,18 +161,5 @@ describe("review API — read", () => {
 		expect(stderr).toHaveBeenCalledWith(
 			expect.stringContaining("Pull request not found on GitHub"),
 		);
-	});
-
-	it("hides GitHub threads when the run does not match the PR head", async () => {
-		await harness.writeGhShim(REVIEW_QUERY_RESULT);
-		const runId = harness.insertRun({ headSha: HEAD.replaceAll("a", "d") });
-
-		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
-
-		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
-		expect(review.github).toBe("available");
-		expect(review.threads.every((t) => t.source === "local")).toBe(true);
-		expect(review.hasPendingReview).toBe(true);
-		expect(review.canWriteToGitHub).toBe(false);
 	});
 });

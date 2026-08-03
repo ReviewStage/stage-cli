@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canSuggestChanges, getSingularPatch, isGitHubReviewAnchor } from "../pierre-diff-viewer";
+import { getSingularPatch, isGitHubReviewAnchor } from "../pierre-diff-viewer";
 
 const DIFF = getSingularPatch(`diff --git a/src/file.ts b/src/file.ts
 index 1111111..2222222 100644
@@ -18,11 +18,6 @@ index 1111111..2222222 100644
 `);
 
 describe("GitHub review anchor eligibility", () => {
-	it("offers suggestions only on the head side", () => {
-		expect(canSuggestChanges("additions")).toBe(true);
-		expect(canSuggestChanges("deletions")).toBe(false);
-	});
-
 	it("accepts a line inside one diff hunk", () => {
 		expect(
 			isGitHubReviewAnchor(DIFF.hunks, {

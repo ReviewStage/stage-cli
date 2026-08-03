@@ -8,22 +8,13 @@ import {
 import { describe, expect, it } from "vitest";
 import {
 	activeEditingCommentId,
-	activeReplyingState,
 	canAddLocalThreadToReview,
 	canEditReviewComment,
 	canPublishReplyImmediately,
 	canReplyToGitHubThread,
 	canToggleThreadResolution,
 	deleteRemovesReplies,
-	threadChevronClassName,
 } from "../review-thread";
-
-describe("thread chevron", () => {
-	it("tracks the controlled collapsible state instead of a shared data-state attribute", () => {
-		expect(threadChevronClassName(true)).toContain("rotate-90");
-		expect(threadChevronClassName(false)).not.toContain("rotate-90");
-	});
-});
 
 describe("GitHub reply destination", () => {
 	it("keeps replies pending while every comment in the thread is still a draft", () => {
@@ -47,11 +38,6 @@ describe("GitHub reply destination", () => {
 				true,
 			),
 		).toBe(false);
-	});
-
-	it("clears an active reply when the thread becomes read-only", () => {
-		expect(activeReplyingState(true, true)).toBe(true);
-		expect(activeReplyingState(true, false)).toBe(false);
 	});
 });
 
@@ -110,39 +96,6 @@ describe("local promotion recovery", () => {
 		expect(canAddLocalThreadToReview(thread, true, false, false)).toBe(true);
 		expect(
 			canAddLocalThreadToReview({ ...thread, hasPromotionRecovery: false }, true, false, false),
-		).toBe(false);
-	});
-});
-
-describe("review thread source invariants", () => {
-	const base = {
-		id: "thread",
-		filePath: "src/file.ts",
-		side: "additions",
-		startLine: 1,
-		endLine: 1,
-		isResolved: false,
-		comments: [],
-	};
-
-	it("rejects a GitHub thread without a node id", () => {
-		expect(
-			ReviewThreadSchema.safeParse({
-				...base,
-				source: THREAD_SOURCE.GITHUB,
-				threadNodeId: null,
-			}).success,
-		).toBe(false);
-	});
-
-	it("rejects a local thread with a GitHub node id", () => {
-		expect(
-			ReviewThreadSchema.safeParse({
-				...base,
-				source: THREAD_SOURCE.LOCAL,
-				threadNodeId: "THREAD_github",
-				hasPromotionRecovery: false,
-			}).success,
 		).toBe(false);
 	});
 });

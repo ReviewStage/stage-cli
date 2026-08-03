@@ -48,7 +48,6 @@ describe("server lifecycle", () => {
 		const [a, b] = await Promise.all([start(), start()]);
 
 		expect(a.port).not.toBe(b.port);
-		expect(Math.abs(a.port - b.port)).toBeGreaterThanOrEqual(1);
 	});
 
 	it("stops accepting new connections after close", async () => {
