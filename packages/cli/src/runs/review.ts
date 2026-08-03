@@ -1177,6 +1177,7 @@ export async function addGitHubComment(
 			const root = recovered.comments[0];
 			if (!root) throw new Error("Recovered GitHub thread has no root comment");
 			if (root.body !== markedBody) {
+				assertGitHubWritable(run, review);
 				await updateReviewComment(run.repoRoot, root.nodeId, markedBody);
 			}
 			return;

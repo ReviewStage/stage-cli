@@ -534,6 +534,7 @@ interface GhShimOptions {
 	failAddThreadAfterWrite?: boolean;
 	anchorlessCreatedThreadBeforeFailure?: boolean;
 	createdThreadHeadRefOidBeforeFailure?: string;
+	createdThreadPullRequestStateBeforeFailure?: "OPEN" | "CLOSED" | "MERGED";
 	replaceCreatedThreadBodyBeforeFailure?: boolean;
 	addConcurrentPendingCommentOnThreadFailure?: boolean;
 	addConcurrentPendingReplyOnResolveFailure?: boolean;
@@ -762,6 +763,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 	  if (${options.anchorlessCreatedThreadBeforeFailure ? "true" : "false"}) createdThread.line = null;
 	  review.data.repository.pullRequest.reviewThreads.nodes.push(createdThread);
 	  if (${options.createdThreadHeadRefOidBeforeFailure ? "true" : "false"}) review.data.repository.pullRequest.headRefOid = ${JSON.stringify(options.createdThreadHeadRefOidBeforeFailure ?? HEAD)};
+	  if (${options.createdThreadPullRequestStateBeforeFailure ? "true" : "false"}) review.data.repository.pullRequest.state = ${JSON.stringify(options.createdThreadPullRequestStateBeforeFailure ?? "OPEN")};
 	  fs.writeFileSync(reviewPath, JSON.stringify(review));
 	  if (${options.failAddThreadAfterWrite ? "true" : "false"}) {
 	    process.stderr.write("gh: connection closed after mutation\\n");
