@@ -5,7 +5,7 @@ import type { LocalReviewThread, ReviewResponse } from "@stagereview/types/revie
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { reviewQueryKey, useReview } from "../use-review";
-import { makeWrapper } from "./fixtures";
+import { jsonResponse, makeWrapper } from "./fixtures";
 
 const localThread = (id: string): CommentThread => ({
 	id: `THREAD_${id}`,
@@ -171,10 +171,3 @@ describe("useReview reconciliation", () => {
 		expect(result.current.threads.map((thread) => thread.id)).toEqual(["THREAD_second"]);
 	});
 });
-
-function jsonResponse(body: unknown): Response {
-	return new Response(JSON.stringify(body), {
-		status: 200,
-		headers: { "Content-Type": "application/json" },
-	});
-}

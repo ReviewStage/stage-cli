@@ -4,7 +4,7 @@ import type { ReviewResponse, ReviewThread } from "@stagereview/types/review";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { reviewQueryKey, useReview } from "../use-review";
-import { makeWrapper } from "./fixtures";
+import { jsonResponse, makeWrapper } from "./fixtures";
 
 const GITHUB_THREAD: ReviewThread = {
 	id: "THREAD_github",
@@ -131,10 +131,3 @@ describe("useReview offline cache", () => {
 		expect(result.current.pendingCommentCount).toBe(0);
 	});
 });
-
-function jsonResponse(body: unknown): Response {
-	return new Response(JSON.stringify(body), {
-		status: 200,
-		headers: { "Content-Type": "application/json" },
-	});
-}

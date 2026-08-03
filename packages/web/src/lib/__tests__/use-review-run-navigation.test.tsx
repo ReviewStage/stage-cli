@@ -5,7 +5,7 @@ import type { ReviewResponse } from "@stagereview/types/review";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { reviewQueryKey, useReview } from "../use-review";
-import { makeWrapper } from "./fixtures";
+import { jsonResponse, makeWrapper } from "./fixtures";
 
 const CREATED_THREAD: CommentThread = {
 	id: "THREAD_first",
@@ -96,10 +96,3 @@ describe("useReview run navigation", () => {
 		expect(runACache?.review.threads.map((thread) => thread.id)).toEqual(["THREAD_first"]);
 	});
 });
-
-function jsonResponse(body: unknown): Response {
-	return new Response(JSON.stringify(body), {
-		status: 200,
-		headers: { "Content-Type": "application/json" },
-	});
-}

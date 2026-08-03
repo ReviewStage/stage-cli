@@ -1,4 +1,4 @@
-// Shared fetch + QueryClient fixtures for useViewState tests. Lives in
+// Shared fetch + QueryClient fixtures for the lib hook tests. Lives in
 // __tests__/ as a sibling of the test files so the cross-file scope rule
 // (per-file mock budget) stays obvious.
 
@@ -155,6 +155,13 @@ export function installFetch(script: FetchScript): void {
 	};
 
 	vi.stubGlobal("fetch", vi.fn(fakeFetch));
+}
+
+export function jsonResponse(body: unknown): Response {
+	return new Response(JSON.stringify(body), {
+		status: 200,
+		headers: { "Content-Type": "application/json" },
+	});
 }
 
 export function makeWrapper(): {

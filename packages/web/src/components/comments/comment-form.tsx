@@ -111,34 +111,20 @@ export function CommentForm({
 				<div className="mt-2 flex items-center justify-between gap-2">
 					<div className="flex items-center gap-3">
 						{controls?.local && (
-							<label
-								htmlFor={localId}
-								className="flex cursor-pointer select-none items-center gap-1.5 has-[:disabled]:cursor-not-allowed"
-							>
-								<Checkbox
-									id={localId}
-									checked={controls.local.checked}
-									onCheckedChange={(checked) => controls.local?.onCheckedChange?.(checked === true)}
-									disabled={isSubmitting || controls.local.disabled}
-								/>
-								<span className="text-muted-foreground text-xs">Local</span>
-							</label>
+							<FormCheckbox
+								id={localId}
+								label="Local"
+								control={controls.local}
+								disabled={isSubmitting}
+							/>
 						)}
 						{controls?.startReview && (
-							<label
-								htmlFor={startReviewId}
-								className="flex cursor-pointer select-none items-center gap-1.5 has-[:disabled]:cursor-not-allowed"
-							>
-								<Checkbox
-									id={startReviewId}
-									checked={controls.startReview.checked}
-									onCheckedChange={(checked) =>
-										controls.startReview?.onCheckedChange?.(checked === true)
-									}
-									disabled={isSubmitting || controls.startReview.disabled}
-								/>
-								<span className="text-muted-foreground text-xs">Start a review</span>
-							</label>
+							<FormCheckbox
+								id={startReviewId}
+								label="Start a review"
+								control={controls.startReview}
+								disabled={isSubmitting}
+							/>
 						)}
 					</div>
 					<div className="flex items-center gap-2">
@@ -157,5 +143,32 @@ export function CommentForm({
 				</div>
 			</CommentMarkdownEditor>
 		</div>
+	);
+}
+
+function FormCheckbox({
+	id,
+	label,
+	control,
+	disabled,
+}: {
+	id: string;
+	label: string;
+	control: CheckboxControl;
+	disabled: boolean;
+}) {
+	return (
+		<label
+			htmlFor={id}
+			className="flex cursor-pointer select-none items-center gap-1.5 has-[:disabled]:cursor-not-allowed"
+		>
+			<Checkbox
+				id={id}
+				checked={control.checked}
+				onCheckedChange={(checked) => control.onCheckedChange?.(checked === true)}
+				disabled={disabled || control.disabled}
+			/>
+			<span className="text-muted-foreground text-xs">{label}</span>
+		</label>
 	);
 }

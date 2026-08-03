@@ -177,10 +177,6 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 	const idle = !activeIsReplying && activeEditingId === null;
 	const publishesImmediately = isGitHub && canPublishReplyImmediately(thread);
 
-	function setOpenError(message: string | null) {
-		setError(message);
-	}
-
 	async function handleResolveToggle() {
 		const next = !thread.isResolved;
 		const wasOpen = isOpen;
@@ -204,7 +200,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 	}
 
 	async function submitReply(body: string, startReview: boolean, creationId: string) {
-		setOpenError(null);
+		setError(null);
 		try {
 			if (thread.source === THREAD_SOURCE.GITHUB) {
 				// Published threads may choose pending vs immediate; draft-only threads
@@ -220,13 +216,13 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 			}
 			setIsReplying(false);
 		} catch (err) {
-			setOpenError(errorMessage(err, "Failed to add reply"));
+			setError(errorMessage(err, "Failed to add reply"));
 			throw err;
 		}
 	}
 
 	async function submitEdit(comment: ReviewComment, body: string) {
-		setOpenError(null);
+		setError(null);
 		try {
 			if (comment.state === COMMENT_STATE.LOCAL) {
 				await review.editLocalComment({ commentId: comment.id, body });
@@ -235,7 +231,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 			}
 			setEditingId(null);
 		} catch (err) {
-			setOpenError(errorMessage(err, "Failed to update comment"));
+			setError(errorMessage(err, "Failed to update comment"));
 			throw err;
 		}
 	}
@@ -331,7 +327,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 											className="rounded-md text-muted-foreground"
 											onClick={() => {
 												setIsOpen(true);
-												setOpenError(null);
+												setError(null);
 												setIsReplying(true);
 											}}
 										>
@@ -345,7 +341,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 								<CommentActions
 									onEdit={() => {
 										setIsOpen(true);
-										setOpenError(null);
+										setError(null);
 										setEditingId(root.id);
 									}}
 									onDelete={() => setDeleteTarget(root)}
@@ -366,7 +362,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 							onSubmit={(b) => submitEdit(root, b)}
 							onCancel={() => {
 								setEditingId(null);
-								setOpenError(null);
+								setError(null);
 							}}
 						/>
 					) : (
@@ -383,12 +379,12 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 									isEditing={activeEditingId === reply.id}
 									error={activeEditingId === reply.id ? error : null}
 									onEdit={() => {
-										setOpenError(null);
+										setError(null);
 										setEditingId(reply.id);
 									}}
 									onCancelEdit={() => {
 										setEditingId(null);
-										setOpenError(null);
+										setError(null);
 									}}
 									onSubmitEdit={(b) => submitEdit(reply, b)}
 									onDelete={() => setDeleteTarget(reply)}
@@ -408,7 +404,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 							onSubmit={submitReply}
 							onCancel={() => {
 								setIsReplying(false);
-								setOpenError(null);
+								setError(null);
 							}}
 						/>
 					)}

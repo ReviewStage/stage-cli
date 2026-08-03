@@ -15,7 +15,6 @@ import {
 	type LocalReviewComment,
 	type LocalReviewThread,
 	type PendingReviewComment,
-	type ReviewEvent,
 	type ReviewResponse,
 	ReviewResponseSchema,
 	type ReviewThread,
@@ -24,9 +23,10 @@ import {
 } from "@stagereview/types/review";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
+import { invalidatePullRequestQueries } from "./pull-request-mutations";
 import { jsonFetch } from "./use-view-state";
 
-export type { CreateCommentThreadBody, GitHubReviewStatus, ReviewEvent, ReviewThread };
+export type { ReviewThread };
 export { GITHUB_REVIEW_STATUS };
 
 const REVIEW_ROOT = "review";
@@ -101,7 +101,6 @@ export interface UseReviewResult {
 	isOwnPullRequest: boolean;
 	canPushToReview: boolean;
 	canWriteToGitHub: boolean;
-	isLoading: boolean;
 	error: unknown;
 	// Local comments (CLI-only, work offline).
 	createLocalThread: (input: CreateCommentThreadBody) => Promise<unknown>;
@@ -139,11 +138,7 @@ export function useReview(runId: string): UseReviewResult {
 	const localRefreshGeneration = useRef(0);
 	const reviewRequestGeneration = useRef(0);
 
-	const {
-		data: queryData,
-		isLoading,
-		error,
-	} = useQuery<ReviewQueryData>({
+	const { data: queryData, error } = useQuery<ReviewQueryData>({
 		queryKey,
 		queryFn: async () => {
 			const generation = ++reviewRequestGeneration.current;
@@ -245,10 +240,7 @@ export function useReview(runId: string): UseReviewResult {
 	const invalidateGitHub = async (origin: ReviewMutationOrigin) => {
 		await Promise.all([
 			queryClient.invalidateQueries({ queryKey: origin.queryKey }),
-			queryClient.invalidateQueries({ queryKey: ["pull-request", origin.runId] }),
-			queryClient.invalidateQueries({ queryKey: ["pull-request-reviews", origin.runId] }),
-			queryClient.invalidateQueries({ queryKey: ["pull-request-merge-status", origin.runId] }),
-			queryClient.invalidateQueries({ queryKey: ["pull-request-checks", origin.runId] }),
+			invalidatePullRequestQueries(queryClient, origin.runId),
 		]);
 	};
 
@@ -407,7 +399,6 @@ export function useReview(runId: string): UseReviewResult {
 		isOwnPullRequest: data?.isOwnPullRequest ?? false,
 		canPushToReview: data?.canPushToReview ?? false,
 		canWriteToGitHub: data?.canWriteToGitHub ?? false,
-		isLoading,
 		error,
 		createLocalThread: m.createLocalThread.mutateAsync,
 		createGitHubComment: async (i) => void (await m.createGitHubComment.mutateAsync(i)),
