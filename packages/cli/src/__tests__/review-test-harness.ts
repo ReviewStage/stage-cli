@@ -599,7 +599,9 @@ fs.appendFileSync(argvLog, JSON.stringify(args) + "\\n");
 function emit(o) { process.stdout.write(JSON.stringify(o)); }
 function sleep(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 if (args.some((arg) => arg.includes("/compare/"))) {
-  emit({ merge_base_commit: { sha: ${JSON.stringify(options.mergeBaseOid ?? MERGE_BASE)} } });
+  const mergeBaseOid = ${JSON.stringify(options.mergeBaseOid ?? MERGE_BASE)};
+  if (args.includes("--jq")) process.stdout.write(mergeBaseOid + "\\n");
+  else emit({ merge_base_commit: { sha: mergeBaseOid } });
 } else if (args[0] === "pr" && args[1] === "view") {
   if (${options.noPullRequest ? "true" : "false"}) {
     process.stderr.write("no pull requests found for branch \\"feature\\"\\n");

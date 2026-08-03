@@ -514,9 +514,7 @@ export async function getPromotionThreadState(
 	};
 }
 
-const CompareSchema = z.object({
-	merge_base_commit: z.object({ sha: z.string() }),
-});
+const MergeBaseOidSchema = z.string().min(1);
 
 async function getPullRequestMergeBase(
 	repoRoot: string,
@@ -525,10 +523,15 @@ async function getPullRequestMergeBase(
 	headRefOid: string,
 ): Promise<string> {
 	const stdout = await ghReadOrThrow(
-		["api", `repos/${repo.owner}/${repo.repo}/compare/${baseRefOid}...${headRefOid}`],
+		[
+			"api",
+			`repos/${repo.owner}/${repo.repo}/compare/${baseRefOid}...${headRefOid}`,
+			"--jq",
+			".merge_base_commit.sha",
+		],
 		repoRoot,
 	);
-	return CompareSchema.parse(JSON.parse(stdout)).merge_base_commit.sha;
+	return MergeBaseOidSchema.parse(stdout.trim());
 }
 
 async function loadThreadCommentsInBatches(

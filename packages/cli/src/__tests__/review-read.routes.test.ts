@@ -68,6 +68,19 @@ describe("review API — read", () => {
 		]);
 	});
 
+	it("filters the compare response to the merge base before buffering it", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT);
+		const runId = harness.insertRun();
+
+		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
+
+		expect(res.status).toBe(200);
+		const compareCall = (await harness.ghArgvCalls()).find((args) =>
+			args.some((arg) => arg.includes("/compare/")),
+		);
+		expect(compareCall).toEqual(expect.arrayContaining(["--jq", ".merge_base_commit.sha"]));
+	});
+
 	it("preserves both sides of a mixed-side GitHub range", async () => {
 		await harness.writeGhShim(makeCrossSideRangeReview());
 		const runId = harness.insertRun();
