@@ -84,6 +84,7 @@ export class ReviewActionQueue {
 			retries: LOCK_RETRIES,
 			onCompromised: (error) => {
 				compromisedError = error;
+				process.stderr.write(`Review action lock compromised: ${error.message}\n`);
 			},
 		});
 		const actionResult = await Promise.resolve()
@@ -101,7 +102,6 @@ export class ReviewActionQueue {
 			if (compromisedError === null || errorCode(error) !== "ERELEASED") throw error;
 		}
 		if (actionResult.status === "rejected") throw actionResult.error;
-		if (compromisedError !== null) throw compromisedError;
 		return actionResult.value;
 	}
 }

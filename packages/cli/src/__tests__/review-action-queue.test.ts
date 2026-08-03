@@ -1,12 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { REVIEW_ACTION_SCOPE, ReviewActionQueue } from "../runs/review-action-queue.js";
 
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+	vi.restoreAllMocks();
 	await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
@@ -130,9 +131,10 @@ describe("ReviewActionQueue", () => {
 		expect(ran).toBe(true);
 	});
 
-	it("rejects the action without throwing from a compromised lock callback", async () => {
+	it("reports a compromised lock without failing a completed action", async () => {
 		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-review-lock-"));
 		tempDirs.push(tempDir);
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 		let onCompromised: ((error: Error) => unknown) | undefined;
 		const queue = new ReviewActionQueue(path.join(tempDir, "locks"), async (_file, options) => {
 			onCompromised = options.onCompromised;
@@ -152,6 +154,9 @@ describe("ReviewActionQueue", () => {
 			},
 		);
 
-		await expect(result).rejects.toBe(compromised);
+		await expect(result).resolves.toBe("unsafe result");
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringContaining("Review action lock compromised: Lock ownership was lost"),
+		);
 	});
 });
