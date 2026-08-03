@@ -19,6 +19,46 @@ afterEach(async () => {
 });
 
 describe("review API — sparse promotion repair", () => {
+	it("shifts later checkpoints when a deleted remote reply is removed locally", async () => {
+		await harness.writeGhShim(makeInterruptedPromotionReviewWithSparseReplies());
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true });
+		const [middleReply] = harness.db
+			.insert(comment)
+			.values({ threadId: localThreadId, body: "Second reply" })
+			.returning({ id: comment.id })
+			.all();
+		if (!middleReply) throw new Error("Expected second local reply");
+		harness.db.insert(comment).values({ threadId: localThreadId, body: "Third reply" }).run();
+		harness.db
+			.update(commentThread)
+			.set({
+				promotionPullRequestNodeId: "PR_node",
+				promotionThreadNodeId: "THREAD_new",
+				promotionRootCommentNodeId: "COMMENT_new",
+				promotionViewerLogin: "octocat",
+				promotionReplyNodeIds: ["COMMENT_first", "COMMENT_deleted", "COMMENT_third"],
+			})
+			.where(eq(commentThread.id, localThreadId))
+			.run();
+		const port = await harness.start();
+
+		const deletion = await harness.request(port, "DELETE", `/api/comments/${middleReply.id}`);
+		const checkpoint = harness.db
+			.select()
+			.from(commentThread)
+			.where(eq(commentThread.id, localThreadId))
+			.get();
+		const resumed = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+
+		expect(deletion.status, deletion.body).toBe(200);
+		expect(checkpoint?.promotionReplyNodeIds).toEqual(["COMMENT_first", "COMMENT_third"]);
+		expect(resumed.status, resumed.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(0);
+	});
+
 	it("recovers an ambiguous write into a sparse hole without duplicating it", async () => {
 		const review = makeInterruptedPromotionReviewWithSparseReplies();
 		await harness.writeGhShim(review, { failAddReplyAfterWrite: true });

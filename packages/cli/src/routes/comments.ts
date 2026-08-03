@@ -280,6 +280,18 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 							.limit(1)
 							.all();
 						if (!row) return;
+						const orderedComments = tx
+							.select({ id: comment.id })
+							.from(comment)
+							.where(eq(comment.threadId, row.threadId))
+							.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
+							.all();
+						const commentIndex = orderedComments.findIndex(
+							(candidate) => candidate.id === commentId,
+						);
+						if (commentIndex > 0) {
+							removePromotionReplyCheckpoint(tx, row.threadId, commentIndex - 1);
+						}
 						tx.delete(comment).where(eq(comment.id, commentId)).run();
 						const remaining = tx
 							.select({ id: comment.id })
@@ -296,6 +308,34 @@ export function commentRoutes(db: StageDb, repoRoot: string): Route[] {
 			},
 		},
 	];
+}
+
+function removePromotionReplyCheckpoint(db: StageDb, threadId: string, replyIndex: number): void {
+	const [thread] = db
+		.select({
+			promotionReplyCount: commentThread.promotionReplyCount,
+			promotionReplyNodeIds: commentThread.promotionReplyNodeIds,
+		})
+		.from(commentThread)
+		.where(eq(commentThread.id, threadId))
+		.limit(1)
+		.all();
+	if (!thread) return;
+	const nodeIds = [
+		...thread.promotionReplyNodeIds.slice(0, replyIndex),
+		...thread.promotionReplyNodeIds.slice(replyIndex + 1),
+	];
+	while (nodeIds.at(-1) === null) nodeIds.pop();
+	db.update(commentThread)
+		.set({
+			promotionReplyCount:
+				replyIndex < thread.promotionReplyCount
+					? thread.promotionReplyCount - 1
+					: thread.promotionReplyCount,
+			promotionReplyNodeIds: nodeIds,
+		})
+		.where(eq(commentThread.id, threadId))
+		.run();
 }
 
 function findCommentThreadId(db: StageDb, commentId: string): string | null {
