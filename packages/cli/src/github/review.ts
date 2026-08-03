@@ -97,6 +97,18 @@ const REVIEW_THREAD_COMMENTS_QUERY = `query GetReviewThreadComments($threadId: I
   }
 }`;
 
+const SUBMITTED_REVIEWS_QUERY = `query GetSubmittedReviews($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+  viewer { login }
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviews(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { body state author { login } }
+      }
+    }
+  }
+}`;
+
 const PROMOTION_THREAD_QUERY = `query GetPromotionThread($threadId: ID!) {
   node(id: $threadId) {
     ... on PullRequestReviewThread {
@@ -189,6 +201,30 @@ const ReviewThreadCommentsQuerySchema = z.object({
 		node: z
 			.object({
 				comments: GqlReviewCommentsPageSchema,
+			})
+			.nullable(),
+	}),
+});
+
+const SubmittedReviewsQuerySchema = z.object({
+	data: z.object({
+		viewer: z.object({ login: z.string() }),
+		repository: z
+			.object({
+				pullRequest: z
+					.object({
+						reviews: z.object({
+							pageInfo: GqlPageInfoSchema,
+							nodes: z.array(
+								z.object({
+									body: z.string(),
+									state: z.string(),
+									author: z.object({ login: z.string() }).nullable(),
+								}),
+							),
+						}),
+					})
+					.nullable(),
 			})
 			.nullable(),
 	}),
@@ -498,6 +534,50 @@ export async function getReview(
 		recoveryThreads,
 		threads,
 	};
+}
+
+/** Whether the viewer already submitted a review carrying a retry identity marker. */
+export async function hasSubmittedReviewMarker(
+	repoRoot: string,
+	repo: GitHubRepo,
+	prNumber: number,
+	viewerLogin: string,
+	marker: string,
+): Promise<boolean> {
+	let matches = 0;
+	let cursor: string | null = null;
+	do {
+		const args = [
+			"api",
+			"graphql",
+			"-f",
+			`query=${SUBMITTED_REVIEWS_QUERY}`,
+			"-f",
+			`owner=${repo.owner}`,
+			"-f",
+			`repo=${repo.repo}`,
+			"-F",
+			`number=${prNumber}`,
+		];
+		if (cursor !== null) args.push("-f", `cursor=${cursor}`);
+		const parsed = SubmittedReviewsQuerySchema.parse(
+			JSON.parse(await ghReadOrThrow(args, repoRoot)),
+		);
+		if (parsed.data.viewer.login !== viewerLogin) {
+			throw new Error("GitHub viewer changed while submitted reviews were loading");
+		}
+		const reviews = parsed.data.repository?.pullRequest?.reviews;
+		if (!reviews) throw new Error("Pull request not found on GitHub");
+		matches += reviews.nodes.filter(
+			(review) =>
+				review.state !== PENDING_STATE &&
+				review.author?.login === viewerLogin &&
+				review.body.includes(marker),
+		).length;
+		cursor = nextCursor(reviews.pageInfo);
+	} while (cursor !== null);
+	if (matches > 1) throw new Error("More than one submitted GitHub review has this identity");
+	return matches === 1;
 }
 
 /** Read the remote root needed to reconcile an interrupted local-to-GitHub promotion. */

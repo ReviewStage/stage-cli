@@ -34,6 +34,7 @@ import {
 	type GitHubReview,
 	getPromotionThreadState,
 	getReview,
+	hasSubmittedReviewMarker,
 	type PromotionThreadState,
 	type ReviewRecoveryThread,
 	setThreadResolved,
@@ -1303,9 +1304,14 @@ export async function submitRunReview(
 	run: ChapterRunRow,
 	event: ReviewEvent,
 	body: string,
+	creationId: string,
 ): Promise<void> {
 	await withLockedReviewTarget(run, async (target) => {
-		const { review } = target;
+		const { repo, prNumber, review } = target;
+		const marker = reviewSubmissionMarker(creationId);
+		if (await hasSubmittedReviewMarker(run.repoRoot, repo, prNumber, review.viewerLogin, marker)) {
+			return;
+		}
 		assertPushable(run, review);
 		if (review.viewerDidAuthor && event !== REVIEW_EVENT.COMMENT) {
 			throw new ReviewError("You can't approve or request changes on your own pull request.", 400);
@@ -1320,9 +1326,23 @@ export async function submitRunReview(
 			);
 		}
 		await withPendingReview(run, target, (reviewNodeId) =>
-			submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
+			submitReview(
+				run.repoRoot,
+				review.pullRequestNodeId,
+				reviewNodeId,
+				event,
+				reviewSubmissionBody(body, marker),
+			),
 		);
 	});
+}
+
+function reviewSubmissionMarker(creationId: string): string {
+	return `<!-- stagereview-review-submission ${JSON.stringify(creationId)} -->`;
+}
+
+function reviewSubmissionBody(body: string, marker: string): string {
+	return body === "" ? marker : `${body}\n\n${marker}`;
 }
 
 /** Discard the viewer's pending review and all its draft comments. */

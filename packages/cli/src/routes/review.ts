@@ -62,7 +62,7 @@ export function reviewRoutes(db: StageDb): Route[] {
 			pattern: "/api/runs/:runId/review/submit",
 			handler: (req, res, params) =>
 				withRunBody(db, req, res, params.runId, SubmitReviewBodySchema, (run, body) =>
-					submitRunReview(run, body.event, body.body),
+					submitRunReview(run, body.event, body.body, body.creationId),
 				),
 		},
 		{

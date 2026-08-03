@@ -541,6 +541,7 @@ interface GhShimOptions {
 	failAddReply?: boolean;
 	failAddReplyAfterWrite?: boolean;
 	failResolve?: boolean;
+	failSubmitAfterWrite?: boolean;
 	failThreadComments?: boolean;
 	identityQueryPendingReviewId?: string | null;
 	mergeBaseOid?: string;
@@ -693,6 +694,15 @@ if (args.some((arg) => arg.includes("/compare/"))) {
     }] }
   }`
 	} } });
+} else if (query.includes("query GetSubmittedReviews")) {
+  const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+  emit({ data: {
+    viewer: { login: "octocat" },
+    repository: { pullRequest: { reviews: {
+      pageInfo: { hasNextPage: false, endCursor: null },
+      nodes: review.data.repository.pullRequest.submittedReviews || []
+    } } }
+  } });
 } else if (query.includes("query GetReviewIdentity")) {
   const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
   if (${options.identityQueryPendingReviewId !== undefined ? "true" : "false"}) {
@@ -814,6 +824,19 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   emit({ data: { addPullRequestReviewThreadReply: { comment: { id: "C" } } } });
 } else if (query.includes("mutation SubmitReview")) {
   fs.appendFileSync(log, "submit " + fields + "\\n");
+  if (${options.failSubmitAfterWrite ? "true" : "false"}) {
+	const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+	review.data.repository.pullRequest.submittedReviews = [{
+	  id: "REVIEW_submitted",
+	  body: inputFields.body,
+	  state: inputFields.event === "APPROVE" ? "APPROVED" : inputFields.event === "REQUEST_CHANGES" ? "CHANGES_REQUESTED" : "COMMENTED",
+	  author: { login: "octocat" }
+	}];
+	review.data.repository.pullRequest.reviews.nodes = [];
+	fs.writeFileSync(reviewPath, JSON.stringify(review));
+	process.stderr.write("gh: connection closed after submit mutation\\n");
+	process.exit(1);
+  }
   emit({ data: { submitPullRequestReview: { pullRequestReview: { id: "R" } } } });
 } else {
   emit({ data: {} });

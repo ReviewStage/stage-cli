@@ -19,6 +19,7 @@ import {
 	type ReviewResponse,
 	ReviewResponseSchema,
 	type ReviewThread,
+	type SubmitReviewBody,
 	THREAD_SOURCE,
 } from "@stagereview/types/review";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -112,7 +113,7 @@ export interface UseReviewResult {
 	resolveLocalThread: (input: { threadId: string; resolved: boolean }) => Promise<void>;
 	// GitHub review actions.
 	addToReview: (localThreadId: string) => Promise<void>;
-	submitReview: (input: { event: ReviewEvent; body: string }) => Promise<void>;
+	submitReview: (input: SubmitReviewBody) => Promise<void>;
 	discardReview: () => Promise<void>;
 	replyGitHub: (input: GitHubReplyBody) => Promise<void>;
 	editGitHubComment: (input: { nodeId: string; body: string }) => Promise<void>;
@@ -359,7 +360,7 @@ export function useReview(runId: string): UseReviewResult {
 		}),
 		submitReview: useMutation({
 			onMutate: captureMutationOrigin,
-			mutationFn: (input: { event: ReviewEvent; body: string }) =>
+			mutationFn: (input: SubmitReviewBody) =>
 				jsonFetch(runPath("/review/submit"), jsonRequest("POST", input)),
 			onSuccess: (_data, _input, origin) => invalidateGitHub(origin),
 		}),

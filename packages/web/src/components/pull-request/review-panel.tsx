@@ -169,6 +169,7 @@ export function ReviewPanel() {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [showDiscard, setShowDiscard] = useState(false);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const submissionIdRef = useRef(crypto.randomUUID());
 
 	const { pendingCommentCount, hasPendingReview, isOwnPullRequest, canPushToReview } = review;
 	const pendingByFile = useMemo(
@@ -200,7 +201,12 @@ export function ReviewPanel() {
 		if (!canSubmit) return;
 		setIsSubmitting(true);
 		try {
-			await review.submitReview({ event: effectiveEvent, body: body.trim() });
+			await review.submitReview({
+				creationId: submissionIdRef.current,
+				event: effectiveEvent,
+				body: body.trim(),
+			});
+			submissionIdRef.current = crypto.randomUUID();
 			resetBody();
 			setOpen(false);
 			toast.success("Review submitted");

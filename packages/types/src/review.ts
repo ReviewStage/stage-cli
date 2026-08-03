@@ -151,6 +151,7 @@ export const GitHubCommentCreateBodySchema = CreateCommentThreadBodySchema.safeE
 export type GitHubCommentCreateBody = z.infer<typeof GitHubCommentCreateBodySchema>;
 
 export const SubmitReviewBodySchema = z.object({
+	creationId: z.string().uuid(),
 	event: z.enum(REVIEW_EVENT),
 	body: z.string(),
 });
