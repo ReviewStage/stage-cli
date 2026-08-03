@@ -1,1 +1,0 @@
-ALTER TABLE `comment_thread` ADD `promotionViewerLogin` text;

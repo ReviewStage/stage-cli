@@ -54,50 +54,8 @@
     {
       "idx": 7,
       "version": "6",
-      "when": 1785205761887,
-      "tag": "0007_goofy_doctor_faustus",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1785222129020,
-      "tag": "0008_worried_reavers",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1785619298866,
-      "tag": "0009_aberrant_bishop",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "6",
-      "when": 1785623128760,
-      "tag": "0010_young_midnight",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "6",
-      "when": 1785743889791,
-      "tag": "0011_tranquil_raider",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "6",
-      "when": 1785750544911,
-      "tag": "0012_eminent_magdalene",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "6",
-      "when": 1785769779824,
-      "tag": "0013_supreme_darwin",
+      "when": 1785787249357,
+      "tag": "0007_review_promotion",
       "breakpoints": true
     }
   ]

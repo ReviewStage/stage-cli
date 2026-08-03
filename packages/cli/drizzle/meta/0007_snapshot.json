@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "64897ea4-131e-4f7c-84be-7d519d50137a",
+  "id": "64fd8060-6e0b-4b89-be8d-301b159a3306",
   "prevId": "a44dabe5-4d9e-445a-994d-fa87195fc4b2",
   "tables": {
     "chapter": {
@@ -517,6 +517,65 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "promotionPullRequestNodeId": {
+          "name": "promotionPullRequestNodeId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "promotionThreadNodeId": {
+          "name": "promotionThreadNodeId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "promotionRootCommentNodeId": {
+          "name": "promotionRootCommentNodeId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "promotionViewerLogin": {
+          "name": "promotionViewerLogin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "promotionRootBaselineThreadNodeIds": {
+          "name": "promotionRootBaselineThreadNodeIds",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "promotionRootPublished": {
+          "name": "promotionRootPublished",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "promotionReplyCount": {
+          "name": "promotionReplyCount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "promotionReplyNodeIds": {
+          "name": "promotionReplyNodeIds",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
         }
       },
       "indexes": {

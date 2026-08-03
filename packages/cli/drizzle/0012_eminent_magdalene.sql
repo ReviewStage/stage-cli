@@ -1,1 +1,0 @@
-ALTER TABLE `comment_thread` ADD `promotionRootPublished` integer DEFAULT false NOT NULL;
