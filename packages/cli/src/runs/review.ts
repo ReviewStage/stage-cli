@@ -29,6 +29,7 @@ import {
 	deleteReviewComment,
 	discardReview,
 	GITHUB_DIFF_SIDE,
+	type ReviewComment as GitHubApiReviewComment,
 	type ReviewThread as GitHubApiReviewThread,
 	type GitHubDiffSide,
 	type GitHubReview,
@@ -113,12 +114,11 @@ function requireReviewThread(review: GitHubReview, threadNodeId: string): GitHub
 	throw new ReviewError("That GitHub review thread doesn't belong to this pull request.", 400);
 }
 
-function requirePendingComment(review: GitHubReview, nodeId: string): void {
-	if (review.pendingComments.some((candidate) => candidate.id === nodeId)) return;
-	const comment = review.threads
+function requirePendingComment(review: GitHubReview, nodeId: string): GitHubApiReviewComment {
+	const comment = review.recoveryThreads
 		.flatMap((thread) => thread.comments)
 		.find((candidate) => candidate.nodeId === nodeId);
-	if (comment?.isPending) return;
+	if (comment?.isPending) return comment;
 	throw new ReviewError(
 		"That GitHub comment isn't an editable pending comment on this pull request.",
 		400,
@@ -177,7 +177,7 @@ function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
 			(c): GitHubReviewCommentDto => ({
 				id: c.nodeId,
 				state: c.isPending ? COMMENT_STATE.PENDING : COMMENT_STATE.SUBMITTED,
-				body: c.body,
+				body: visibleGitHubCommentBody(c.body),
 				bodyHtml: c.bodyHtml,
 				author: { login: c.authorLogin, avatarUrl: c.authorAvatarUrl || null },
 				nodeId: c.nodeId,
@@ -186,6 +186,25 @@ function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
 			}),
 		),
 	};
+}
+
+const COMMENT_RECOVERY_MARKER_PATTERN =
+	/\n\n(<!-- stagereview-(?:promotion:[^\r\n]*|promotion-reply [^\r\n]*|direct-comment [^\r\n]*|direct-reply [^\r\n]*) -->)$/;
+
+function visibleGitHubCommentBody(body: string): string {
+	return body.replace(COMMENT_RECOVERY_MARKER_PATTERN, "");
+}
+
+function preserveGitHubCommentMarker(body: string, originalBody: string): string {
+	const marker = originalBody.match(COMMENT_RECOVERY_MARKER_PATTERN)?.[1];
+	return marker ? `${body}\n\n${marker}` : body;
+}
+
+function visiblePendingComments(comments: GitHubReview["pendingComments"]) {
+	return comments.map((comment) => ({
+		...comment,
+		body: visibleGitHubCommentBody(comment.body),
+	}));
 }
 
 /**
@@ -238,7 +257,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		return {
 			...base,
 			github: GITHUB_REVIEW_STATUS.AVAILABLE,
-			pendingComments: review.pendingComments,
+			pendingComments: visiblePendingComments(review.pendingComments),
 			pendingCommentCount: review.pendingCommentCount,
 			hasPendingReview: review.pendingReviewNodeId !== null,
 			pendingReviewBody: review.pendingReviewBody,
@@ -250,7 +269,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 	return {
 		github: GITHUB_REVIEW_STATUS.AVAILABLE,
 		threads: [...localThreads, ...githubThreads],
-		pendingComments: review.pendingComments,
+		pendingComments: visiblePendingComments(review.pendingComments),
 		pendingCommentCount: review.pendingCommentCount,
 		hasPendingReview: review.pendingReviewNodeId !== null,
 		pendingReviewBody: review.pendingReviewBody,
@@ -1381,8 +1400,12 @@ export async function editGitHubComment(
 ): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
 		assertPushable(run, review);
-		requirePendingComment(review, nodeId);
-		await updateReviewComment(run.repoRoot, nodeId, body);
+		const existing = requirePendingComment(review, nodeId);
+		await updateReviewComment(
+			run.repoRoot,
+			nodeId,
+			preserveGitHubCommentMarker(body, existing.body),
+		);
 	});
 }
 

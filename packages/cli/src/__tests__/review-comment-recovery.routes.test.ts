@@ -44,6 +44,36 @@ describe("review API — direct comment recovery", () => {
 		expect(logs.filter((line) => line.startsWith("edit-comment"))).toHaveLength(1);
 	});
 
+	it("hides recovery metadata while preserving it through pending edits", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, { failAddThreadAfterWrite: true });
+		const runId = harness.insertRun();
+		const port = await harness.start();
+		const input = {
+			creationId: "00000000-0000-4000-8000-000000000001",
+			filePath: "src/foo.ts",
+			side: "additions",
+			startLine: 3,
+			endLine: 3,
+			body: "Visible body",
+		};
+		await harness.request(port, "POST", `/api/runs/${runId}/review/comment`, input);
+
+		const read = await harness.request(port, "GET", `/api/runs/${runId}/review`);
+		const review = JSON.parse(read.body);
+		const edit = await harness.request(port, "POST", `/api/runs/${runId}/review/comment/edit`, {
+			nodeId: "COMMENT_new",
+			body: "Edited body",
+		});
+		const editLog = (await harness.logLines()).join("\n");
+
+		expect(review.threads[0].comments[0].body).toBe("Visible body");
+		expect(review.pendingComments[0].body).toBe("Visible body");
+		expect(JSON.stringify(review)).not.toContain("stagereview-direct-comment");
+		expect(edit.status, edit.body).toBe(200);
+		expect(editLog).toContain("body=Edited body");
+		expect(editLog).toContain("stagereview-direct-comment");
+	});
+
 	it("does not edit a recovered comment after the PR diff moves", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW, {
 			failAddThreadAfterWrite: true,
