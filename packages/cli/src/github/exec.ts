@@ -77,7 +77,7 @@ export async function ghWriteOrThrow(
 export async function ghReadOrThrow(
 	args: string[],
 	cwd: string,
-	options: GhExecOptions = {},
+	options: Pick<GhExecOptions, "timeoutMs"> = {},
 ): Promise<string> {
 	try {
 		return await gh(args, cwd, { timeoutMs: options.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS });

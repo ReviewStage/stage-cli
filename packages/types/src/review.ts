@@ -129,11 +129,10 @@ export const ReviewResponseSchema = z.object({
 	pendingReviewBody: z.string(),
 	// The viewer opened this PR — GitHub forbids approving/requesting changes on it.
 	isOwnPullRequest: z.boolean(),
-	// Whether pending-review actions are allowed. In addition to an open, matching
-	// PR diff, any existing pending review must be pinned to the current head.
+	// Whether pending-review actions are allowed: the PR is open and its diff matches this run.
 	canPushToReview: z.boolean(),
-	// Whether direct GitHub thread actions are allowed. This can remain true when an
-	// older pending review blocks draft writes, but is false for a closed PR or mismatched diff.
+	// Whether direct GitHub thread actions are allowed. Currently the same condition as
+	// canPushToReview; the wire contract keeps the two independent.
 	canWriteToGitHub: z.boolean(),
 });
 export type ReviewResponse = z.infer<typeof ReviewResponseSchema>;

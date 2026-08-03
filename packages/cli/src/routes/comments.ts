@@ -19,7 +19,9 @@ import {
 } from "../db/schema/index.js";
 import { type LocalThreadScope, loadLocalThreadRecords } from "../runs/local-comment-threads.js";
 import {
+	compactPromotionReplyNodeIds,
 	hasLocalThreadPromotionCheckpoint,
+	hasPromotionRecoveryState,
 	isLocalCommentPromotionPending,
 	isLocalThreadPromoting,
 	isLocalThreadPromotionInFlight,
@@ -30,6 +32,8 @@ import { deriveScopeKey } from "../runs/scope-key.js";
 import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
 import { enforceSameOrigin } from "./pull-request-shared.js";
+
+const THREAD_PROMOTION_IN_PROGRESS = "This comment thread is being added to the review.";
 
 export function commentRoutes(db: StageDb): Route[] {
 	return [
@@ -99,13 +103,13 @@ export function commentRoutes(db: StageDb): Route[] {
 				const body = await parseJsonBody(req, res, CommentBodySchema);
 				if (!body) return;
 				if (isLocalThreadPromotionPending(db, threadId)) {
-					writeJson(res, 409, { error: "This comment thread is being added to the review." });
+					writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
 					return;
 				}
 
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
 					if (isLocalThreadPromoting(db, threadId)) {
-						writeJson(res, 409, { error: "This comment thread is being added to the review." });
+						writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
 						return;
 					}
 					if (!threadExists(db, threadId)) {
@@ -145,13 +149,13 @@ export function commentRoutes(db: StageDb): Route[] {
 				const body = await parseJsonBody(req, res, ResolveThreadBodySchema);
 				if (!body) return;
 				if (isLocalThreadPromotionPending(db, threadId)) {
-					writeJson(res, 409, { error: "This comment thread is being added to the review." });
+					writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
 					return;
 				}
 
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
 					if (isLocalThreadPromoting(db, threadId)) {
-						writeJson(res, 409, { error: "This comment thread is being added to the review." });
+						writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
 						return;
 					}
 					const [updated] = db
@@ -182,7 +186,7 @@ export function commentRoutes(db: StageDb): Route[] {
 					isLocalThreadPromotionPending(db, threadId) ||
 					hasLocalThreadPromotionCheckpoint(db, threadId)
 				) {
-					writeJson(res, 409, { error: "This comment thread is being added to the review." });
+					writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
 					return;
 				}
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
@@ -190,7 +194,7 @@ export function commentRoutes(db: StageDb): Route[] {
 						isLocalThreadPromoting(db, threadId) ||
 						hasLocalThreadPromotionCheckpoint(db, threadId)
 					) {
-						writeJson(res, 409, { error: "This comment thread is being added to the review." });
+						writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
 						return;
 					}
 					// Idempotent: deleting an absent thread is a no-op. The cascade FK
@@ -218,7 +222,7 @@ export function commentRoutes(db: StageDb): Route[] {
 					return;
 				}
 				if (isLocalThreadPromotionInFlight(threadId)) {
-					writeJson(res, 409, { error: "This comment thread is being added to the review." });
+					writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
 					return;
 				}
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
@@ -263,7 +267,7 @@ export function commentRoutes(db: StageDb): Route[] {
 					return;
 				}
 				if (isLocalThreadPromotionInFlight(threadId)) {
-					writeJson(res, 409, { error: "This comment thread is being added to the review." });
+					writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
 					return;
 				}
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
@@ -329,11 +333,10 @@ function removePromotionReplyCheckpoint(db: StageDb, threadId: string, replyInde
 		.limit(1)
 		.all();
 	if (!thread) return;
-	const nodeIds = [
+	const nodeIds = compactPromotionReplyNodeIds([
 		...thread.promotionReplyNodeIds.slice(0, replyIndex),
 		...thread.promotionReplyNodeIds.slice(replyIndex + 1),
-	];
-	while (nodeIds.at(-1) === null) nodeIds.pop();
+	]);
 	db.update(commentThread)
 		.set({
 			promotionReplyCount:
@@ -428,10 +431,7 @@ function toThreadDto(thread: CommentThreadRow, comments: CommentRow[]): CommentT
 		startLine: thread.startLine,
 		endLine: thread.endLine,
 		resolvedAt: thread.resolvedAt?.toISOString() ?? null,
-		hasPromotionRecovery:
-			thread.promotionPullRequestNodeId !== null ||
-			thread.promotionThreadNodeId !== null ||
-			thread.promotionRootCommentNodeId !== null,
+		hasPromotionRecovery: hasPromotionRecoveryState(thread),
 		createdAt: thread.createdAt.toISOString(),
 		updatedAt: thread.updatedAt.toISOString(),
 		comments: comments.map(toCommentDto),

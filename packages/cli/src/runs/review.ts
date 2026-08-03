@@ -136,10 +136,7 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 			id: thread.id,
 			source: THREAD_SOURCE.LOCAL,
 			threadNodeId: null,
-			hasPromotionRecovery:
-				thread.promotionPullRequestNodeId !== null ||
-				thread.promotionThreadNodeId !== null ||
-				thread.promotionRootCommentNodeId !== null,
+			hasPromotionRecovery: hasPromotionRecoveryState(thread),
 			filePath: thread.filePath,
 			side: thread.side,
 			startLine: thread.startLine,
@@ -352,6 +349,19 @@ async function withPendingReview<T>(
 	return action(reviewNodeId);
 }
 
+/** Whether any durable promotion intent or checkpoint survives on the thread row. */
+export function hasPromotionRecoveryState(thread: {
+	promotionPullRequestNodeId: string | null;
+	promotionThreadNodeId: string | null;
+	promotionRootCommentNodeId: string | null;
+}): boolean {
+	return (
+		thread.promotionPullRequestNodeId !== null ||
+		thread.promotionThreadNodeId !== null ||
+		thread.promotionRootCommentNodeId !== null
+	);
+}
+
 /** Owns the complete queued -> active -> durable-checkpoint promotion lifecycle. */
 class PromotionCoordinator {
 	readonly #queued = new Set<string>();
@@ -359,24 +369,8 @@ class PromotionCoordinator {
 
 	isPromoting(db: StageDb, localThreadId: string): boolean {
 		if (this.#active.has(localThreadId)) return true;
-		const [thread] = db
-			.select({
-				pullRequestNodeId: commentThread.promotionPullRequestNodeId,
-				threadNodeId: commentThread.promotionThreadNodeId,
-				rootCommentNodeId: commentThread.promotionRootCommentNodeId,
-				rootPublished: commentThread.promotionRootPublished,
-			})
-			.from(commentThread)
-			.where(eq(commentThread.id, localThreadId))
-			.limit(1)
-			.all();
-		return (
-			thread !== undefined &&
-			!thread.rootPublished &&
-			(thread.pullRequestNodeId !== null ||
-				thread.threadNodeId !== null ||
-				thread.rootCommentNodeId !== null)
-		);
+		const state = this.#promotionState(db, localThreadId);
+		return state !== undefined && !state.promotionRootPublished && hasPromotionRecoveryState(state);
 	}
 
 	isPending(db: StageDb, localThreadId: string): boolean {
@@ -388,26 +382,27 @@ class PromotionCoordinator {
 	}
 
 	hasCheckpoint(db: StageDb, localThreadId: string): boolean {
+		const state = this.#promotionState(db, localThreadId);
+		return state !== undefined && hasPromotionRecoveryState(state);
+	}
+
+	#promotionState(db: StageDb, localThreadId: string) {
 		const [thread] = db
 			.select({
-				pullRequestNodeId: commentThread.promotionPullRequestNodeId,
-				threadNodeId: commentThread.promotionThreadNodeId,
-				rootCommentNodeId: commentThread.promotionRootCommentNodeId,
+				promotionPullRequestNodeId: commentThread.promotionPullRequestNodeId,
+				promotionThreadNodeId: commentThread.promotionThreadNodeId,
+				promotionRootCommentNodeId: commentThread.promotionRootCommentNodeId,
+				promotionRootPublished: commentThread.promotionRootPublished,
 			})
 			.from(commentThread)
 			.where(eq(commentThread.id, localThreadId))
 			.limit(1)
 			.all();
-		return (
-			thread !== undefined &&
-			(thread.pullRequestNodeId !== null ||
-				thread.threadNodeId !== null ||
-				thread.rootCommentNodeId !== null)
-		);
+		return thread;
 	}
 
 	async isCommentFrozen(db: StageDb, localThreadId: string, commentId: string): Promise<boolean> {
-		if (this.#queued.has(localThreadId) || this.#active.has(localThreadId)) return true;
+		if (this.isInFlight(localThreadId)) return true;
 		const [thread] = db
 			.select()
 			.from(commentThread)
@@ -449,13 +444,7 @@ class PromotionCoordinator {
 		}
 
 		const remote = await getPromotionThreadState(thread.repoRoot, checkpoint.threadNodeId);
-		if (
-			remote === null ||
-			remote.pullRequestNodeId !== checkpoint.pullRequestNodeId ||
-			remote.rootCommentNodeId !== checkpoint.rootCommentNodeId
-		) {
-			return false;
-		}
+		if (!checkpointMatchesRemote(remote, checkpoint)) return false;
 		if (!remote.rootIsPending) {
 			markPromotionRootPublished(db, localThreadId);
 		}
@@ -600,10 +589,7 @@ async function promoteLocalThread(
 		let liveCheckpointRemote = checkpointRemote;
 		if (intent !== null) {
 			if (intent.viewerLogin !== null && intent.viewerLogin !== review.viewerLogin) {
-				throw new ReviewError(
-					`This comment promotion belongs to GitHub user ${intent.viewerLogin}. Switch back to that account to resume it.`,
-					409,
-				);
+				throw promotionViewerMismatchError(intent.viewerLogin);
 			}
 			if (intent.pullRequestNodeId !== review.pullRequestNodeId) {
 				throw new ReviewError("This comment promotion belongs to another pull request.", 409);
@@ -654,20 +640,13 @@ async function promoteLocalThread(
 		// A pending thread owned by another account can be invisible to this viewer.
 		// Enforce the durable identity before treating a null point lookup as deletion.
 		if (checkpoint?.viewerLogin && checkpoint.viewerLogin !== review.viewerLogin) {
-			throw new ReviewError(
-				`This comment promotion belongs to GitHub user ${checkpoint.viewerLogin}. Switch back to that account to resume it.`,
-				409,
-			);
+			throw promotionViewerMismatchError(checkpoint.viewerLogin);
 		}
 		if (checkpoint !== null) {
 			const current = recoveredFromIntent
 				? liveCheckpointRemote
 				: await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
-			if (
-				current === null ||
-				current.pullRequestNodeId !== checkpoint.pullRequestNodeId ||
-				current.rootCommentNodeId !== checkpoint.rootCommentNodeId
-			) {
+			if (!checkpointMatchesRemote(current, checkpoint)) {
 				clearPromotionProgress(db, localThreadId);
 				checkpoint = null;
 				liveCheckpointRemote = null;
@@ -681,10 +660,7 @@ async function promoteLocalThread(
 		const originatingViewer =
 			checkpoint?.viewerLogin ?? liveCheckpointRemote?.rootAuthorLogin ?? null;
 		if (originatingViewer !== null && originatingViewer !== review.viewerLogin) {
-			throw new ReviewError(
-				`This comment promotion belongs to GitHub user ${originatingViewer}. Switch back to that account to resume it.`,
-				409,
-			);
+			throw promotionViewerMismatchError(originatingViewer);
 		}
 		if (checkpoint !== null && checkpoint.viewerLogin === null && originatingViewer !== null) {
 			db.update(commentThread)
@@ -812,7 +788,6 @@ async function promoteLocalThread(
 					};
 				}
 				const activeIntent = intent;
-				if (activeIntent === null) throw new Error("Local promotion intent was not saved");
 				let createdThread: AddedReviewThread;
 				try {
 					createdThread = await addReviewThread(run.repoRoot, {
@@ -911,6 +886,25 @@ interface PromotionCheckpoint {
 	threadNodeId: string;
 	rootCommentNodeId: string;
 	viewerLogin: string | null;
+}
+
+/** Whether the live GitHub thread still is the one this checkpoint was written for. */
+function checkpointMatchesRemote(
+	remote: PromotionThreadState | null,
+	checkpoint: PromotionCheckpoint,
+): remote is PromotionThreadState {
+	return (
+		remote !== null &&
+		remote.pullRequestNodeId === checkpoint.pullRequestNodeId &&
+		remote.rootCommentNodeId === checkpoint.rootCommentNodeId
+	);
+}
+
+function promotionViewerMismatchError(viewerLogin: string): ReviewError {
+	return new ReviewError(
+		`This comment promotion belongs to GitHub user ${viewerLogin}. Switch back to that account to resume it.`,
+		409,
+	);
 }
 
 interface PromotionIntent {
@@ -1028,13 +1022,7 @@ async function releaseCrossPullRequestPromotion(
 	checkpoint: PromotionCheckpoint,
 ): Promise<PromotionThreadState | null> {
 	const remote = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
-	if (
-		remote === null ||
-		remote.pullRequestNodeId !== checkpoint.pullRequestNodeId ||
-		remote.rootCommentNodeId !== checkpoint.rootCommentNodeId
-	) {
-		return null;
-	}
+	if (!checkpointMatchesRemote(remote, checkpoint)) return null;
 	const identity = await resolveReviewIdentity(run);
 	const sameTarget =
 		remote.pullRequestNumber === identity.prNumber &&
@@ -1068,11 +1056,7 @@ async function releasePromotionCheckpoint(
 	checkpoint: PromotionCheckpoint,
 ): Promise<boolean> {
 	const remote = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
-	if (
-		remote !== null &&
-		remote.pullRequestNodeId === checkpoint.pullRequestNodeId &&
-		remote.rootCommentNodeId === checkpoint.rootCommentNodeId
-	) {
+	if (checkpointMatchesRemote(remote, checkpoint)) {
 		if (!remote.rootIsPending) {
 			markPromotionRootPublished(db, localThreadId);
 		}
@@ -1186,7 +1170,7 @@ function reconcilePromotionReplyNodeIds(
 	return reconciled;
 }
 
-function compactPromotionReplyNodeIds(ids: (string | null)[]): (string | null)[] {
+export function compactPromotionReplyNodeIds(ids: (string | null)[]): (string | null)[] {
 	let length = ids.length;
 	while (length > 0 && !ids[length - 1]) length--;
 	return ids.slice(0, length);
@@ -1224,15 +1208,12 @@ export async function addGitHubComment(
 			}
 			return;
 		}
-		if (anchor.pending) assertGitHubWritable(run, review);
-		else {
-			assertGitHubWritable(run, review);
-			if (review.pendingReviewNodeId !== null) {
-				throw new ReviewError(
-					"A pending GitHub review now exists. Refresh to add this comment to it.",
-					409,
-				);
-			}
+		assertGitHubWritable(run, review);
+		if (!anchor.pending && review.pendingReviewNodeId !== null) {
+			throw new ReviewError(
+				"A pending GitHub review now exists. Refresh to add this comment to it.",
+				409,
+			);
 		}
 		const side = toGitHubSide(anchor.side);
 		const startLine = anchor.endLine !== anchor.startLine ? anchor.startLine : null;
