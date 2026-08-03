@@ -41,4 +41,31 @@ describe("review API — promotion root intent", () => {
 		expect(addThreadCalls).toHaveLength(1);
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
+
+	it("recovers the new anchored root after its marker is edited on GitHub", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, {
+			failAddThreadAfterWrite: true,
+			replaceCreatedThreadBodyBeforeFailure: true,
+		});
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread();
+		const port = await harness.start();
+
+		const interrupted = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+		const [intent] = harness.db.select().from(commentThread).all();
+		const resumed = await harness.request(port, "POST", `/api/runs/${runId}/review/add`, {
+			localThreadId,
+		});
+		const addThreadCalls = (await harness.logLines()).filter((line) =>
+			line.startsWith("add-thread"),
+		);
+
+		expect(interrupted.status).toBe(500);
+		expect(intent?.promotionRootBaselineThreadNodeIds).toEqual([]);
+		expect(resumed.status, resumed.body).toBe(200);
+		expect(addThreadCalls).toHaveLength(1);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
 });

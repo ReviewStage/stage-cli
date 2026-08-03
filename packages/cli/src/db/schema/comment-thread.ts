@@ -26,6 +26,8 @@ export const commentThread = sqliteTable(
 		promotionRootCommentNodeId: text(),
 		/** GitHub viewer that created the interrupted promotion. */
 		promotionViewerLogin: text(),
+		/** GitHub threads visible before the uncertain root mutation began. */
+		promotionRootBaselineThreadNodeIds: text({ mode: "json" }).$type<string[]>(),
 		/** The checkpoint root has already been published and no longer freezes local replies. */
 		promotionRootPublished: integer({ mode: "boolean" }).notNull().default(false),
 		/** Number of local replies already copied to the promotion thread. */

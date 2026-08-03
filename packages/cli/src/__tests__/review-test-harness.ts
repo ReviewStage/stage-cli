@@ -493,6 +493,7 @@ interface GhShimOptions {
 	discoveredPullRequest?: boolean;
 	failAddThread?: boolean;
 	failAddThreadAfterWrite?: boolean;
+	replaceCreatedThreadBodyBeforeFailure?: boolean;
 	addConcurrentPendingCommentOnThreadFailure?: boolean;
 	addConcurrentPendingReplyOnResolveFailure?: boolean;
 	failAddReply?: boolean;
@@ -705,6 +706,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 	  const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
 	  const createdThread = ${JSON.stringify(promotionThread)};
 	  createdThread.comments.nodes[0].body = inputFields.body;
+	  if (${options.replaceCreatedThreadBodyBeforeFailure ? "true" : "false"}) createdThread.comments.nodes[0].body = "Edited directly on GitHub";
 	  review.data.repository.pullRequest.reviewThreads.nodes.push(createdThread);
 	  fs.writeFileSync(reviewPath, JSON.stringify(review));
 	  if (${options.failAddThreadAfterWrite ? "true" : "false"}) {

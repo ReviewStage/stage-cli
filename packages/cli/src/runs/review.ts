@@ -580,6 +580,7 @@ async function promoteLocalThread(
 				review,
 				thread,
 				localThreadId,
+				intent.baselineThreadNodeIds,
 				side,
 				startLine,
 			);
@@ -736,11 +737,13 @@ async function promoteLocalThread(
 			if (addedThread === null) {
 				if (reviewNodeId === null) throw new Error("Pending review was not opened");
 				if (intent === null) {
+					const baselineThreadNodeIds = review.threads.map((candidate) => candidate.threadNodeId);
 					const persisted = db
 						.update(commentThread)
 						.set({
 							promotionPullRequestNodeId: review.pullRequestNodeId,
 							promotionViewerLogin: review.viewerLogin,
+							promotionRootBaselineThreadNodeIds: baselineThreadNodeIds,
 						})
 						.where(eq(commentThread.id, localThreadId))
 						.run();
@@ -750,6 +753,7 @@ async function promoteLocalThread(
 					intent = {
 						pullRequestNodeId: review.pullRequestNodeId,
 						viewerLogin: review.viewerLogin,
+						baselineThreadNodeIds,
 					};
 				}
 				const createdThread = await addReviewThread(run.repoRoot, {
@@ -829,6 +833,7 @@ interface PromotionCheckpoint {
 interface PromotionIntent {
 	pullRequestNodeId: string;
 	viewerLogin: string | null;
+	baselineThreadNodeIds: string[] | null;
 }
 
 function readPromotionIntent(thread: typeof commentThread.$inferSelect): PromotionIntent | null {
@@ -848,6 +853,7 @@ function readPromotionIntent(thread: typeof commentThread.$inferSelect): Promoti
 	return {
 		pullRequestNodeId: thread.promotionPullRequestNodeId,
 		viewerLogin: thread.promotionViewerLogin,
+		baselineThreadNodeIds: thread.promotionRootBaselineThreadNodeIds,
 	};
 }
 
@@ -884,11 +890,12 @@ function findPromotionIntentThread(
 	review: GitHubReview,
 	thread: typeof commentThread.$inferSelect,
 	localThreadId: string,
+	baselineThreadNodeIds: string[] | null,
 	side: GitHubDiffSide,
 	startLine: number | null,
 ): GitHubApiReviewThread | null {
 	const marker = promotionRootMarker(localThreadId);
-	const matches = review.threads.filter((candidate) => {
+	const anchoredMatches = review.threads.filter((candidate) => {
 		const root = candidate.comments[0];
 		return (
 			candidate.path === thread.filePath &&
@@ -896,17 +903,30 @@ function findPromotionIntentThread(
 			candidate.side === side &&
 			candidate.startLine === startLine &&
 			candidate.startSide === (startLine === null ? null : side) &&
-			root?.authorLogin === review.viewerLogin &&
-			root.body.includes(marker)
+			root?.authorLogin === review.viewerLogin
 		);
 	});
-	if (matches.length > 1) {
+	const markerMatches = anchoredMatches.filter((candidate) =>
+		candidate.comments[0]?.body.includes(marker),
+	);
+	if (markerMatches.length > 1) {
 		throw new ReviewError(
 			"More than one GitHub thread matches this interrupted comment promotion.",
 			409,
 		);
 	}
-	return matches[0] ?? null;
+	const markerMatch = markerMatches[0];
+	if (markerMatch) return markerMatch;
+	if (baselineThreadNodeIds === null) return null;
+	const baseline = new Set(baselineThreadNodeIds);
+	const newMatches = anchoredMatches.filter((candidate) => !baseline.has(candidate.threadNodeId));
+	if (newMatches.length > 1) {
+		throw new ReviewError(
+			"More than one new GitHub thread matches this interrupted comment promotion.",
+			409,
+		);
+	}
+	return newMatches[0] ?? null;
 }
 
 async function releaseCrossPullRequestPromotion(
@@ -977,6 +997,7 @@ function clearPromotionProgress(db: StageDb, localThreadId: string): void {
 			promotionThreadNodeId: null,
 			promotionRootCommentNodeId: null,
 			promotionViewerLogin: null,
+			promotionRootBaselineThreadNodeIds: null,
 			promotionRootPublished: false,
 			promotionReplyCount: 0,
 			promotionReplyNodeIds: [],
