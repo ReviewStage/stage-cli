@@ -32,6 +32,7 @@ const REVIEW_ROOT = "review";
 interface ReviewQueryData {
 	generation: number;
 	review: ReviewResponse;
+	lastAvailableReview?: ReviewResponse;
 }
 
 interface ReviewMutationOrigin {
@@ -143,7 +144,19 @@ export function useReview(runId: string): UseReviewResult {
 		queryKey,
 		queryFn: async () => {
 			const generation = ++reviewRequestGeneration.current;
-			return { generation, review: await fetchReview(runId) };
+			const review = await fetchReview(runId);
+			const cached =
+				review.github === GITHUB_REVIEW_STATUS.AVAILABLE
+					? review
+					: queryClient.getQueryData<ReviewQueryData>(queryKey)?.lastAvailableReview;
+			return {
+				generation,
+				review:
+					review.github === GITHUB_REVIEW_STATUS.OFFLINE && cached
+						? mergeOfflineReview(review, cached)
+						: review,
+				lastAvailableReview: cached,
+			};
 		},
 		enabled: runId !== "",
 	});
@@ -405,6 +418,23 @@ export function useReview(runId: string): UseReviewResult {
 		editGitHubComment: async (i) => void (await m.editGitHubComment.mutateAsync(i)),
 		deleteGitHubComment: async (id) => void (await m.deleteGitHubComment.mutateAsync(id)),
 		resolveGitHub: async (i) => void (await m.resolveGitHub.mutateAsync(i)),
+	};
+}
+
+function mergeOfflineReview(offline: ReviewResponse, cached: ReviewResponse): ReviewResponse {
+	return {
+		...offline,
+		threads: [
+			...offline.threads.filter((thread) => thread.source === THREAD_SOURCE.LOCAL),
+			...cached.threads.filter((thread) => thread.source === THREAD_SOURCE.GITHUB),
+		],
+		pendingComments: cached.pendingComments,
+		pendingCommentCount: cached.pendingCommentCount,
+		hasPendingReview: cached.hasPendingReview,
+		pendingReviewBody: cached.pendingReviewBody,
+		isOwnPullRequest: cached.isOwnPullRequest,
+		canPushToReview: false,
+		canWriteToGitHub: false,
 	};
 }
 
