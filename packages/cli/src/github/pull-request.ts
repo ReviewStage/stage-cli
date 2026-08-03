@@ -94,7 +94,7 @@ async function fetchRestPullRequest(
 	prNumber: number,
 ): Promise<z.infer<typeof RestPullRequestSchema> | null> {
 	try {
-		const stdout = await gh(
+		const stdout = await ghReadOrThrow(
 			["api", `repos/${repo.owner}/${repo.repo}/pulls/${prNumber}`],
 			repoRoot,
 		);
