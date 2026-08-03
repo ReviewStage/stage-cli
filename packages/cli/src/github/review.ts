@@ -328,7 +328,8 @@ export async function getReview(
 			pageViewerLogin !== viewerLogin ||
 			pr.id !== pullRequestNodeId ||
 			pr.headRefOid !== headRefOid ||
-			pr.baseRefOid !== baseRefOid
+			pr.baseRefOid !== baseRefOid ||
+			pr.state !== state
 		) {
 			throw new Error("Pull request changed while GitHub review pages were loading");
 		}

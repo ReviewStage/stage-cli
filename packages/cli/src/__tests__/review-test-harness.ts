@@ -486,6 +486,7 @@ interface GhShimOptions {
 	persistCreatedReview?: boolean;
 	reviewQueryDelayMs?: number;
 	secondReviewPageHeadRefOid?: string;
+	secondReviewPageState?: "OPEN" | "CLOSED" | "MERGED";
 	recoveryPullRequestNodeId?: string;
 	recoveryPullRequestNumber?: number;
 	recoveryRepoOwner?: string;
@@ -635,9 +636,10 @@ if (args.some((arg) => arg.includes("/compare/"))) {
     process.exit(1);
   }
 	const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-	if (${options.secondReviewPageHeadRefOid ? "true" : "false"}) {
+	if (${options.secondReviewPageHeadRefOid || options.secondReviewPageState ? "true" : "false"}) {
 	  if (args.includes("cursor=THREAD_PAGE_2")) {
-	    review.data.repository.pullRequest.headRefOid = ${JSON.stringify(options.secondReviewPageHeadRefOid ?? HEAD)};
+	    if (${options.secondReviewPageHeadRefOid ? "true" : "false"}) review.data.repository.pullRequest.headRefOid = ${JSON.stringify(options.secondReviewPageHeadRefOid ?? HEAD)};
+	    if (${options.secondReviewPageState ? "true" : "false"}) review.data.repository.pullRequest.state = ${JSON.stringify(options.secondReviewPageState ?? "OPEN")};
 	    review.data.repository.pullRequest.reviewThreads.pageInfo = { hasNextPage: false, endCursor: null };
 	    review.data.repository.pullRequest.reviewThreads.nodes = [];
 	  } else {

@@ -35,4 +35,23 @@ describe("review API — paginated snapshots", () => {
 			expect.stringContaining("Pull request changed while GitHub review pages were loading"),
 		);
 	});
+
+	it("rejects a pull request lifecycle change between thread pages", async () => {
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, { secondReviewPageState: "CLOSED" });
+		const runId = harness.insertRun();
+
+		const response = await harness.request(
+			await harness.start(),
+			"GET",
+			`/api/runs/${runId}/review`,
+		);
+		const review = ReviewResponseSchema.parse(JSON.parse(response.body));
+
+		expect(review.github).toBe("offline");
+		expect(review.canPushToReview).toBe(false);
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringContaining("Pull request changed while GitHub review pages were loading"),
+		);
+	});
 });
