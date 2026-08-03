@@ -54,7 +54,7 @@ describe("review API — failed promotion repair", () => {
 		const { port, localThreadId, comments } = await seedCheckpointedThread();
 		harness.db
 			.update(commentThread)
-			.set({ promotionReplyCount: 1, promotionReplyNodeIds: ["COMMENT_deleted_reply"] })
+			.set({ promotionReplyNodeIds: ["COMMENT_deleted_reply"] })
 			.where(eq(commentThread.id, localThreadId))
 			.run();
 
@@ -75,7 +75,6 @@ describe("review API — failed promotion repair", () => {
 			.update(commentThread)
 			.set({
 				promotionRootPublished: true,
-				promotionReplyCount: 1,
 				promotionReplyNodeIds: ["COMMENT_reply"],
 			})
 			.where(eq(commentThread.id, localThreadId))

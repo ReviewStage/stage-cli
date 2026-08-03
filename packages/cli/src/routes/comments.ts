@@ -324,10 +324,7 @@ export function commentRoutes(db: StageDb): Route[] {
 
 function removePromotionReplyCheckpoint(db: StageDb, threadId: string, replyIndex: number): void {
 	const [thread] = db
-		.select({
-			promotionReplyCount: commentThread.promotionReplyCount,
-			promotionReplyNodeIds: commentThread.promotionReplyNodeIds,
-		})
+		.select({ promotionReplyNodeIds: commentThread.promotionReplyNodeIds })
 		.from(commentThread)
 		.where(eq(commentThread.id, threadId))
 		.limit(1)
@@ -338,13 +335,7 @@ function removePromotionReplyCheckpoint(db: StageDb, threadId: string, replyInde
 		...thread.promotionReplyNodeIds.slice(replyIndex + 1),
 	]);
 	db.update(commentThread)
-		.set({
-			promotionReplyCount:
-				replyIndex < thread.promotionReplyCount
-					? thread.promotionReplyCount - 1
-					: thread.promotionReplyCount,
-			promotionReplyNodeIds: nodeIds,
-		})
+		.set({ promotionReplyNodeIds: nodeIds })
 		.where(eq(commentThread.id, threadId))
 		.run();
 }

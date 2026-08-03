@@ -104,7 +104,6 @@ function checkpoint(
 			promotionThreadNodeId: "THREAD_new",
 			promotionRootCommentNodeId: "COMMENT_new",
 			promotionViewerLogin: options.viewerLogin ?? "octocat",
-			promotionReplyCount: 0,
 		})
 		.where(eq(commentThread.id, localThreadId))
 		.run();

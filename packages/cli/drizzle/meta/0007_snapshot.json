@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "64fd8060-6e0b-4b89-be8d-301b159a3306",
+  "id": "ad7c7584-c70c-4235-8017-dbc08c1f8811",
   "prevId": "a44dabe5-4d9e-445a-994d-fa87195fc4b2",
   "tables": {
     "chapter": {
@@ -560,14 +560,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
-        },
-        "promotionReplyCount": {
-          "name": "promotionReplyCount",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
         },
         "promotionReplyNodeIds": {
           "name": "promotionReplyNodeIds",

@@ -1,12 +1,8 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { comment, commentThread } from "../db/schema/index.js";
+import { commentThread } from "../db/schema/index.js";
 import {
 	makeInterruptedPromotionReview,
-	makeInterruptedPromotionReviewWithForeignMatchingReply,
-	makeInterruptedPromotionReviewWithInterleavedViewerReply,
-	makeInterruptedPromotionReviewWithSubmittedReply,
-	makeInterruptedPromotionReviewWithUnrelatedViewerReply,
 	makeResolvedInterruptedPromotionReview,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -46,68 +42,12 @@ describe("review API — promotion resume", () => {
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
 	});
 
-	it("reconciles a reply that landed immediately before exit", async () => {
-		await harness.writeGhShim(makeInterruptedPromotionReview("Reply"));
-		const { runId, localThreadId } = seedInterruptedPromotion();
-
-		const promotion = await promote(runId, localThreadId);
-
-		expect(promotion.status, promotion.body).toBe(200);
-		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(0);
-		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
-	});
-
-	it("does not mistake another participant matching reply for the local reply", async () => {
-		await harness.writeGhShim(makeInterruptedPromotionReviewWithForeignMatchingReply());
-		const { runId, localThreadId } = seedInterruptedPromotion();
-
-		const promotion = await promote(runId, localThreadId);
-
-		expect(promotion.status, promotion.body).toBe(200);
-		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(1);
-		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
-	});
-
-	it("reconciles a viewer reply after an interleaved participant comment", async () => {
-		await harness.writeGhShim(makeInterruptedPromotionReviewWithInterleavedViewerReply());
-		const { runId, localThreadId } = seedInterruptedPromotion();
-
-		const promotion = await promote(runId, localThreadId);
-
-		expect(promotion.status, promotion.body).toBe(200);
-		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(0);
-		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
-	});
-
-	it("finds a promoted reply after an unrelated reply by the same viewer", async () => {
-		await harness.writeGhShim(makeInterruptedPromotionReviewWithUnrelatedViewerReply());
-		const { runId, localThreadId } = seedInterruptedPromotion();
-
-		const promotion = await promote(runId, localThreadId);
-
-		expect(promotion.status, promotion.body).toBe(200);
-		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(0);
-		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
-	});
-
-	it("does not match a later local reply before the next uncertain reply", async () => {
-		await harness.writeGhShim(makeInterruptedPromotionReview("Later reply"));
-		const { runId, localThreadId } = seedInterruptedPromotion();
-		harness.db.insert(comment).values({ threadId: localThreadId, body: "Later reply" }).run();
-
-		const promotion = await promote(runId, localThreadId);
-
-		expect(promotion.status, promotion.body).toBe(200);
-		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(2);
-		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
-	});
-
 	it("resends a checkpointed reply that was manually deleted", async () => {
 		await harness.writeGhShim(makeInterruptedPromotionReview());
 		const { runId, localThreadId } = seedInterruptedPromotion();
 		harness.db
 			.update(commentThread)
-			.set({ promotionReplyCount: 1, promotionReplyNodeIds: ["COMMENT_deleted_reply"] })
+			.set({ promotionReplyNodeIds: ["COMMENT_deleted_reply"] })
 			.where(eq(commentThread.id, localThreadId))
 			.run();
 
@@ -123,20 +63,9 @@ describe("review API — promotion resume", () => {
 		const { runId, localThreadId } = seedInterruptedPromotion();
 		harness.db
 			.update(commentThread)
-			.set({ promotionReplyCount: 1, promotionReplyNodeIds: ["COMMENT_reply"] })
+			.set({ promotionReplyNodeIds: ["COMMENT_reply"] })
 			.where(eq(commentThread.id, localThreadId))
 			.run();
-
-		const promotion = await promote(runId, localThreadId);
-
-		expect(promotion.status, promotion.body).toBe(200);
-		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(0);
-		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
-	});
-
-	it("reconciles a viewer reply after its review was submitted", async () => {
-		await harness.writeGhShim(makeInterruptedPromotionReviewWithSubmittedReply());
-		const { runId, localThreadId } = seedInterruptedPromotion();
 
 		const promotion = await promote(runId, localThreadId);
 
@@ -173,7 +102,6 @@ function checkpoint(localThreadId: string, pullRequestNodeId = "PR_node"): void 
 			promotionPullRequestNodeId: pullRequestNodeId,
 			promotionThreadNodeId: "THREAD_new",
 			promotionRootCommentNodeId: "COMMENT_new",
-			promotionReplyCount: 0,
 		})
 		.where(eq(commentThread.id, localThreadId))
 		.run();

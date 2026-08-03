@@ -78,7 +78,6 @@ describe("review API — sparse promotion repair", () => {
 				promotionThreadNodeId: "THREAD_new",
 				promotionRootCommentNodeId: "COMMENT_new",
 				promotionViewerLogin: "octocat",
-				promotionReplyCount: 3,
 				promotionReplyNodeIds: ["COMMENT_first", "COMMENT_deleted", "COMMENT_third"],
 			})
 			.where(eq(commentThread.id, localThreadId))
@@ -101,7 +100,6 @@ describe("review API — sparse promotion repair", () => {
 		});
 
 		expect(interrupted.status).toBe(500);
-		expect(checkpoint?.promotionReplyCount).toBe(0);
 		expect(checkpoint?.promotionReplyNodeIds).toEqual(["COMMENT_first", null, "COMMENT_third"]);
 		expect(edit.status).toBe(409);
 		expect(resumed.status, resumed.body).toBe(200);
@@ -125,7 +123,6 @@ describe("review API — sparse promotion repair", () => {
 				promotionRootCommentNodeId: "COMMENT_new",
 				promotionViewerLogin: "octocat",
 				promotionRootPublished: true,
-				promotionReplyCount: 1,
 				promotionReplyNodeIds: [null, null, "COMMENT_reply"],
 			})
 			.where(eq(commentThread.id, localThreadId))

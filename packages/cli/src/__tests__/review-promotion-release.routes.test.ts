@@ -137,7 +137,6 @@ function checkpoint(localThreadId: string, pullRequestNodeId = "PR_node"): void 
 			promotionPullRequestNodeId: pullRequestNodeId,
 			promotionThreadNodeId: "THREAD_new",
 			promotionRootCommentNodeId: "COMMENT_new",
-			promotionReplyCount: 0,
 		})
 		.where(eq(commentThread.id, localThreadId))
 		.run();

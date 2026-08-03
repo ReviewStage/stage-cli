@@ -105,7 +105,6 @@ describe("review API — promotion rollback", () => {
 		const [savedThread] = harness.db.select().from(commentThread).all();
 
 		expect(promotion.status).toBe(500);
-		expect(savedThread?.promotionReplyCount).toBe(0);
 		expect(savedThread?.promotionReplyNodeIds).toEqual(["C"]);
 	});
 
