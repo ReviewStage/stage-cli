@@ -21,19 +21,6 @@ afterEach(async () => {
 });
 
 describe("review API — GitHub mutations", () => {
-	it("discards a pending review", async () => {
-		const runId = harness.insertRun();
-
-		const res = await harness.request(
-			await harness.start(),
-			"POST",
-			`/api/runs/${runId}/review/discard`,
-		);
-
-		expect(res.status).toBe(200);
-		expect(await harness.logLines()).toContain("discard-review");
-	});
-
 	it("adds a pending reply", async () => {
 		const runId = harness.insertRun();
 

@@ -1395,14 +1395,12 @@ function reviewSubmissionBody(body: string, marker: string): string {
 /** Discard the viewer's pending review and all its draft comments. */
 export async function discardRunReview(run: ChapterRunRow): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
+		if (review.pendingReviewNodeId === null) return;
 		if (run.prNumber === null && !runMatchesPrDiff(run, review)) {
 			throw new ReviewError(
 				"This run isn't tied to the pull request currently discovered for the checkout. Re-run with --pr before discarding its review.",
 				409,
 			);
-		}
-		if (review.pendingReviewNodeId === null) {
-			throw new ReviewError("There's no pending review to discard.", 409);
 		}
 		await discardReview(run.repoRoot, review.pendingReviewNodeId);
 	});

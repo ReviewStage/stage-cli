@@ -546,6 +546,7 @@ interface GhShimOptions {
 	failAddReply?: boolean;
 	failAddReplyAfterWrite?: boolean;
 	failResolve?: boolean;
+	failDiscardAfterWrite?: boolean;
 	failSubmitAfterWrite?: boolean;
 	failThreadComments?: boolean;
 	identityQueryPendingReviewId?: string | null;
@@ -811,6 +812,17 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   emit({ data: { updatePullRequestReviewComment: { pullRequestReviewComment: { id: "COMMENT_new" } } } });
 } else if (query.includes("mutation DiscardReview")) {
   fs.appendFileSync(log, "discard-review\\n");
+  if (${options.failDiscardAfterWrite ? "true" : "false"}) {
+	const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+	review.data.repository.pullRequest.reviews.nodes = [];
+	review.data.repository.pullRequest.reviewThreads.nodes = review.data.repository.pullRequest.reviewThreads.nodes.flatMap((thread) => {
+	  thread.comments.nodes = thread.comments.nodes.filter((comment) => comment.pullRequestReview.state !== "PENDING");
+	  return thread.comments.nodes.length === 0 ? [] : [thread];
+	});
+	fs.writeFileSync(reviewPath, JSON.stringify(review));
+	process.stderr.write("gh: connection closed after discard mutation\\n");
+	process.exit(1);
+  }
   emit({ data: { deletePullRequestReview: { pullRequestReview: { id: "REVIEW_new" } } } });
 } else if (query.includes("mutation AddReviewReply")) {
   fs.appendFileSync(log, "reply\\n");
