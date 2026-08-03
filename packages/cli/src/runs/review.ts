@@ -392,10 +392,10 @@ class PromotionCoordinator {
 		) {
 			return false;
 		}
-		if (commentIndex === 0) return true;
 		if (!remote.rootIsPending) {
 			markPromotionRootPublished(db, localThreadId);
 		}
+		if (commentIndex === 0) return true;
 		const review = await getReview(thread.repoRoot, remote.repo, remote.pullRequestNumber);
 		const remoteThread = review.threads.find(
 			(candidate) => candidate.threadNodeId === checkpoint.threadNodeId,

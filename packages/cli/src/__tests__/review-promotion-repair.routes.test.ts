@@ -5,6 +5,7 @@ import {
 	EMPTY_REVIEW,
 	makeInterruptedPromotionReview,
 	makeInterruptedPromotionReviewWithSubmittedReply,
+	makePublishedInterruptedPromotionReview,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
 
@@ -93,6 +94,30 @@ describe("review API — failed promotion repair", () => {
 		);
 
 		expect(statuses).toEqual([409, 409, 200]);
+	});
+
+	it("records a published root before freezing its local copy", async () => {
+		await harness.writeGhShim(makePublishedInterruptedPromotionReview(), {
+			recoveryRootState: "COMMENTED",
+		});
+		const { port, localThreadId, comments } = await seedCheckpointedThread();
+
+		const rootEdit = await harness.request(port, "PATCH", `/api/comments/${comments[0]}`, {
+			body: "Changed root",
+		});
+		const newReply = await harness.request(
+			port,
+			"POST",
+			`/api/comment-threads/${localThreadId}/replies`,
+			{ body: "New local suffix" },
+		);
+
+		expect(rootEdit.status).toBe(409);
+		expect(newReply.status, newReply.body).toBe(201);
+		expect(
+			harness.db.select().from(commentThread).where(eq(commentThread.id, localThreadId)).get()
+				?.promotionRootPublished,
+		).toBe(true);
 	});
 
 	it("returns unavailable without changing a reply when GitHub cannot verify it", async () => {
