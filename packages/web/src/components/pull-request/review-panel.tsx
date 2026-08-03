@@ -4,7 +4,7 @@ import {
 	type ReviewEvent,
 } from "@stagereview/types/review";
 import { ChevronRight, CornerDownLeft, MessageSquarePlus, Trash2 } from "lucide-react";
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useMemo, useRef, useState } from "react";
 import { CommentMarkdownEditor } from "@/components/comments/comment-markdown-editor";
 import {
 	AlertDialog,
@@ -23,6 +23,7 @@ import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useReviewContext } from "@/lib/review-context";
 import { canSubmitReview } from "@/lib/review-submission";
+import { useRemoteDraft } from "@/lib/use-remote-draft";
 import { GITHUB_REVIEW_STATUS } from "@/lib/use-review";
 import { cn } from "@/lib/utils";
 
@@ -159,7 +160,11 @@ const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigat
 export function ReviewPanel() {
 	const review = useReviewContext();
 	const [open, setOpen] = useState(false);
-	const [body, setBody] = useState("");
+	const {
+		value: body,
+		setValue: setBody,
+		reset: resetBody,
+	} = useRemoteDraft(review.pendingReviewBody);
 	const [selected, setSelected] = useState<ReviewEvent>(REVIEW_EVENT.COMMENT);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [showDiscard, setShowDiscard] = useState(false);
@@ -170,8 +175,6 @@ export function ReviewPanel() {
 		() => collectPendingByFile(review.pendingComments),
 		[review.pendingComments],
 	);
-	useEffect(() => setBody(review.pendingReviewBody), [review.pendingReviewBody]);
-
 	if (review.github !== GITHUB_REVIEW_STATUS.AVAILABLE) return null;
 
 	// On your own PR only "Comment" is allowed; coerce the effective event so a stale
@@ -198,7 +201,7 @@ export function ReviewPanel() {
 		setIsSubmitting(true);
 		try {
 			await review.submitReview({ event: effectiveEvent, body: body.trim() });
-			setBody("");
+			resetBody();
 			setOpen(false);
 			toast.success("Review submitted");
 		} catch (err) {
@@ -212,6 +215,7 @@ export function ReviewPanel() {
 		setIsSubmitting(true);
 		try {
 			await review.discardReview();
+			resetBody();
 			setShowDiscard(false);
 			setOpen(false);
 			toast.success("Pending review discarded");
