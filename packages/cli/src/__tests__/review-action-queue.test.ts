@@ -129,4 +129,29 @@ describe("ReviewActionQueue", () => {
 
 		expect(ran).toBe(true);
 	});
+
+	it("rejects the action without throwing from a compromised lock callback", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-review-lock-"));
+		tempDirs.push(tempDir);
+		let onCompromised: ((error: Error) => unknown) | undefined;
+		const queue = new ReviewActionQueue(path.join(tempDir, "locks"), async (_file, options) => {
+			onCompromised = options.onCompromised;
+			return async () => {
+				throw Object.assign(new Error("Lock is already released"), { code: "ERELEASED" });
+			};
+		});
+		const compromised = Object.assign(new Error("Lock ownership was lost"), {
+			code: "ECOMPROMISED",
+		});
+
+		const result = queue.run(
+			{ kind: REVIEW_ACTION_SCOPE.CHECKOUT, repoRoot: path.join(tempDir, "repo") },
+			async () => {
+				onCompromised?.(compromised);
+				return "unsafe result";
+			},
+		);
+
+		await expect(result).rejects.toBe(compromised);
+	});
 });

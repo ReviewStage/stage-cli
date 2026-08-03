@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { lock } from "proper-lockfile";
+import { type LockOptions, lock } from "proper-lockfile";
 import { getStageDataDir } from "../db/path.js";
 
 const LOCK_STALE_MS = 30_000;
@@ -31,6 +31,8 @@ export type ReviewActionScope =
 			prNumber: number;
 	  };
 
+type AcquireLock = (file: string, options: LockOptions) => Promise<() => Promise<void>>;
+
 /**
  * Serializes review actions within this process and across other `stagereview`
  * processes. Lock files live in Stage's writable per-user data directory so the
@@ -39,9 +41,14 @@ export type ReviewActionScope =
 export class ReviewActionQueue {
 	private readonly tails = new Map<string, Promise<void>>();
 	private readonly lockDirectory: string;
+	private readonly acquireLock: AcquireLock;
 
-	constructor(lockDirectory = path.join(getStageDataDir(), "review-locks")) {
+	constructor(
+		lockDirectory = path.join(getStageDataDir(), "review-locks"),
+		acquireLock: AcquireLock = lock,
+	) {
 		this.lockDirectory = lockDirectory;
+		this.acquireLock = acquireLock;
 	}
 
 	async run<T>(scope: ReviewActionScope, action: () => Promise<T>): Promise<T> {
@@ -69,17 +76,33 @@ export class ReviewActionQueue {
 			this.lockDirectory,
 			createHash("sha256").update(key).digest("hex"),
 		);
-		const release = await lock(lockTargetPath, {
+		let compromisedError: Error | null = null;
+		const release = await this.acquireLock(lockTargetPath, {
 			realpath: false,
 			stale: LOCK_STALE_MS,
 			update: LOCK_UPDATE_MS,
 			retries: LOCK_RETRIES,
+			onCompromised: (error) => {
+				compromisedError = error;
+			},
 		});
+		const actionResult = await Promise.resolve()
+			.then(action)
+			.then(
+				(value) => ({ status: "fulfilled" as const, value }),
+				(error: unknown) => ({ status: "rejected" as const, error }),
+			);
 		try {
-			return await action();
-		} finally {
 			await release();
+		} catch (error) {
+			// proper-lockfile marks a compromised lock released before invoking the
+			// callback, so its release function then reports ERELEASED. Preserve every
+			// other release failure.
+			if (compromisedError === null || errorCode(error) !== "ERELEASED") throw error;
 		}
+		if (actionResult.status === "rejected") throw actionResult.error;
+		if (compromisedError !== null) throw compromisedError;
+		return actionResult.value;
 	}
 }
 
@@ -98,4 +121,8 @@ function scopeKey(scope: ReviewActionScope): string {
 				scope.prNumber,
 			]);
 	}
+}
+
+function errorCode(error: unknown): unknown {
+	return typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
 }
