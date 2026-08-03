@@ -484,17 +484,17 @@ async function promoteLocalThread(
 		checkpoint === null
 			? null
 			: await releaseCrossPullRequestPromotion(db, run, localThreadId, checkpoint);
-	// The remote root may have been removed while an account switch was in progress.
-	// Release that now-missing checkpoint before binding recovery to its old viewer.
-	if (checkpoint !== null && checkpointRemote === null) {
-		clearPromotionProgress(db, localThreadId);
-		checkpoint = null;
-		initialReplyCount = 0;
-		initialReplyNodeIds = [];
-	}
 
 	await withLockedReviewTarget(run, async (target) => {
 		const { review } = target;
+		// A pending thread owned by another account can be invisible to this viewer.
+		// Enforce the durable identity before treating a null point lookup as deletion.
+		if (checkpoint?.viewerLogin && checkpoint.viewerLogin !== review.viewerLogin) {
+			throw new ReviewError(
+				`This comment promotion belongs to GitHub user ${checkpoint.viewerLogin}. Switch back to that account to resume it.`,
+				409,
+			);
+		}
 		let liveCheckpointRemote = checkpointRemote;
 		if (checkpoint !== null) {
 			const current = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);

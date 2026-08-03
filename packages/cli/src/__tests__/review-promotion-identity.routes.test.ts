@@ -60,11 +60,28 @@ describe("review API — promotion identity", () => {
 		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
 	});
 
-	it("clears a missing remote root before binding recovery to the previous viewer", async () => {
+	it("preserves an invisible checkpoint owned by the previous viewer", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW, { recoveryThreadMissing: true });
 		const runId = harness.insertRun();
 		const localThreadId = harness.seedLocalThread({ withReply: true });
 		checkpoint(localThreadId, { viewerLogin: "previous-user" });
+
+		const promotion = await promote(runId, localThreadId);
+
+		expect(promotion.status, promotion.body).toBe(409);
+		expect((await harness.logLines()).filter((line) => line.startsWith("add-thread"))).toHaveLength(
+			0,
+		);
+		const [savedThread] = harness.db.select().from(commentThread).all();
+		expect(savedThread?.promotionViewerLogin).toBe("previous-user");
+		expect(savedThread?.promotionThreadNodeId).toBe("THREAD_new");
+	});
+
+	it("restarts a missing checkpoint for the same viewer", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, { recoveryThreadMissing: true });
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true });
+		checkpoint(localThreadId);
 
 		const promotion = await promote(runId, localThreadId);
 
