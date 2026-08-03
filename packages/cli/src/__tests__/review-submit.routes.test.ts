@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	EMPTY_REVIEW,
 	makeOwnPullRequestReview,
+	makeStalePendingReview,
 	makeSummaryOnlyPendingReview,
 	REVIEW_QUERY_RESULT,
 	ReviewRouteHarness,
@@ -34,6 +35,21 @@ describe("review API — submission", () => {
 		expect((await harness.logLines()).find((line) => line.startsWith("submit"))).toContain(
 			"event=APPROVE",
 		);
+	});
+
+	it("submits a pending review created on an earlier head commit", async () => {
+		await harness.writeGhShim(makeStalePendingReview());
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/submit`,
+			{ event: "COMMENT", body: "Finish the existing review" },
+		);
+
+		expect(res.status, res.body).toBe(200);
+		expect(await harness.logLines()).toContainEqual(expect.stringMatching(/^submit/));
 	});
 
 	it("rejects an empty comment review", async () => {

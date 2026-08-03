@@ -10,7 +10,6 @@ export interface CommentPreferences {
 
 export interface CommentAvailability {
 	canWriteToGitHub: boolean;
-	canPushToReview: boolean;
 	hasPendingReview: boolean;
 	isGitHubAnchor: boolean;
 }

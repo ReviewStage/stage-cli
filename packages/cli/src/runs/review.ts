@@ -95,12 +95,6 @@ function assertGitHubWritable(run: ChapterRunRow, review: GitHubReview): void {
 
 function assertPushable(run: ChapterRunRow, review: GitHubReview): void {
 	assertGitHubWritable(run, review);
-	if (review.pendingReviewNodeId !== null && review.pendingReviewCommitOid !== review.headRefOid) {
-		throw new ReviewError(
-			"Your pending GitHub review belongs to an earlier PR version. Submit or discard it on GitHub before commenting on this run.",
-			409,
-		);
-	}
 }
 
 function canWriteToGitHub(run: ChapterRunRow, review: GitHubReview): boolean {
@@ -108,10 +102,7 @@ function canWriteToGitHub(run: ChapterRunRow, review: GitHubReview): boolean {
 }
 
 function canPushToReview(run: ChapterRunRow, review: GitHubReview): boolean {
-	return (
-		canWriteToGitHub(run, review) &&
-		(review.pendingReviewNodeId === null || review.pendingReviewCommitOid === review.headRefOid)
-	);
+	return canWriteToGitHub(run, review);
 }
 
 function requireReviewThread(review: GitHubReview, threadNodeId: string): GitHubApiReviewThread {

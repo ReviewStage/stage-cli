@@ -14,7 +14,6 @@ afterEach(cleanup);
 
 const GITHUB_AVAILABLE = {
 	canWriteToGitHub: true,
-	canPushToReview: true,
 	hasPendingReview: false,
 	isGitHubAnchor: true,
 };
@@ -52,25 +51,11 @@ describe("resolveCommentControls", () => {
 		});
 	});
 
-	it("joins a stale pending review using a current-head GitHub comment", () => {
-		expect(
-			resolveCommentControls(
-				{ local: false, startReview: false },
-				{ ...GITHUB_AVAILABLE, canPushToReview: false, hasPendingReview: true },
-			),
-		).toEqual({
-			local: false,
-			localDisabled: false,
-			startReview: true,
-			showStartReview: false,
-		});
-	});
-
 	it("temporarily forces Local when GitHub cannot accept any comment", () => {
 		expect(
 			resolveCommentControls(
 				{ local: false, startReview: true },
-				{ ...GITHUB_AVAILABLE, canPushToReview: false, canWriteToGitHub: false },
+				{ ...GITHUB_AVAILABLE, canWriteToGitHub: false },
 			),
 		).toEqual({
 			local: true,

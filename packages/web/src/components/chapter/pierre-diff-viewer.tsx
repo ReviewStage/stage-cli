@@ -285,7 +285,6 @@ export function PierreDiffViewer({
 					: resolveCommentControls(
 							{ local, startReview },
 							{
-								canPushToReview: comments.canPushToReview,
 								canWriteToGitHub: comments.canWriteToGitHub,
 								hasPendingReview: comments.hasPendingReview,
 								isGitHubAnchor: isGitHubReviewAnchor(diffHunks, draft),
@@ -357,7 +356,6 @@ export function PierreDiffViewer({
 		},
 		[
 			drafts,
-			comments.canPushToReview,
 			comments.canWriteToGitHub,
 			comments.hasPendingReview,
 			diffHunks,
