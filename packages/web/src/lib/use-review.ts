@@ -148,7 +148,9 @@ export function useReview(runId: string): UseReviewResult {
 			const cached =
 				review.github === GITHUB_REVIEW_STATUS.AVAILABLE
 					? review
-					: queryClient.getQueryData<ReviewQueryData>(queryKey)?.lastAvailableReview;
+					: review.github === GITHUB_REVIEW_STATUS.OFFLINE
+						? queryClient.getQueryData<ReviewQueryData>(queryKey)?.lastAvailableReview
+						: undefined;
 			return {
 				generation,
 				review:

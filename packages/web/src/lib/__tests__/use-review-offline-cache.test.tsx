@@ -70,6 +70,12 @@ const OFFLINE: ReviewResponse = {
 	canWriteToGitHub: false,
 };
 
+const NONE: ReviewResponse = {
+	...OFFLINE,
+	github: "none",
+	threads: [],
+};
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("useReview offline cache", () => {
@@ -98,6 +104,29 @@ describe("useReview offline cache", () => {
 		expect(result.current.pendingReviewBody).toBe("Draft summary");
 		expect(result.current.canPushToReview).toBe(false);
 		expect(result.current.canWriteToGitHub).toBe(false);
+	});
+
+	it("does not restore a cached PR after discovery authoritatively returns none", async () => {
+		const reviews = [AVAILABLE, NONE, OFFLINE];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => jsonResponse(reviews.shift())),
+		);
+		const { client, Wrapper } = makeWrapper();
+		const { result } = renderHook(() => useReview("run1"), { wrapper: Wrapper });
+		await waitFor(() => expect(result.current.github).toBe("available"));
+
+		await act(async () => {
+			await client.invalidateQueries({ queryKey: reviewQueryKey("run1") });
+		});
+		await waitFor(() => expect(result.current.github).toBe("none"));
+
+		await act(async () => {
+			await client.invalidateQueries({ queryKey: reviewQueryKey("run1") });
+		});
+		await waitFor(() => expect(result.current.github).toBe("offline"));
+		expect(result.current.threads.map((thread) => thread.id)).toEqual(["THREAD_local"]);
+		expect(result.current.pendingCommentCount).toBe(0);
 	});
 });
 
