@@ -1,52 +1,9 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { REVIEW_ACTION_SCOPE, ReviewActionQueue } from "../runs/review-action-queue.js";
 
-const tempDirs: string[] = [];
-
-afterEach(async () => {
-	vi.restoreAllMocks();
-	await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
-});
-
 describe("ReviewActionQueue", () => {
-	it("serializes one local thread across independent queue instances", async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-review-lock-"));
-		tempDirs.push(tempDir);
-		const lockDirectory = path.join(tempDir, "locks");
-		let releaseFirst = () => {};
-		let firstStarted = false;
-		let secondRan = false;
-		const first = new ReviewActionQueue(lockDirectory).run(
-			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: "thread-1" },
-			async () => {
-				firstStarted = true;
-				await new Promise<void>((resolve) => {
-					releaseFirst = resolve;
-				});
-			},
-		);
-		await expect.poll(() => firstStarted).toBe(true);
-		const second = new ReviewActionQueue(lockDirectory).run(
-			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: "thread-1" },
-			async () => {
-				secondRan = true;
-			},
-		);
-		await new Promise((resolve) => setTimeout(resolve, 100));
-		expect(secondRan).toBe(false);
-
-		releaseFirst();
-		await Promise.all([first, second]);
-		expect(secondRan).toBe(true);
-	});
-
-	it("serializes the same pull request across checkout-specific queue instances", async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-review-lock-"));
-		tempDirs.push(tempDir);
-		const lockDirectory = path.join(tempDir, "locks");
+	it("serializes actions sharing a scope in submission order", async () => {
+		const queue = new ReviewActionQueue();
 		const events: string[] = [];
 		let releaseFirst: () => void = () => {
 			throw new Error("First action gate was not initialized");
@@ -55,7 +12,41 @@ describe("ReviewActionQueue", () => {
 			releaseFirst = resolve;
 		});
 
-		const first = new ReviewActionQueue(lockDirectory).run(
+		const first = queue.run(
+			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: "thread-1" },
+			async () => {
+				events.push("first:start");
+				await firstGate;
+				events.push("first:end");
+			},
+		);
+		await expect.poll(() => events).toEqual(["first:start"]);
+
+		const second = queue.run(
+			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: "thread-1" },
+			async () => {
+				events.push("second");
+			},
+		);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(events).toEqual(["first:start"]);
+
+		releaseFirst();
+		await Promise.all([first, second]);
+		expect(events).toEqual(["first:start", "first:end", "second"]);
+	});
+
+	it("shares one queue for the same pull request regardless of name casing", async () => {
+		const queue = new ReviewActionQueue();
+		const events: string[] = [];
+		let releaseFirst: () => void = () => {
+			throw new Error("First action gate was not initialized");
+		};
+		const firstGate = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+
+		const first = queue.run(
 			{
 				kind: REVIEW_ACTION_SCOPE.PULL_REQUEST,
 				owner: "ReviewStage",
@@ -70,7 +61,7 @@ describe("ReviewActionQueue", () => {
 		);
 		await expect.poll(() => events).toEqual(["first:start"]);
 
-		const second = new ReviewActionQueue(lockDirectory).run(
+		const second = queue.run(
 			{
 				kind: REVIEW_ACTION_SCOPE.PULL_REQUEST,
 				owner: "reviewstage",
@@ -81,7 +72,7 @@ describe("ReviewActionQueue", () => {
 				events.push("second");
 			},
 		);
-		await new Promise((resolve) => setTimeout(resolve, 100));
+		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(events).toEqual(["first:start"]);
 
 		releaseFirst();
@@ -89,32 +80,15 @@ describe("ReviewActionQueue", () => {
 		expect(events).toEqual(["first:start", "first:end", "second"]);
 	});
 
-	it("reports a compromised lock without failing a completed action", async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "stage-review-lock-"));
-		tempDirs.push(tempDir);
-		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-		let onCompromised: ((error: Error) => unknown) | undefined;
-		const queue = new ReviewActionQueue(path.join(tempDir, "locks"), async (_file, options) => {
-			onCompromised = options.onCompromised;
-			return async () => {
-				throw Object.assign(new Error("Lock is already released"), { code: "ERELEASED" });
-			};
-		});
-		const compromised = Object.assign(new Error("Lock ownership was lost"), {
-			code: "ECOMPROMISED",
-		});
+	it("runs the next action after a failure", async () => {
+		const queue = new ReviewActionQueue();
+		const scope = { kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: "thread-1" } as const;
 
-		const result = queue.run(
-			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: "thread-1" },
-			async () => {
-				onCompromised?.(compromised);
-				return "unsafe result";
-			},
-		);
-
-		await expect(result).resolves.toBe("unsafe result");
-		expect(stderr).toHaveBeenCalledWith(
-			expect.stringContaining("Review action lock compromised: Lock ownership was lost"),
-		);
+		await expect(
+			queue.run(scope, async () => {
+				throw new Error("boom");
+			}),
+		).rejects.toThrow("boom");
+		await expect(queue.run(scope, async () => "after")).resolves.toBe("after");
 	});
 });
