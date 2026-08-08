@@ -1,31 +1,38 @@
 // @vitest-environment happy-dom
 
-import type { CommentThread } from "@stagereview/types/comments";
 import type { ReviewResponse, ReviewThread } from "@stagereview/types/review";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useReview } from "../use-review";
 import { jsonResponse, makeWrapper } from "./fixtures";
 
-const LOCAL_THREAD: CommentThread = {
+const LOCAL_THREAD: ReviewThread = {
 	id: "THREAD_local",
+	source: "local",
+	threadNodeId: null,
 	filePath: "src/foo.ts",
 	side: "additions",
 	startLine: 3,
 	endLine: 3,
-	resolvedAt: null,
-	createdAt: "2026-01-01T00:00:00Z",
-	updatedAt: "2026-01-01T00:00:00Z",
+	isResolved: false,
 	comments: [
 		{
 			id: "COMMENT_local",
+			state: "local",
 			body: "Promote me",
-			authorId: "local",
+			bodyHtml: null,
+			author: null,
+			nodeId: null,
+			htmlUrl: null,
 			createdAt: "2026-01-01T00:00:00Z",
-			updatedAt: "2026-01-01T00:00:00Z",
 		},
 	],
 };
+
+const reviewWithLocalThread = (): ReviewResponse => ({
+	...review(false),
+	threads: [LOCAL_THREAD],
+});
 
 const REMOTE_THREAD: ReviewThread = {
 	id: "THREAD_remote",
@@ -116,19 +123,15 @@ describe("useReview promotion", () => {
 		await waitFor(() => expect(result.current.pendingComments).toHaveLength(1));
 	});
 
-	it("removes the local overlay even when its post-promotion refresh fails", async () => {
+	it("shows the promoted GitHub thread after add-to-review refetches", async () => {
 		let promoted = false;
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 				const url = typeof input === "string" ? input : input.toString();
 				const method = init?.method ?? "GET";
-				if (url.endsWith("/review") && method === "GET") return jsonResponse(review(promoted));
-				if (url.endsWith("/comment-threads") && method === "POST") {
-					return jsonResponse(LOCAL_THREAD);
-				}
-				if (url.endsWith("/comment-threads") && method === "GET") {
-					return promoted ? new Response("offline", { status: 500 }) : jsonResponse([LOCAL_THREAD]);
+				if (url.endsWith("/review") && method === "GET") {
+					return jsonResponse(promoted ? review(true) : reviewWithLocalThread());
 				}
 				if (url.endsWith("/review/add") && method === "POST") {
 					promoted = true;
@@ -139,17 +142,6 @@ describe("useReview promotion", () => {
 		);
 		const { Wrapper } = makeWrapper();
 		const { result } = renderHook(() => useReview("run1"), { wrapper: Wrapper });
-		await waitFor(() => expect(result.current.github).toBe("available"));
-
-		await act(async () => {
-			await result.current.createLocalThread({
-				filePath: "src/foo.ts",
-				side: "additions",
-				startLine: 3,
-				endLine: 3,
-				body: "Promote me",
-			});
-		});
 		await waitFor(() =>
 			expect(result.current.threads.map((thread) => thread.id)).toEqual(["THREAD_local"]),
 		);

@@ -4,7 +4,6 @@ import { commentThread } from "../db/schema/index.js";
 import {
 	EMPTY_REVIEW,
 	HEAD,
-	makeStalePendingReview,
 	REVIEW_QUERY_RESULT,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -91,7 +90,7 @@ describe("review API — create comment", () => {
 	});
 
 	it("adds a current-head comment to an older pending review", async () => {
-		await harness.writeGhShim(makeStalePendingReview());
+		await harness.writeGhShim(REVIEW_QUERY_RESULT);
 		const runId = harness.insertRun();
 		const res = await harness.request(
 			await harness.start(),

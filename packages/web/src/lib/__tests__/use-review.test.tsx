@@ -44,14 +44,32 @@ const AVAILABLE_REVIEW: ReviewResponse = {
 	canWriteToGitHub: true,
 };
 
-const OFFLINE_REVIEW: ReviewResponse = {
-	github: "offline",
-	threads: [],
-	pendingComments: [],
-	hasPendingReview: false,
-	pendingReviewBody: "",
-	isOwnPullRequest: false,
-	canWriteToGitHub: false,
+const LOCAL_REVIEW_THREAD: ReviewThread = {
+	id: "LOCAL_REVIEW_THREAD",
+	source: "local",
+	threadNodeId: null,
+	filePath: "src/local.ts",
+	side: "additions",
+	startLine: 3,
+	endLine: 3,
+	isResolved: false,
+	comments: [
+		{
+			id: "COMMENT_local",
+			state: "local",
+			body: "Local comment",
+			bodyHtml: null,
+			author: null,
+			nodeId: null,
+			htmlUrl: null,
+			createdAt: "2026-01-02T00:00:00Z",
+		},
+	],
+};
+
+const AVAILABLE_REVIEW_WITH_LOCAL: ReviewResponse = {
+	...AVAILABLE_REVIEW,
+	threads: [LOCAL_REVIEW_THREAD, GITHUB_THREAD],
 };
 
 const LOCAL_THREAD: CommentThread = {
@@ -79,22 +97,19 @@ afterEach(() => {
 });
 
 describe("useReview", () => {
-	it("refreshes local threads without replacing cached GitHub review data", async () => {
-		let reviewReads = 0;
+	it("refetches the merged review after a local mutation", async () => {
+		let created = false;
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 				const url = typeof input === "string" ? input : input.toString();
 				const method = init?.method ?? "GET";
 				if (url.endsWith("/review") && method === "GET") {
-					reviewReads += 1;
-					return jsonResponse(reviewReads === 1 ? AVAILABLE_REVIEW : OFFLINE_REVIEW);
+					return jsonResponse(created ? AVAILABLE_REVIEW_WITH_LOCAL : AVAILABLE_REVIEW);
 				}
 				if (url.endsWith("/comment-threads") && method === "POST") {
+					created = true;
 					return jsonResponse(LOCAL_THREAD);
-				}
-				if (url.endsWith("/comment-threads") && method === "GET") {
-					return jsonResponse([LOCAL_THREAD]);
 				}
 				return new Response("not found", { status: 404 });
 			}),
@@ -102,6 +117,7 @@ describe("useReview", () => {
 		const { Wrapper } = makeWrapper();
 		const { result } = renderHook(() => useReview("run1"), { wrapper: Wrapper });
 		await waitFor(() => expect(result.current.github).toBe("available"));
+		expect(result.current.threads.map((thread) => thread.id)).toEqual(["THREAD_github"]);
 
 		await act(async () => {
 			await result.current.createLocalThread({
@@ -113,16 +129,15 @@ describe("useReview", () => {
 			});
 		});
 
-		await waitFor(() => expect(result.current.threads).toHaveLength(2));
-		expect(result.current.github).toBe("available");
-		expect(result.current.threads.map((thread) => thread.id)).toEqual([
-			"THREAD_local",
-			"THREAD_github",
-		]);
-		expect(reviewReads).toBe(1);
+		await waitFor(() =>
+			expect(result.current.threads.map((thread) => thread.id)).toEqual([
+				"LOCAL_REVIEW_THREAD",
+				"THREAD_github",
+			]),
+		);
 	});
 
-	it("does not reject a successful write when the local refresh fails", async () => {
+	it("resolves a successful write even when unrelated requests fail", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

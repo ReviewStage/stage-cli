@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	makeClosedReview,
-	makeMissingPendingCommitReview,
-	makeStalePendingReview,
 	REVIEW_QUERY_RESULT,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -40,8 +38,8 @@ describe("review API — GitHub boundaries", () => {
 		expect(await harness.logLines()).not.toContainEqual(expect.stringMatching(/^edit-comment/));
 	});
 
-	it("keeps an older pending review writable without publishing a direct reply", async () => {
-		await harness.writeGhShim(makeStalePendingReview());
+	it("keeps a pending review writable without publishing a direct reply", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT);
 		const runId = harness.insertRun();
 		const port = await harness.start();
 
@@ -84,19 +82,6 @@ describe("review API — GitHub boundaries", () => {
 		expect(review.pendingComments).toHaveLength(1);
 		expect(review.hasPendingReview).toBe(true);
 		expect(review.canWriteToGitHub).toBe(false);
-	});
-
-	it("treats a pending review with no commit as stale instead of offline", async () => {
-		await harness.writeGhShim(makeMissingPendingCommitReview());
-		const runId = harness.insertRun();
-
-		const read = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
-		const review = JSON.parse(read.body);
-
-		expect(read.status).toBe(200);
-		expect(review.github).toBe("available");
-		expect(review.hasPendingReview).toBe(true);
-		expect(review.canWriteToGitHub).toBe(true);
 	});
 
 	it("reports a missing automatically discovered PR without treating GitHub as offline", async () => {

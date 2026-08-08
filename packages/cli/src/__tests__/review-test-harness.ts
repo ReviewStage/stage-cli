@@ -106,16 +106,6 @@ function makePromotionThread(rootState: "PENDING" | "COMMENTED") {
 	};
 }
 
-const manualPromotionReply = {
-	id: "COMMENT_manual",
-	url: "https://github.com/owner/repo/pull/5#discussion_r4",
-	body: "Manual GitHub reply",
-	bodyHTML: "<p>Manual GitHub reply</p>",
-	createdAt: "2026-01-04T00:00:00Z",
-	author: { login: "octocat", avatarUrl: "https://x/o.png" },
-	pullRequestReview: { state: "PENDING" },
-};
-
 function makeReview(
 	threads: unknown[],
 	pendingReviewId: string | null,
@@ -123,7 +113,6 @@ function makeReview(
 	options: {
 		state?: "OPEN" | "CLOSED" | "MERGED";
 		headRefOid?: string;
-		pendingReviewCommitOid?: string | null;
 		viewerDidAuthor?: boolean;
 	} = {},
 ): unknown {
@@ -139,18 +128,7 @@ function makeReview(
 					baseRefOid: BASE,
 					reviews: {
 						nodes:
-							pendingReviewId === null
-								? []
-								: [
-										{
-											id: pendingReviewId,
-											body: pendingReviewBody,
-											commit:
-												options.pendingReviewCommitOid === null
-													? null
-													: { oid: options.pendingReviewCommitOid ?? HEAD },
-										},
-									],
+							pendingReviewId === null ? [] : [{ id: pendingReviewId, body: pendingReviewBody }],
 					},
 					reviewThreads: {
 						pageInfo: { hasNextPage: false, endCursor: null },
@@ -172,18 +150,6 @@ export function makeSummaryOnlyPendingReview(): unknown {
 export function makeClosedReview(): unknown {
 	return makeReview([submittedThread, pendingThread], "REVIEW_pending", "", {
 		state: "CLOSED",
-	});
-}
-
-export function makeStalePendingReview(): unknown {
-	return makeReview([submittedThread, pendingThread], "REVIEW_pending", "", {
-		pendingReviewCommitOid: "d".repeat(40),
-	});
-}
-
-export function makeMissingPendingCommitReview(): unknown {
-	return makeReview([submittedThread, pendingThread], "REVIEW_pending", "", {
-		pendingReviewCommitOid: null,
 	});
 }
 
@@ -228,164 +194,6 @@ export function makeCrossSideRangeReview(): unknown {
 			},
 		],
 		null,
-	);
-}
-
-export function makeInterruptedPromotionReview(
-	promotedReplyBody?: string,
-	options: { state?: "OPEN" | "CLOSED" | "MERGED"; headRefOid?: string } = {},
-): unknown {
-	const root = {
-		...pendingThread.comments.nodes[0],
-		id: "COMMENT_new",
-		body: "Root",
-		bodyHTML: "<p>Root</p>",
-	};
-	return makeReview(
-		[
-			{
-				...pendingThread,
-				id: "THREAD_new",
-				path: "src/foo.ts",
-				line: 3,
-				diffSide: "RIGHT",
-				comments: {
-					...pendingThread.comments,
-					nodes:
-						promotedReplyBody === undefined
-							? [root]
-							: [
-									root,
-									{
-										...root,
-										id: "COMMENT_reply",
-										body: promotedReplyBody,
-										bodyHTML: `<p>${promotedReplyBody}</p>`,
-									},
-								],
-				},
-			},
-		],
-		"REVIEW_pending",
-		"",
-		options,
-	);
-}
-
-export function makePublishedInterruptedPromotionReview(): unknown {
-	const root = {
-		...pendingThread.comments.nodes[0],
-		id: "COMMENT_new",
-		body: "Root",
-		bodyHTML: "<p>Root</p>",
-		pullRequestReview: { state: "COMMENTED" },
-	};
-	return makeReview(
-		[
-			{
-				...pendingThread,
-				id: "THREAD_new",
-				path: "src/foo.ts",
-				line: 3,
-				diffSide: "RIGHT",
-				comments: { ...pendingThread.comments, nodes: [root] },
-			},
-		],
-		null,
-	);
-}
-
-export function makeInterruptedPromotionReviewWithSparseReplies(): unknown {
-	const root = {
-		...pendingThread.comments.nodes[0],
-		id: "COMMENT_new",
-		body: "Root",
-	};
-	const firstReply = {
-		...root,
-		id: "COMMENT_first",
-		body: "Reply",
-	};
-	const unrelatedMiddleReply = {
-		...root,
-		id: "COMMENT_unrelated_middle",
-		body: "Second reply",
-	};
-	const thirdReply = {
-		...root,
-		id: "COMMENT_third",
-		body: "Third reply",
-	};
-	return makeReview(
-		[
-			{
-				...pendingThread,
-				id: "THREAD_new",
-				path: "src/foo.ts",
-				line: 3,
-				diffSide: "RIGHT",
-				comments: {
-					...pendingThread.comments,
-					nodes: [root, firstReply, unrelatedMiddleReply, thirdReply],
-				},
-			},
-		],
-		"REVIEW_pending",
-	);
-}
-
-export function makeInterruptedPromotionReviewWithSubmittedReply(
-	state: "OPEN" | "CLOSED" | "MERGED" = "OPEN",
-): unknown {
-	const root = {
-		...submittedThread.comments.nodes[0],
-		id: "COMMENT_new",
-		body: "Root",
-		bodyHTML: "<p>Root</p>",
-	};
-	const reply = {
-		...submittedThread.comments.nodes[0],
-		id: "COMMENT_reply",
-		body: "Reply",
-		bodyHTML: "<p>Reply</p>",
-	};
-	return makeReview(
-		[
-			{
-				...submittedThread,
-				id: "THREAD_new",
-				path: "src/foo.ts",
-				line: 3,
-				diffSide: "RIGHT",
-				comments: { ...submittedThread.comments, nodes: [root, reply] },
-			},
-		],
-		null,
-		"",
-		{ state },
-	);
-}
-
-export function makeResolvedInterruptedPromotionReview(): unknown {
-	const root = {
-		...pendingThread.comments.nodes[0],
-		id: "COMMENT_new",
-		body: "Local note",
-		bodyHTML: "<p>Local note</p>",
-	};
-	return makeReview(
-		[
-			{
-				...pendingThread,
-				id: "THREAD_new",
-				isResolved: true,
-				path: "src/foo.ts",
-				line: 3,
-				diffSide: "RIGHT",
-				comments: { ...pendingThread.comments, nodes: [root] },
-			},
-		],
-		"REVIEW_pending",
 	);
 }
 
@@ -439,40 +247,17 @@ export function makePaginatedThreadReview(): unknown {
 }
 
 interface GhShimOptions {
-	addedThreadCanResolve?: boolean;
 	addThreadDelayMs?: number;
 	discoveredPullRequest?: boolean;
 	failAddThread?: boolean;
-	failAddThreadAfterWrite?: boolean;
-	failReviewAfterAddThreadWrite?: boolean;
-	anchorlessCreatedThreadBeforeFailure?: boolean;
-	createdThreadHeadRefOidBeforeFailure?: string;
-	createdThreadPullRequestStateBeforeFailure?: "OPEN" | "CLOSED" | "MERGED";
-	replaceCreatedThreadBodyBeforeFailure?: boolean;
 	addConcurrentPendingCommentOnThreadFailure?: boolean;
-	addConcurrentPendingReplyOnResolveFailure?: boolean;
 	failAddReply?: boolean;
-	failAddReplyAfterWrite?: boolean;
-	failResolve?: boolean;
 	failDiscardAfterWrite?: boolean;
-	failSubmitAfterWrite?: boolean;
 	failThreadComments?: boolean;
-	identityQueryPendingReviewId?: string | null;
 	mergeBaseOid?: string;
 	noPullRequest?: boolean;
 	persistCreatedReview?: boolean;
 	reviewQueryDelayMs?: number;
-	secondReviewPageHeadRefOid?: string;
-	secondReviewPagePendingReviewBody?: string;
-	secondReviewPagePendingReviewId?: string | null;
-	secondReviewPageState?: "OPEN" | "CLOSED" | "MERGED";
-	recoveryPullRequestNodeId?: string;
-	recoveryPullRequestNumber?: number;
-	recoveryRepoOwner?: string;
-	recoveryRepoName?: string;
-	recoveryRootAuthorLogin?: string;
-	recoveryRootState?: "PENDING" | "COMMENTED";
-	recoveryThreadMissing?: boolean;
 }
 
 interface InsertRunOptions {
@@ -539,7 +324,7 @@ export class ReviewRouteHarness {
 	async writeGhShim(reviewResult: unknown, options: GhShimOptions = {}): Promise<void> {
 		const reviewPath = path.join(this.tmpDir, "review.json");
 		await fs.writeFile(reviewPath, JSON.stringify(reviewResult));
-		const promotionThread = makePromotionThread(options.recoveryRootState ?? "PENDING");
+		const promotionThread = makePromotionThread("PENDING");
 		const shim = `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -553,7 +338,6 @@ const fields = inputText
 const log = ${JSON.stringify(path.join(this.tmpDir, "gh-log.txt"))};
 const argvLog = ${JSON.stringify(path.join(this.tmpDir, "gh-argv-log.txt"))};
 const reviewPath = ${JSON.stringify(reviewPath)};
-const failReviewPath = ${JSON.stringify(path.join(this.tmpDir, "fail-review"))};
 fs.appendFileSync(argvLog, JSON.stringify(args) + "\\n");
 function emit(o) { process.stdout.write(JSON.stringify(o)); }
 function sleep(ms) { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
@@ -588,45 +372,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
       pullRequestReview: { state: "PENDING" }
     }]
   } } } });
-} else if (query.includes("query GetPromotionThread")) {
-  fs.appendFileSync(log, "get-promotion-thread\\n");
-  emit({ data: { node: ${
-		options.recoveryThreadMissing
-			? "null"
-			: `{
-    pullRequest: {
-      id: ${JSON.stringify(options.recoveryPullRequestNodeId ?? "PR_node")},
-      number: ${options.recoveryPullRequestNumber ?? this.prNumber},
-      repository: {
-        name: ${JSON.stringify(options.recoveryRepoName ?? "repo")},
-        owner: { login: ${JSON.stringify(options.recoveryRepoOwner ?? "owner")} }
-      }
-    },
-    comments: { nodes: [{
-      id: "COMMENT_new",
-      author: { login: ${JSON.stringify(options.recoveryRootAuthorLogin ?? "octocat")} },
-      pullRequestReview: { state: ${JSON.stringify(options.recoveryRootState ?? "PENDING")} }
-    }] }
-  }`
-	} } });
-} else if (query.includes("query GetSubmittedReviews")) {
-  const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-  emit({ data: {
-    viewer: { login: "octocat" },
-    repository: { pullRequest: { reviews: {
-      pageInfo: { hasNextPage: false, endCursor: null },
-      nodes: review.data.repository.pullRequest.submittedReviews || []
-    } } }
-  } });
-} else if (query.includes("query GetReviewIdentity")) {
-  const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-  if (${options.identityQueryPendingReviewId !== undefined ? "true" : "false"}) {
-    const pendingReviewId = ${JSON.stringify(options.identityQueryPendingReviewId ?? null)};
-    review.data.repository.pullRequest.reviews.nodes = pendingReviewId === null ? [] : [{ id: pendingReviewId, body: "", commit: { oid: review.data.repository.pullRequest.headRefOid } }];
-  }
-  emit(review);
 } else if (query.includes("query GetReview")) {
-	if (fs.existsSync(failReviewPath)) { process.stderr.write("gh: review refresh failed\\n"); process.exit(1); }
   sleep(${options.reviewQueryDelayMs ?? 0});
   const commentFields = query.slice(query.indexOf("comments(first:"), query.indexOf("author {"));
   const illegalCommentField = ["databaseId", "diffSide", "startDiffSide"].find((field) => commentFields.includes(field));
@@ -635,38 +381,12 @@ if (args.some((arg) => arg.includes("/compare/"))) {
     process.exit(1);
   }
 	const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-	if (${
-		options.secondReviewPageHeadRefOid ||
-		options.secondReviewPageState ||
-		options.secondReviewPagePendingReviewBody !== undefined ||
-		options.secondReviewPagePendingReviewId !== undefined
-			? "true"
-			: "false"
-	}) {
-	  if (args.includes("cursor=THREAD_PAGE_2")) {
-	    if (${options.secondReviewPageHeadRefOid ? "true" : "false"}) review.data.repository.pullRequest.headRefOid = ${JSON.stringify(options.secondReviewPageHeadRefOid ?? HEAD)};
-	    if (${options.secondReviewPageState ? "true" : "false"}) review.data.repository.pullRequest.state = ${JSON.stringify(options.secondReviewPageState ?? "OPEN")};
-	    if (${options.secondReviewPagePendingReviewId !== undefined ? "true" : "false"}) {
-	      const pendingReviewId = ${JSON.stringify(options.secondReviewPagePendingReviewId ?? null)};
-	      review.data.repository.pullRequest.reviews.nodes = pendingReviewId === null ? [] : [{ id: pendingReviewId, body: "", commit: { oid: review.data.repository.pullRequest.headRefOid } }];
-	    }
-	    if (${options.secondReviewPagePendingReviewBody !== undefined ? "true" : "false"}) review.data.repository.pullRequest.reviews.nodes[0].body = ${JSON.stringify(options.secondReviewPagePendingReviewBody ?? "")};
-	    review.data.repository.pullRequest.reviewThreads.pageInfo = { hasNextPage: false, endCursor: null };
-	    review.data.repository.pullRequest.reviewThreads.nodes = [];
-	  } else {
-	    review.data.repository.pullRequest.reviewThreads.pageInfo = { hasNextPage: true, endCursor: "THREAD_PAGE_2" };
-	  }
-	}
 	  emit(review);
 } else if (query.includes("mutation CreatePendingReview")) {
   fs.appendFileSync(log, "create-review " + fields + "\\n");
   if (${options.persistCreatedReview ? "true" : "false"}) {
     const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-    review.data.repository.pullRequest.reviews.nodes = [{
-      id: "REVIEW_new",
-      body: "",
-      commit: { oid: review.data.repository.pullRequest.headRefOid }
-    }];
+    review.data.repository.pullRequest.reviews.nodes = [{ id: "REVIEW_new", body: "" }];
     fs.writeFileSync(reviewPath, JSON.stringify(review));
   }
   emit({ data: { addPullRequestReview: { pullRequestReview: { id: "REVIEW_new" } } } });
@@ -685,31 +405,12 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 	  const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
 	  const createdThread = ${JSON.stringify(promotionThread)};
 	  createdThread.comments.nodes[0].body = inputFields.body;
-	  if (${options.replaceCreatedThreadBodyBeforeFailure ? "true" : "false"}) createdThread.comments.nodes[0].body = "Edited directly on GitHub";
-	  if (${options.anchorlessCreatedThreadBeforeFailure ? "true" : "false"}) createdThread.line = null;
 	  review.data.repository.pullRequest.reviewThreads.nodes.push(createdThread);
-	  if (${options.createdThreadHeadRefOidBeforeFailure ? "true" : "false"}) review.data.repository.pullRequest.headRefOid = ${JSON.stringify(options.createdThreadHeadRefOidBeforeFailure ?? HEAD)};
-	  if (${options.createdThreadPullRequestStateBeforeFailure ? "true" : "false"}) review.data.repository.pullRequest.state = ${JSON.stringify(options.createdThreadPullRequestStateBeforeFailure ?? "OPEN")};
 	  fs.writeFileSync(reviewPath, JSON.stringify(review));
-	  if (${options.failReviewAfterAddThreadWrite ? "true" : "false"}) fs.writeFileSync(failReviewPath, "1");
-	  if (${options.failAddThreadAfterWrite ? "true" : "false"}) {
-	    process.stderr.write("gh: connection closed after mutation\\n");
-	    process.exit(1);
-	  }
-	  emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", viewerCanResolve: ${options.addedThreadCanResolve === false ? "false" : "true"}, comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
+	  emit({ data: { addPullRequestReviewThread: { thread: { id: "THREAD_new", viewerCanResolve: true, comments: { nodes: [{ id: "COMMENT_new" }] } } } } });
 } else if (query.includes("mutation ResolveThread") || query.includes("mutation UnresolveThread")) {
   const resolving = query.includes("mutation ResolveThread");
   fs.appendFileSync(log, resolving ? "resolve-thread\\n" : "unresolve-thread\\n");
-  if (${options.failResolve ? "true" : "false"}) {
-	    if (${options.addConcurrentPendingReplyOnResolveFailure ? "true" : "false"}) {
-	      const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-	      const thread = review.data.repository.pullRequest.reviewThreads.nodes.find((entry) => entry.id === "THREAD_new");
-	      thread.comments.nodes.push(${JSON.stringify(manualPromotionReply)});
-	      fs.writeFileSync(reviewPath, JSON.stringify(review));
-    }
-    process.stderr.write("gh: resolve failed\\n");
-    process.exit(1);
-  }
   const responseField = resolving ? "resolveReviewThread" : "unresolveReviewThread";
   emit({ data: { [responseField]: { thread: { id: "THREAD_new" } } } });
 } else if (query.includes("mutation DeleteReviewComment")) {
@@ -735,38 +436,9 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 } else if (query.includes("mutation AddReviewReply")) {
   fs.appendFileSync(log, "reply\\n");
   if (${options.failAddReply ? "true" : "false"}) { process.stderr.write("gh: reply failed\\n"); process.exit(1); }
-  if (${options.failAddReplyAfterWrite ? "true" : "false"}) {
-	const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-	const thread = review.data.repository.pullRequest.reviewThreads.nodes.find((entry) => entry.id === inputFields.threadId);
-	thread.comments.nodes.push({
-	  id: "COMMENT_reply_after_write",
-	  url: "https://github.com/owner/repo/pull/5#discussion_r5",
-	  body: inputFields.body,
-	  bodyHTML: "<p>" + inputFields.body + "</p>",
-	  createdAt: "2026-01-05T00:00:00Z",
-	  author: { login: "octocat", avatarUrl: "https://x/o.png" },
-	  pullRequestReview: { state: "PENDING" }
-	});
-	fs.writeFileSync(reviewPath, JSON.stringify(review));
-	process.stderr.write("gh: connection closed after reply mutation\\n");
-	process.exit(1);
-  }
   emit({ data: { addPullRequestReviewThreadReply: { comment: { id: "C" } } } });
 } else if (query.includes("mutation SubmitReview")) {
   fs.appendFileSync(log, "submit " + fields + "\\n");
-  if (${options.failSubmitAfterWrite ? "true" : "false"}) {
-	const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
-	review.data.repository.pullRequest.submittedReviews = [{
-	  id: "REVIEW_submitted",
-	  body: inputFields.body,
-	  state: inputFields.event === "APPROVE" ? "APPROVED" : inputFields.event === "REQUEST_CHANGES" ? "CHANGES_REQUESTED" : "COMMENTED",
-	  author: { login: "octocat" }
-	}];
-	review.data.repository.pullRequest.reviews.nodes = [];
-	fs.writeFileSync(reviewPath, JSON.stringify(review));
-	process.stderr.write("gh: connection closed after submit mutation\\n");
-	process.exit(1);
-  }
   emit({ data: { submitPullRequestReview: { pullRequestReview: { id: "R" } } } });
 } else {
   emit({ data: {} });
