@@ -40,7 +40,6 @@ describe("review API — newly created review cleanup", () => {
 
 async function createComment(runId: string) {
 	return harness.request(await harness.start(), "POST", `/api/runs/${runId}/review/comment`, {
-		creationId: "00000000-0000-4000-8000-000000000001",
 		filePath: "src/foo.ts",
 		side: "additions",
 		startLine: 3,

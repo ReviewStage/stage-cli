@@ -111,7 +111,8 @@ export function canAddLocalThreadToReview(
 	return (
 		thread.source === THREAD_SOURCE.LOCAL &&
 		githubAvailable &&
-		(thread.hasPromotionRecovery || (canWriteToGitHub && githubAnchorEligible))
+		canWriteToGitHub &&
+		githubAnchorEligible
 	);
 }
 
@@ -181,14 +182,13 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 		setIsOpen(open);
 	}
 
-	async function submitReply(body: string, startReview: boolean, creationId: string) {
+	async function submitReply(body: string, startReview: boolean) {
 		setError(null);
 		try {
 			if (thread.source === THREAD_SOURCE.GITHUB) {
 				// Published threads may choose pending vs immediate; draft-only threads
 				// always pass true because CommentForm has no destination toggle.
 				await review.replyGitHub({
-					creationId,
 					threadNodeId: thread.threadNodeId,
 					body,
 					pending: startReview,
@@ -297,11 +297,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 											<GitPullRequestArrow className="size-3.5" />
 										</Button>
 									</TooltipTrigger>
-									<TooltipContent>
-										{thread.source === THREAD_SOURCE.LOCAL && thread.hasPromotionRecovery
-											? "Resume adding to GitHub review"
-											: "Add to GitHub review (pending)"}
-									</TooltipContent>
+									<TooltipContent>Add to GitHub review (pending)</TooltipContent>
 								</Tooltip>
 							)}
 							{(!isGitHub || githubAvailable) && canReply && (
@@ -422,11 +418,10 @@ function ReplyCommentForm({
 	hasPendingReview: boolean;
 	canWriteToGitHub: boolean;
 	error: string | null;
-	onSubmit: (body: string, pending: boolean, creationId: string) => Promise<void>;
+	onSubmit: (body: string, pending: boolean) => Promise<void>;
 	onCancel: () => void;
 }) {
 	const { setStartReview, startReview } = useCommentPreferences();
-	const [creationId] = useState(() => crypto.randomUUID());
 	const hasUsablePendingReview = hasPendingReview && canWriteToGitHub;
 	const showStartReview = isGitHub && publishesImmediately && !hasPendingReview && canWriteToGitHub;
 	const pending =
@@ -449,7 +444,7 @@ function ReplyCommentForm({
 							}
 						: undefined
 			}
-			onSubmit={(body) => onSubmit(body, pending, creationId)}
+			onSubmit={(body) => onSubmit(body, pending)}
 			onCancel={onCancel}
 		/>
 	);

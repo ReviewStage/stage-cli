@@ -169,7 +169,6 @@ export function ReviewPanel() {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [showDiscard, setShowDiscard] = useState(false);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
-	const submissionIdRef = useRef(crypto.randomUUID());
 
 	const { pendingComments, hasPendingReview, isOwnPullRequest, canWriteToGitHub } = review;
 	const pendingCommentCount = pendingComments.length;
@@ -203,11 +202,9 @@ export function ReviewPanel() {
 		setIsSubmitting(true);
 		try {
 			await review.submitReview({
-				creationId: submissionIdRef.current,
 				event: effectiveEvent,
 				body: body.trim(),
 			});
-			submissionIdRef.current = crypto.randomUUID();
 			resetBody();
 			setOpen(false);
 			toast.success("Review submitted");

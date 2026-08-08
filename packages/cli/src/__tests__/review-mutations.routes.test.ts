@@ -29,7 +29,6 @@ describe("review API — GitHub mutations", () => {
 			"POST",
 			`/api/runs/${runId}/review/reply`,
 			{
-				creationId: "00000000-0000-4000-8000-000000000001",
 				threadNodeId: "THREAD_pending",
 				body: "Reply",
 				pending: true,
@@ -38,30 +37,6 @@ describe("review API — GitHub mutations", () => {
 
 		expect(res.status).toBe(200);
 		expect(await harness.logLines()).toContain("reply");
-	});
-
-	it("recovers a reply accepted before the client loses the response", async () => {
-		await harness.writeGhShim(REVIEW_QUERY_RESULT, { failAddReplyAfterWrite: true });
-		const runId = harness.insertRun();
-		const port = await harness.start();
-		const input = {
-			creationId: "00000000-0000-4000-8000-000000000001",
-			threadNodeId: "THREAD_pending",
-			body: "Retry-safe reply",
-			pending: true,
-		};
-
-		const interrupted = await harness.request(
-			port,
-			"POST",
-			`/api/runs/${runId}/review/reply`,
-			input,
-		);
-		const resumed = await harness.request(port, "POST", `/api/runs/${runId}/review/reply`, input);
-
-		expect(interrupted.status).toBe(500);
-		expect(resumed.status, resumed.body).toBe(200);
-		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(1);
 	});
 
 	it("rejects a reply when GitHub denies permission for the thread", async () => {
@@ -73,7 +48,6 @@ describe("review API — GitHub mutations", () => {
 			"POST",
 			`/api/runs/${runId}/review/reply`,
 			{
-				creationId: "00000000-0000-4000-8000-000000000001",
 				threadNodeId: "THREAD_sub",
 				body: "Reply",
 				pending: false,
@@ -141,13 +115,13 @@ describe("review API — GitHub mutations", () => {
 		expect(await harness.logLines()).not.toContain("resolve-thread");
 	});
 
-	it("retains a legacy claim and checkpoint after promotion fails", async () => {
+	it("keeps the local thread when promotion fails partway", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW, {
 			failAddReply: true,
 			persistCreatedReview: true,
 		});
 		const runId = harness.insertRun();
-		const localThreadId = harness.seedLocalThread({ repoRoot: "", withReply: true });
+		const localThreadId = harness.seedLocalThread({ withReply: true });
 
 		const res = await harness.request(
 			await harness.start(),
@@ -159,7 +133,6 @@ describe("review API — GitHub mutations", () => {
 
 		expect(res.status).toBe(500);
 		expect(await harness.logLines()).not.toContain("discard-review");
-		expect(thread?.repoRoot).not.toBe("");
-		expect(thread?.promotionThreadNodeId).toBe("THREAD_new");
+		expect(thread?.id).toBe(localThreadId);
 	});
 });

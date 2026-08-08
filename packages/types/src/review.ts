@@ -85,9 +85,6 @@ const ReviewThreadBaseSchema = z.object({
 export const LocalReviewThreadSchema = ReviewThreadBaseSchema.extend({
 	source: z.literal(THREAD_SOURCE.LOCAL),
 	threadNodeId: z.null(),
-	// An interrupted local-to-GitHub promotion can be resumed even when the run's
-	// original diff is stale, because the server has already saved its GitHub identity.
-	hasPromotionRecovery: z.boolean(),
 	comments: z.array(LocalReviewCommentSchema),
 });
 export type LocalReviewThread = z.infer<typeof LocalReviewThreadSchema>;
@@ -143,13 +140,11 @@ export const AddToReviewBodySchema = z.object({
 export type AddToReviewBody = z.infer<typeof AddToReviewBodySchema>;
 
 export const GitHubCommentCreateBodySchema = CreateCommentThreadBodySchema.safeExtend({
-	creationId: z.string().uuid(),
 	pending: z.boolean().default(true),
 });
 export type GitHubCommentCreateBody = z.infer<typeof GitHubCommentCreateBodySchema>;
 
 export const SubmitReviewBodySchema = z.object({
-	creationId: z.string().uuid(),
 	event: z.enum(REVIEW_EVENT),
 	body: z.string(),
 });
@@ -158,7 +153,6 @@ export type SubmitReviewBody = z.infer<typeof SubmitReviewBodySchema>;
 // Reply to a github thread. `pending` (default) adds the reply to the viewer's
 // pending review; false posts it immediately as a single comment.
 export const GitHubReplyBodySchema = z.object({
-	creationId: z.string().uuid(),
 	threadNodeId: z.string().min(1),
 	body: z.string().min(1),
 	pending: z.boolean().default(true),

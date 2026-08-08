@@ -47,13 +47,11 @@ describe("review API — GitHub boundaries", () => {
 
 		const read = await harness.request(port, "GET", `/api/runs/${runId}/review`);
 		const reply = await harness.request(port, "POST", `/api/runs/${runId}/review/reply`, {
-			creationId: "00000000-0000-4000-8000-000000000001",
 			threadNodeId: "THREAD_pending",
 			body: "Nope",
 			pending: true,
 		});
 		const immediateReply = await harness.request(port, "POST", `/api/runs/${runId}/review/reply`, {
-			creationId: "00000000-0000-4000-8000-000000000002",
 			threadNodeId: "THREAD_sub",
 			body: "Published now",
 			pending: false,
@@ -108,7 +106,6 @@ describe("review API — GitHub boundaries", () => {
 
 		const read = await harness.request(port, "GET", `/api/runs/${runId}/review`);
 		const write = await harness.request(port, "POST", `/api/runs/${runId}/review/comment`, {
-			creationId: "00000000-0000-4000-8000-000000000001",
 			filePath: "src/foo.ts",
 			side: "additions",
 			startLine: 3,

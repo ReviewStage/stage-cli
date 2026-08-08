@@ -18,20 +18,6 @@ export const commentThread = sqliteTable(
 		endLine: integer().notNull(),
 		/** Null while open; set to the resolution time once resolved. */
 		resolvedAt: integer({ mode: "timestamp_ms" }),
-		/** Pull request that owns an interrupted local-to-remote promotion. */
-		promotionPullRequestNodeId: text(),
-		/** GitHub thread created by an interrupted local-to-remote promotion. */
-		promotionThreadNodeId: text(),
-		/** Root comment used to roll back an interrupted promotion safely. */
-		promotionRootCommentNodeId: text(),
-		/** GitHub viewer that created the interrupted promotion. */
-		promotionViewerLogin: text(),
-		/** GitHub threads visible before the uncertain root mutation began. */
-		promotionRootBaselineThreadNodeIds: text({ mode: "json" }).$type<string[]>(),
-		/** The checkpoint root has already been published and no longer freezes local replies. */
-		promotionRootPublished: integer({ mode: "boolean" }).notNull().default(false),
-		/** GitHub node ids for copied replies, in local reply order. */
-		promotionReplyNodeIds: text({ mode: "json" }).$type<(string | null)[]>().notNull().default([]),
 	},
 	(table) => [index("comment_thread_repo_scope_idx").on(table.repoRoot, table.scopeKey)],
 );

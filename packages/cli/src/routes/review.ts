@@ -62,7 +62,7 @@ export function reviewRoutes(db: StageDb): Route[] {
 			pattern: "/api/runs/:runId/review/submit",
 			handler: (req, res, params) =>
 				withRunBody(db, req, res, params.runId, SubmitReviewBodySchema, (run, body) =>
-					submitRunReview(run, body.event, body.body, body.creationId),
+					submitRunReview(run, body.event, body.body),
 				),
 		},
 		{
@@ -76,7 +76,7 @@ export function reviewRoutes(db: StageDb): Route[] {
 			pattern: "/api/runs/:runId/review/reply",
 			handler: (req, res, params) =>
 				withRunBody(db, req, res, params.runId, GitHubReplyBodySchema, (run, body) =>
-					replyToGitHubThread(run, body.threadNodeId, body.body, body.pending, body.creationId),
+					replyToGitHubThread(run, body.threadNodeId, body.body, body.pending),
 				),
 		},
 		{

@@ -21,7 +21,6 @@ import {
 } from "../db/schema/index.js";
 import { type GitHubRepo, getPullRequestOrThrow, parseGitHubRepo } from "../github/index.js";
 import {
-	type AddedReviewThread,
 	addImmediateReviewComment,
 	addReviewReply,
 	addReviewThread,
@@ -33,11 +32,7 @@ import {
 	type ReviewThread as GitHubApiReviewThread,
 	type GitHubDiffSide,
 	type GitHubReview,
-	getPromotionThreadState,
 	getReview,
-	hasSubmittedReviewMarker,
-	type PromotionThreadState,
-	type ReviewRecoveryThread,
 	setThreadResolved,
 	submitReview,
 	updateReviewComment,
@@ -128,7 +123,6 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 			id: thread.id,
 			source: THREAD_SOURCE.LOCAL,
 			threadNodeId: null,
-			hasPromotionRecovery: hasPromotionRecoveryState(thread),
 			filePath: thread.filePath,
 			side: thread.side,
 			startLine: thread.startLine,
@@ -170,7 +164,7 @@ function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
 			(c): GitHubReviewCommentDto => ({
 				id: c.nodeId,
 				state: c.isPending ? COMMENT_STATE.PENDING : COMMENT_STATE.SUBMITTED,
-				body: visibleGitHubCommentBody(c.body),
+				body: c.body,
 				bodyHtml: c.bodyHtml,
 				author: { login: c.authorLogin, avatarUrl: c.authorAvatarUrl || null },
 				nodeId: c.nodeId,
@@ -179,25 +173,6 @@ function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
 			}),
 		),
 	};
-}
-
-const COMMENT_RECOVERY_MARKER_PATTERN =
-	/\n\n(<!-- stagereview-(?:promotion:[^\r\n]*|promotion-reply [^\r\n]*|direct-comment [^\r\n]*|direct-reply [^\r\n]*) -->)$/;
-
-function visibleGitHubCommentBody(body: string): string {
-	return body.replace(COMMENT_RECOVERY_MARKER_PATTERN, "");
-}
-
-function preserveGitHubCommentMarker(body: string, originalBody: string): string {
-	const marker = originalBody.match(COMMENT_RECOVERY_MARKER_PATTERN)?.[1];
-	return marker ? `${body}\n\n${marker}` : body;
-}
-
-function visiblePendingComments(comments: GitHubReview["pendingComments"]) {
-	return comments.map((comment) => ({
-		...comment,
-		body: visibleGitHubCommentBody(comment.body),
-	}));
 }
 
 /**
@@ -248,7 +223,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		return {
 			...base,
 			github: GITHUB_REVIEW_STATUS.AVAILABLE,
-			pendingComments: visiblePendingComments(review.pendingComments),
+			pendingComments: review.pendingComments,
 			hasPendingReview: review.pendingReviewNodeId !== null,
 			pendingReviewBody: review.pendingReviewBody,
 			isOwnPullRequest: review.viewerDidAuthor,
@@ -259,7 +234,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 	return {
 		github: GITHUB_REVIEW_STATUS.AVAILABLE,
 		threads: [...localThreads, ...githubThreads],
-		pendingComments: visiblePendingComments(review.pendingComments),
+		pendingComments: review.pendingComments,
 		hasPendingReview: review.pendingReviewNodeId !== null,
 		pendingReviewBody: review.pendingReviewBody,
 		isOwnPullRequest: review.viewerDidAuthor,
@@ -296,8 +271,8 @@ async function resolveReviewIdentity(run: ChapterRunRow): Promise<ReviewIdentity
 }
 
 /**
- * Resolve the PR, acquire its cross-checkout lock, then read fresh review state
- * inside the lock before performing a mutation.
+ * Resolve the PR, serialize on its action queue, then read fresh review state
+ * before performing a mutation.
  */
 async function withLockedReviewTarget<T>(
 	run: ChapterRunRow,
@@ -336,159 +311,11 @@ async function withPendingReview<T>(
 	return action(reviewNodeId);
 }
 
-/** Whether any durable promotion intent or checkpoint survives on the thread row. */
-export function hasPromotionRecoveryState(thread: {
-	promotionPullRequestNodeId: string | null;
-	promotionThreadNodeId: string | null;
-	promotionRootCommentNodeId: string | null;
-}): boolean {
-	return (
-		thread.promotionPullRequestNodeId !== null ||
-		thread.promotionThreadNodeId !== null ||
-		thread.promotionRootCommentNodeId !== null
-	);
-}
-
-/** Owns the complete queued -> active -> durable-checkpoint promotion lifecycle. */
-class PromotionCoordinator {
-	readonly #queued = new Set<string>();
-	readonly #active = new Set<string>();
-
-	isPromoting(db: StageDb, localThreadId: string): boolean {
-		if (this.#active.has(localThreadId)) return true;
-		const state = this.#promotionState(db, localThreadId);
-		return state !== undefined && !state.promotionRootPublished && hasPromotionRecoveryState(state);
-	}
-
-	isPending(db: StageDb, localThreadId: string): boolean {
-		return this.isInFlight(localThreadId) || this.isPromoting(db, localThreadId);
-	}
-
-	isInFlight(localThreadId: string): boolean {
-		return this.#queued.has(localThreadId) || this.#active.has(localThreadId);
-	}
-
-	hasCheckpoint(db: StageDb, localThreadId: string): boolean {
-		const state = this.#promotionState(db, localThreadId);
-		return state !== undefined && hasPromotionRecoveryState(state);
-	}
-
-	#promotionState(db: StageDb, localThreadId: string) {
-		const [thread] = db
-			.select({
-				promotionPullRequestNodeId: commentThread.promotionPullRequestNodeId,
-				promotionThreadNodeId: commentThread.promotionThreadNodeId,
-				promotionRootCommentNodeId: commentThread.promotionRootCommentNodeId,
-				promotionRootPublished: commentThread.promotionRootPublished,
-			})
-			.from(commentThread)
-			.where(eq(commentThread.id, localThreadId))
-			.limit(1)
-			.all();
-		return thread;
-	}
-
-	async isCommentFrozen(db: StageDb, localThreadId: string, commentId: string): Promise<boolean> {
-		if (this.isInFlight(localThreadId)) return true;
-		const [thread] = db
-			.select()
-			.from(commentThread)
-			.where(eq(commentThread.id, localThreadId))
-			.limit(1)
-			.all();
-		if (!thread) return false;
-		if (readPromotionIntent(thread) !== null) return true;
-		const checkpoint = readPromotionCheckpoint(thread);
-		if (checkpoint === null) return false;
-
-		const localComments = db
-			.select({ id: comment.id, body: comment.body })
-			.from(comment)
-			.where(eq(comment.threadId, localThreadId))
-			.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
-			.all();
-		const commentIndex = localComments.findIndex((candidate) => candidate.id === commentId);
-		if (commentIndex === -1) return false;
-		if (commentIndex > 0) {
-			// Every saved positional slot and the single next uncertain reply require a
-			// live check. Later unsaved replies cannot have been attempted yet.
-			if (commentIndex - 1 > thread.promotionReplyNodeIds.length) return false;
-		}
-
-		const remote = await getPromotionThreadState(thread.repoRoot, checkpoint.threadNodeId);
-		if (!checkpointMatchesRemote(remote, checkpoint)) return false;
-		if (!remote.rootIsPending) {
-			markPromotionRootPublished(db, localThreadId);
-		}
-		if (commentIndex === 0) return true;
-		const review = await getReview(thread.repoRoot, remote.repo, remote.pullRequestNumber);
-		const remoteThread = review.recoveryThreads.find(
-			(candidate) => candidate.threadNodeId === checkpoint.threadNodeId,
-		);
-		const viewerLogin = checkpoint.viewerLogin ?? remote.rootAuthorLogin;
-		if (!remoteThread || viewerLogin === null || review.viewerLogin !== viewerLogin) return true;
-		const reconciled = reconcilePromotionReplyNodeIds(
-			remoteThread,
-			viewerLogin,
-			localThreadId,
-			localComments.slice(1),
-			thread.promotionReplyNodeIds,
-		);
-		return reconciled[commentIndex - 1] !== null;
-	}
-
-	async add(db: StageDb, run: ChapterRunRow, localThreadId: string): Promise<void> {
-		if (this.#queued.has(localThreadId)) {
-			throw new ReviewError("This comment is already being added to the review.", 409);
-		}
-		this.#queued.add(localThreadId);
-		try {
-			await reviewActions.run(
-				{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: localThreadId },
-				async () => {
-					this.#active.add(localThreadId);
-					try {
-						await promoteLocalThread(db, run, localThreadId);
-					} finally {
-						this.#active.delete(localThreadId);
-					}
-				},
-			);
-		} finally {
-			this.#queued.delete(localThreadId);
-		}
-	}
-}
-
-const promotionCoordinator = new PromotionCoordinator();
-
-/** True while the local thread is frozen for an in-flight or interrupted promotion. */
-export function isLocalThreadPromoting(db: StageDb, localThreadId: string): boolean {
-	return promotionCoordinator.isPromoting(db, localThreadId);
-}
-
-/** True once promotion is queued, active, or interrupted and awaiting recovery. */
-export function isLocalThreadPromotionPending(db: StageDb, localThreadId: string): boolean {
-	return promotionCoordinator.isPending(db, localThreadId);
-}
+const promotionsInFlight = new Set<string>();
 
 /** True only for a promotion queued or running in this process. */
 export function isLocalThreadPromotionInFlight(localThreadId: string): boolean {
-	return promotionCoordinator.isInFlight(localThreadId);
-}
-
-/** True while a local thread retains any recoverable remote promotion identity. */
-export function hasLocalThreadPromotionCheckpoint(db: StageDb, localThreadId: string): boolean {
-	return promotionCoordinator.hasCheckpoint(db, localThreadId);
-}
-
-/** Whether a local comment is already remote or could be landing during promotion. */
-export function isLocalCommentPromotionPending(
-	db: StageDb,
-	localThreadId: string,
-	commentId: string,
-): Promise<boolean> {
-	return promotionCoordinator.isCommentFrozen(db, localThreadId, commentId);
+	return promotionsInFlight.has(localThreadId);
 }
 
 /**
@@ -496,13 +323,28 @@ export function isLocalCommentPromotionPending(
  * becomes a new review thread, replies become pending replies, and the local thread
  * is removed (it now lives on GitHub as pending). GitHub anchors the comment to the
  * PR's current diff, so a line not in that diff is rejected and surfaced as an error.
+ *
+ * Promotion is best-effort, not resumable: if it fails partway, the local thread is
+ * kept and any comments that already reached GitHub stay there — retrying can post
+ * them again, and the duplicates are cleaned up in the GitHub UI.
  */
 export async function addLocalThreadToReview(
 	db: StageDb,
 	run: ChapterRunRow,
 	localThreadId: string,
 ): Promise<void> {
-	await promotionCoordinator.add(db, run, localThreadId);
+	if (promotionsInFlight.has(localThreadId)) {
+		throw new ReviewError("This comment is already being added to the review.", 409);
+	}
+	promotionsInFlight.add(localThreadId);
+	try {
+		await reviewActions.run(
+			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: localThreadId },
+			() => promoteLocalThread(db, run, localThreadId),
+		);
+	} finally {
+		promotionsInFlight.delete(localThreadId);
+	}
 }
 
 async function promoteLocalThread(
@@ -534,106 +376,10 @@ async function promoteLocalThread(
 	const root = comments[0];
 	if (!root) throw new ReviewError("Thread has no comments to add to the review.", 400);
 	const replies = comments.slice(1);
-	let intent = readPromotionIntent(thread);
-	let checkpoint = readPromotionCheckpoint(thread);
-	let initialReplyNodeIds = thread.promotionReplyNodeIds;
-	if (thread.promotionReplyNodeIds.length > replies.length) {
-		throw new ReviewError(
-			"This comment's promotion progress is invalid and cannot be resumed.",
-			409,
-		);
-	}
-	const checkpointRemote =
-		checkpoint === null
-			? null
-			: await releaseCrossPullRequestPromotion(db, run, localThreadId, checkpoint);
 
 	await withLockedReviewTarget(run, async (target) => {
 		const { review } = target;
-		const side = toGitHubSide(thread.side);
-		const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
-		let recoveredFromIntent = false;
-		let liveCheckpointRemote = checkpointRemote;
-		if (intent !== null) {
-			if (intent.viewerLogin !== null && intent.viewerLogin !== review.viewerLogin) {
-				throw promotionViewerMismatchError(intent.viewerLogin);
-			}
-			if (intent.pullRequestNodeId !== review.pullRequestNodeId) {
-				throw new ReviewError("This comment promotion belongs to another pull request.", 409);
-			}
-			const recoveredThread = findPromotionIntentThread(
-				review,
-				thread,
-				localThreadId,
-				intent.baselineThreadNodeIds,
-				side,
-				startLine,
-			);
-			if (recoveredThread !== null) {
-				const recoveredRoot = recoveredThread.comments[0];
-				if (!recoveredRoot) {
-					throw new ReviewError("The GitHub promotion thread has no root comment.", 409);
-				}
-				checkpoint = {
-					pullRequestNodeId: intent.pullRequestNodeId,
-					threadNodeId: recoveredThread.threadNodeId,
-					rootCommentNodeId: recoveredRoot.nodeId,
-					viewerLogin: intent.viewerLogin ?? review.viewerLogin,
-				};
-				const persisted = db
-					.update(commentThread)
-					.set({
-						promotionThreadNodeId: checkpoint.threadNodeId,
-						promotionRootCommentNodeId: checkpoint.rootCommentNodeId,
-						promotionViewerLogin: checkpoint.viewerLogin,
-					})
-					.where(eq(commentThread.id, localThreadId))
-					.run();
-				if (persisted.changes !== 1) {
-					throw new Error("Local promotion checkpoint was not saved");
-				}
-				liveCheckpointRemote = {
-					repo: target.repo,
-					pullRequestNodeId: checkpoint.pullRequestNodeId,
-					pullRequestNumber: target.prNumber,
-					rootCommentNodeId: checkpoint.rootCommentNodeId,
-					rootAuthorLogin: recoveredRoot.authorLogin,
-					rootIsPending: recoveredRoot.isPending,
-				};
-				recoveredFromIntent = true;
-				intent = null;
-			}
-		}
-		// A pending thread owned by another account can be invisible to this viewer.
-		// Enforce the durable identity before treating a null point lookup as deletion.
-		if (checkpoint?.viewerLogin && checkpoint.viewerLogin !== review.viewerLogin) {
-			throw promotionViewerMismatchError(checkpoint.viewerLogin);
-		}
-		if (checkpoint !== null) {
-			const current = recoveredFromIntent
-				? liveCheckpointRemote
-				: await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
-			if (!checkpointMatchesRemote(current, checkpoint)) {
-				clearPromotionProgress(db, localThreadId);
-				checkpoint = null;
-				liveCheckpointRemote = null;
-				initialReplyNodeIds = [];
-			} else {
-				liveCheckpointRemote = current;
-				if (!current.rootIsPending) markPromotionRootPublished(db, localThreadId);
-			}
-		}
-		const originatingViewer =
-			checkpoint?.viewerLogin ?? liveCheckpointRemote?.rootAuthorLogin ?? null;
-		if (originatingViewer !== null && originatingViewer !== review.viewerLogin) {
-			throw promotionViewerMismatchError(originatingViewer);
-		}
-		if (checkpoint !== null && checkpoint.viewerLogin === null && originatingViewer !== null) {
-			db.update(commentThread)
-				.set({ promotionViewerLogin: originatingViewer })
-				.where(eq(commentThread.id, localThreadId))
-				.run();
-		}
+		assertGitHubWritable(run, review);
 		const wasUnassigned = thread.repoRoot === UNASSIGNED_REPO_ROOT;
 		if (wasUnassigned) {
 			const [claimed] = db
@@ -651,186 +397,34 @@ async function promoteLocalThread(
 				throw new ReviewError("This comment belongs to another repository.", 400);
 			}
 		}
-
-		let addedThread: Pick<AddedReviewThread, "threadNodeId" | "rootCommentNodeId"> | null =
-			checkpoint;
-		let promotedReplyNodeIds = [...initialReplyNodeIds];
-		let reviewNodeId: string | null = null;
-		let remoteThreadIsResolved = false;
-		let remoteThreadCanResolve = false;
-		let remoteThreadCanUnresolve = false;
 		try {
-			if (addedThread !== null) {
-				const remoteThread = review.recoveryThreads.find(
-					(candidate) => candidate.threadNodeId === addedThread?.threadNodeId,
-				);
-				const persistedRoot = remoteThread?.comments.find(
-					(candidate) => candidate.nodeId === addedThread?.rootCommentNodeId,
-				);
-				// A fresh point lookup above proved the root exists. If the broader
-				// review snapshot omitted it, stop instead of creating a duplicate.
-				if (!remoteThread || !persistedRoot) {
+			const side = toGitHubSide(thread.side);
+			const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
+			const reviewNodeId = await openPendingReview(run, review);
+			const addedThread = await addReviewThread(run.repoRoot, {
+				pullRequestNodeId: review.pullRequestNodeId,
+				reviewNodeId,
+				path: thread.filePath,
+				body: root.body,
+				line: thread.endLine,
+				side,
+				startLine,
+				startSide: startLine !== null ? side : null,
+			});
+			for (const reply of replies) {
+				await addReviewReply(run.repoRoot, addedThread.threadNodeId, reply.body, reviewNodeId);
+			}
+			if (thread.resolvedAt !== null) {
+				if (!addedThread.viewerCanResolve) {
 					throw new ReviewError(
-						"The GitHub promotion thread could not be loaded. Refresh and try again.",
-						409,
-					);
-				} else {
-					remoteThreadIsResolved = remoteThread.isResolved;
-					remoteThreadCanResolve = remoteThread.viewerCanResolve;
-					remoteThreadCanUnresolve = remoteThread.viewerCanUnresolve;
-					promotedReplyNodeIds = reconcilePromotionReplyNodeIds(
-						remoteThread,
-						review.viewerLogin,
-						localThreadId,
-						replies,
-						promotedReplyNodeIds,
-					);
-					db.update(commentThread)
-						.set({
-							promotionReplyNodeIds: compactPromotionReplyNodeIds(promotedReplyNodeIds),
-						})
-						.where(eq(commentThread.id, localThreadId))
-						.run();
-				}
-			}
-			const shouldResolve = thread.resolvedAt !== null;
-			const needsCommentWrite =
-				addedThread === null || promotedReplyNodeIds.filter(Boolean).length < replies.length;
-			const needsResolutionWrite = addedThread !== null && shouldResolve !== remoteThreadIsResolved;
-			if (!needsCommentWrite && !needsResolutionWrite) {
-				db.delete(commentThread).where(eq(commentThread.id, localThreadId)).run();
-				return;
-			}
-			try {
-				const checkpointThread =
-					checkpoint === null
-						? null
-						: review.recoveryThreads.find(
-								(candidate) => candidate.threadNodeId === checkpoint?.threadNodeId,
-							);
-				// An anchorless checkpoint can finish against a moved diff, but every
-				// remaining remote write still requires an open pull request.
-				if (checkpoint !== null && checkpointThread?.line === null) {
-					if (review.state !== "OPEN") {
-						throw new ReviewError("This pull request is closed, so its review is read-only.", 409);
-					}
-				} else {
-					assertGitHubWritable(run, review);
-				}
-				if (checkpoint !== null && checkpoint.pullRequestNodeId !== review.pullRequestNodeId) {
-					throw new ReviewError("This comment promotion belongs to another pull request.", 409);
-				}
-			} catch (error) {
-				if (checkpoint !== null) {
-					await releasePromotionCheckpoint(db, run, localThreadId, checkpoint);
-				}
-				throw error;
-			}
-			if (addedThread === null || promotedReplyNodeIds.filter(Boolean).length < replies.length) {
-				reviewNodeId = await openPendingReview(run, review);
-			}
-			if (addedThread === null) {
-				if (reviewNodeId === null) throw new Error("Pending review was not opened");
-				if (intent === null) {
-					const baselineThreadNodeIds = review.threads.map((candidate) => candidate.threadNodeId);
-					const persisted = db
-						.update(commentThread)
-						.set({
-							promotionPullRequestNodeId: review.pullRequestNodeId,
-							promotionViewerLogin: review.viewerLogin,
-							promotionRootBaselineThreadNodeIds: baselineThreadNodeIds,
-						})
-						.where(eq(commentThread.id, localThreadId))
-						.run();
-					if (persisted.changes !== 1) {
-						throw new Error("Local promotion intent was not saved");
-					}
-					intent = {
-						pullRequestNodeId: review.pullRequestNodeId,
-						viewerLogin: review.viewerLogin,
-						baselineThreadNodeIds,
-					};
-				}
-				const activeIntent = intent;
-				let createdThread: AddedReviewThread;
-				try {
-					createdThread = await addReviewThread(run.repoRoot, {
-						pullRequestNodeId: review.pullRequestNodeId,
-						reviewNodeId,
-						path: thread.filePath,
-						body: promotionRootBody(root.body, localThreadId),
-						line: thread.endLine,
-						side,
-						startLine,
-						startSide: startLine !== null ? side : null,
-					});
-				} catch (error) {
-					const refreshedReview = await getReview(run.repoRoot, target.repo, target.prNumber);
-					const uncertainRoot = findPromotionIntentThread(
-						refreshedReview,
-						thread,
-						localThreadId,
-						activeIntent.baselineThreadNodeIds,
-						side,
-						startLine,
-					);
-					if (uncertainRoot === null) {
-						clearPromotionProgress(db, localThreadId);
-						intent = null;
-					}
-					throw error;
-				}
-				addedThread = createdThread;
-				remoteThreadCanResolve = createdThread.viewerCanResolve;
-				const persisted = db
-					.update(commentThread)
-					.set({
-						promotionPullRequestNodeId: review.pullRequestNodeId,
-						promotionThreadNodeId: addedThread.threadNodeId,
-						promotionRootCommentNodeId: addedThread.rootCommentNodeId,
-						promotionViewerLogin: review.viewerLogin,
-						promotionReplyNodeIds: [],
-					})
-					.where(eq(commentThread.id, localThreadId))
-					.run();
-				if (persisted.changes !== 1) throw new Error("Local promotion checkpoint was not saved");
-			}
-			for (const [index, reply] of replies.entries()) {
-				if (promotedReplyNodeIds[index]) continue;
-				if (reviewNodeId === null) throw new Error("Pending review was not opened");
-				const replyNodeId = await addReviewReply(
-					run.repoRoot,
-					addedThread.threadNodeId,
-					promotionReplyBody(reply.body, localThreadId, reply.id),
-					reviewNodeId,
-				);
-				promotedReplyNodeIds[index] = replyNodeId;
-				const persisted = db
-					.update(commentThread)
-					.set({
-						promotionReplyNodeIds: compactPromotionReplyNodeIds(promotedReplyNodeIds),
-					})
-					.where(eq(commentThread.id, localThreadId))
-					.run();
-				if (persisted.changes !== 1) throw new Error("Local promotion checkpoint was not saved");
-			}
-			if (shouldResolve !== remoteThreadIsResolved) {
-				const canChangeResolution = shouldResolve
-					? remoteThreadCanResolve
-					: remoteThreadCanUnresolve;
-				if (!canChangeResolution) {
-					throw new ReviewError(
-						`GitHub doesn't allow you to ${shouldResolve ? "resolve" : "reopen"} this promoted review thread.`,
+						"GitHub doesn't allow you to resolve this promoted review thread.",
 						403,
 					);
 				}
-				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, shouldResolve);
+				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
 			}
 		} catch (err) {
-			// GitHub does not offer a conditional delete for a review root or review.
-			// Once a root exists, retain its checkpoint so a retry can reconcile it
-			// without racing and deleting concurrent GitHub work.
-			if (wasUnassigned && addedThread === null && intent === null && checkpoint === null) {
+			if (wasUnassigned) {
 				db.update(commentThread)
 					.set({ repoRoot: UNASSIGNED_REPO_ROOT })
 					.where(and(eq(commentThread.id, localThreadId), eq(commentThread.repoRoot, run.repoRoot)))
@@ -843,275 +437,7 @@ async function promoteLocalThread(
 	});
 }
 
-interface PromotionCheckpoint {
-	pullRequestNodeId: string;
-	threadNodeId: string;
-	rootCommentNodeId: string;
-	viewerLogin: string | null;
-}
-
-/** Whether the live GitHub thread still is the one this checkpoint was written for. */
-function checkpointMatchesRemote(
-	remote: PromotionThreadState | null,
-	checkpoint: PromotionCheckpoint,
-): remote is PromotionThreadState {
-	return (
-		remote !== null &&
-		remote.pullRequestNodeId === checkpoint.pullRequestNodeId &&
-		remote.rootCommentNodeId === checkpoint.rootCommentNodeId
-	);
-}
-
-function promotionViewerMismatchError(viewerLogin: string): ReviewError {
-	return new ReviewError(
-		`This comment promotion belongs to GitHub user ${viewerLogin}. Switch back to that account to resume it.`,
-		409,
-	);
-}
-
-interface PromotionIntent {
-	pullRequestNodeId: string;
-	viewerLogin: string | null;
-	baselineThreadNodeIds: string[] | null;
-}
-
-function readPromotionIntent(thread: typeof commentThread.$inferSelect): PromotionIntent | null {
-	if (
-		thread.promotionPullRequestNodeId === null ||
-		thread.promotionThreadNodeId !== null ||
-		thread.promotionRootCommentNodeId !== null
-	) {
-		return null;
-	}
-	if (thread.promotionReplyNodeIds.length !== 0) {
-		throw new ReviewError(
-			"This comment has incomplete promotion state and cannot be resumed.",
-			409,
-		);
-	}
-	return {
-		pullRequestNodeId: thread.promotionPullRequestNodeId,
-		viewerLogin: thread.promotionViewerLogin,
-		baselineThreadNodeIds: thread.promotionRootBaselineThreadNodeIds,
-	};
-}
-
-function readPromotionCheckpoint(
-	thread: typeof commentThread.$inferSelect,
-): PromotionCheckpoint | null {
-	const pullRequestNodeId = thread.promotionPullRequestNodeId;
-	const threadNodeId = thread.promotionThreadNodeId;
-	const rootCommentNodeId = thread.promotionRootCommentNodeId;
-	if (threadNodeId === null && rootCommentNodeId === null) return null;
-	if (pullRequestNodeId === null || threadNodeId === null || rootCommentNodeId === null) {
-		throw new ReviewError(
-			"This comment has incomplete promotion state and cannot be resumed.",
-			409,
-		);
-	}
-	return {
-		pullRequestNodeId,
-		threadNodeId,
-		rootCommentNodeId,
-		viewerLogin: thread.promotionViewerLogin,
-	};
-}
-
-function promotionRootMarker(localThreadId: string): string {
-	return `<!-- stagereview-promotion:${localThreadId} -->`;
-}
-
-function promotionRootBody(body: string, localThreadId: string): string {
-	return `${body}\n\n${promotionRootMarker(localThreadId)}`;
-}
-
-function promotionReplyMarker(localThreadId: string, localReplyId: string): string {
-	return `<!-- stagereview-promotion-reply ${JSON.stringify([localThreadId, localReplyId])} -->`;
-}
-
-function promotionReplyBody(body: string, localThreadId: string, localReplyId: string): string {
-	return `${body}\n\n${promotionReplyMarker(localThreadId, localReplyId)}`;
-}
-
-function findPromotionIntentThread(
-	review: GitHubReview,
-	thread: typeof commentThread.$inferSelect,
-	localThreadId: string,
-	baselineThreadNodeIds: string[] | null,
-	side: GitHubDiffSide,
-	startLine: number | null,
-): ReviewRecoveryThread | null {
-	const marker = promotionRootMarker(localThreadId);
-	const markerMatches = review.recoveryThreads.filter((candidate) => {
-		const root = candidate.comments[0];
-		return root?.authorLogin === review.viewerLogin && root.body.includes(marker);
-	});
-	if (markerMatches.length > 1) {
-		throw new ReviewError(
-			"More than one GitHub thread matches this interrupted comment promotion.",
-			409,
-		);
-	}
-	const markerMatch = markerMatches[0];
-	if (markerMatch) return markerMatch;
-	const anchoredMatches = review.threads.filter((candidate) => {
-		const root = candidate.comments[0];
-		return (
-			candidate.path === thread.filePath &&
-			candidate.line === thread.endLine &&
-			candidate.side === side &&
-			candidate.startLine === startLine &&
-			candidate.startSide === (startLine === null ? null : side) &&
-			root?.authorLogin === review.viewerLogin
-		);
-	});
-	if (baselineThreadNodeIds === null) return null;
-	const baseline = new Set(baselineThreadNodeIds);
-	const newMatches = anchoredMatches.filter((candidate) => !baseline.has(candidate.threadNodeId));
-	if (newMatches.length > 0) {
-		throw new ReviewError(
-			"A new unmarked GitHub thread matches this interrupted comment promotion. Restore its Stage recovery marker or remove it before retrying.",
-			409,
-		);
-	}
-	return null;
-}
-
-async function releaseCrossPullRequestPromotion(
-	db: StageDb,
-	run: ChapterRunRow,
-	localThreadId: string,
-	checkpoint: PromotionCheckpoint,
-): Promise<PromotionThreadState | null> {
-	const remote = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
-	if (!checkpointMatchesRemote(remote, checkpoint)) return null;
-	const identity = await resolveReviewIdentity(run);
-	const sameTarget =
-		remote.pullRequestNumber === identity.prNumber &&
-		remote.repo.owner.toLowerCase() === identity.repo.owner.toLowerCase() &&
-		remote.repo.repo.toLowerCase() === identity.repo.repo.toLowerCase();
-	if (sameTarget) return remote;
-	let released = false;
-	await reviewActions.run(
-		{
-			kind: REVIEW_ACTION_SCOPE.PULL_REQUEST,
-			owner: remote.repo.owner,
-			repo: remote.repo.repo,
-			prNumber: remote.pullRequestNumber,
-		},
-		async () => {
-			released = await releasePromotionCheckpoint(db, run, localThreadId, checkpoint);
-		},
-	);
-	throw new ReviewError(
-		released
-			? "This comment promotion belonged to another pull request and was released. Try adding it to this review again."
-			: "This comment promotion belongs to another pull request and remains associated with it.",
-		409,
-	);
-}
-
-async function releasePromotionCheckpoint(
-	db: StageDb,
-	run: ChapterRunRow,
-	localThreadId: string,
-	checkpoint: PromotionCheckpoint,
-): Promise<boolean> {
-	const remote = await getPromotionThreadState(run.repoRoot, checkpoint.threadNodeId);
-	if (checkpointMatchesRemote(remote, checkpoint)) {
-		if (!remote.rootIsPending) {
-			markPromotionRootPublished(db, localThreadId);
-		}
-		return false;
-	}
-	clearPromotionProgress(db, localThreadId);
-	return true;
-}
-
-function clearPromotionProgress(db: StageDb, localThreadId: string): void {
-	db.update(commentThread)
-		.set({
-			promotionPullRequestNodeId: null,
-			promotionThreadNodeId: null,
-			promotionRootCommentNodeId: null,
-			promotionViewerLogin: null,
-			promotionRootBaselineThreadNodeIds: null,
-			promotionRootPublished: false,
-			promotionReplyNodeIds: [],
-		})
-		.where(eq(commentThread.id, localThreadId))
-		.run();
-}
-
-function markPromotionRootPublished(db: StageDb, localThreadId: string): void {
-	db.update(commentThread)
-		.set({ promotionRootPublished: true })
-		.where(eq(commentThread.id, localThreadId))
-		.run();
-}
-
-/**
- * Reconcile saved reply ids with the live thread. Every write carries a deterministic
- * marker, so an ambiguous success is recovered exactly: a reply resolves through its
- * saved node id or its marker, never by body matching.
- */
-function reconcilePromotionReplyNodeIds(
-	remoteThread: ReviewRecoveryThread,
-	viewerLogin: string,
-	localThreadId: string,
-	localReplies: { id: string; body: string }[],
-	checkpointNodeIds: (string | null)[],
-): (string | null)[] {
-	const remoteReplies = remoteThread.comments.slice(1);
-	const reconciled = Array<string | null>(localReplies.length).fill(null);
-	const usedRemoteIds = new Set<string>();
-
-	for (const [index, localReply] of localReplies.entries()) {
-		const storedNodeId = checkpointNodeIds[index];
-		if (storedNodeId) {
-			if (remoteReplies.some((candidate) => candidate.nodeId === storedNodeId)) {
-				reconciled[index] = storedNodeId;
-				usedRemoteIds.add(storedNodeId);
-			}
-			// A saved id that disappeared was manually deleted. Do not let a
-			// same-body viewer comment impersonate it; this local reply must resend.
-			continue;
-		}
-
-		const marker = promotionReplyMarker(localThreadId, localReply.id);
-		let markedRemoteReply: (typeof remoteReplies)[number] | null = null;
-		for (const candidate of remoteReplies) {
-			if (
-				usedRemoteIds.has(candidate.nodeId) ||
-				candidate.authorLogin !== viewerLogin ||
-				!candidate.body.includes(marker)
-			) {
-				continue;
-			}
-			if (markedRemoteReply !== null) {
-				throw new ReviewError(
-					"More than one GitHub reply matches this interrupted comment promotion.",
-					409,
-				);
-			}
-			markedRemoteReply = candidate;
-		}
-		if (markedRemoteReply !== null) {
-			reconciled[index] = markedRemoteReply.nodeId;
-			usedRemoteIds.add(markedRemoteReply.nodeId);
-		}
-	}
-	return reconciled;
-}
-
-export function compactPromotionReplyNodeIds(ids: (string | null)[]): (string | null)[] {
-	let length = ids.length;
-	while (length > 0 && !ids[length - 1]) length--;
-	return ids.slice(0, length);
-}
-
 export interface GitHubCommentAnchor {
-	creationId: string;
 	filePath: string;
 	side: DiffSide;
 	startLine: number;
@@ -1131,17 +457,6 @@ export async function addGitHubComment(
 ): Promise<void> {
 	await withLockedReviewTarget(run, async (target) => {
 		const { repo, prNumber, review } = target;
-		const markedBody = directCommentBody(anchor.body, anchor.creationId);
-		const recovered = findDirectComment(review, anchor.creationId);
-		if (recovered !== null) {
-			const root = recovered.comments[0];
-			if (!root) throw new Error("Recovered GitHub thread has no root comment");
-			if (root.body !== markedBody) {
-				assertGitHubWritable(run, review);
-				await updateReviewComment(run.repoRoot, root.nodeId, markedBody);
-			}
-			return;
-		}
 		assertGitHubWritable(run, review);
 		if (!anchor.pending && review.pendingReviewNodeId !== null) {
 			throw new ReviewError(
@@ -1155,7 +470,7 @@ export async function addGitHubComment(
 			await addImmediateReviewComment(run.repoRoot, repo, prNumber, {
 				commitOid: review.headRefOid,
 				path: anchor.filePath,
-				body: markedBody,
+				body: anchor.body,
 				line: anchor.endLine,
 				side,
 				startLine,
@@ -1168,7 +483,7 @@ export async function addGitHubComment(
 				pullRequestNodeId: review.pullRequestNodeId,
 				reviewNodeId,
 				path: anchor.filePath,
-				body: markedBody,
+				body: anchor.body,
 				line: anchor.endLine,
 				side,
 				startLine,
@@ -1178,33 +493,12 @@ export async function addGitHubComment(
 	});
 }
 
-function directCommentMarker(creationId: string): string {
-	return `<!-- stagereview-direct-comment ${JSON.stringify(creationId)} -->`;
-}
-
-function directCommentBody(body: string, creationId: string): string {
-	return `${body}\n\n${directCommentMarker(creationId)}`;
-}
-
-function findDirectComment(review: GitHubReview, creationId: string): ReviewRecoveryThread | null {
-	const marker = directCommentMarker(creationId);
-	const matches = review.recoveryThreads.filter((thread) => {
-		const root = thread.comments[0];
-		return root?.authorLogin === review.viewerLogin && root.body.includes(marker);
-	});
-	if (matches.length > 1) {
-		throw new ReviewError("More than one GitHub thread matches this comment creation.", 409);
-	}
-	return matches[0] ?? null;
-}
-
 /** Reply to a GitHub thread, adding to the viewer's pending review (or as a single comment). */
 export async function replyToGitHubThread(
 	run: ChapterRunRow,
 	threadNodeId: string,
 	body: string,
 	pending: boolean,
-	creationId: string,
 ): Promise<void> {
 	await withLockedReviewTarget(run, async (target) => {
 		const { review } = target;
@@ -1213,14 +507,6 @@ export async function replyToGitHubThread(
 		if (!thread.viewerCanReply) {
 			throw new ReviewError("GitHub doesn't allow you to reply to this review thread.", 403);
 		}
-		const markedBody = directReplyBody(body, creationId);
-		const recovered = findDirectReply(thread, review.viewerLogin, creationId);
-		if (recovered !== null) {
-			if (recovered.body !== markedBody) {
-				await updateReviewComment(run.repoRoot, recovered.nodeId, markedBody);
-			}
-			return;
-		}
 		if (!pending) {
 			if (review.pendingReviewNodeId !== null) {
 				throw new ReviewError(
@@ -1228,36 +514,13 @@ export async function replyToGitHubThread(
 					409,
 				);
 			}
-			await addReviewReply(run.repoRoot, threadNodeId, markedBody, null);
+			await addReviewReply(run.repoRoot, threadNodeId, body, null);
 			return;
 		}
 		await withPendingReview(run, target, (reviewNodeId) =>
-			addReviewReply(run.repoRoot, threadNodeId, markedBody, reviewNodeId),
+			addReviewReply(run.repoRoot, threadNodeId, body, reviewNodeId),
 		);
 	});
-}
-
-function directReplyMarker(creationId: string): string {
-	return `<!-- stagereview-direct-reply ${JSON.stringify(creationId)} -->`;
-}
-
-function directReplyBody(body: string, creationId: string): string {
-	return `${body}\n\n${directReplyMarker(creationId)}`;
-}
-
-function findDirectReply(
-	thread: GitHubApiReviewThread,
-	viewerLogin: string,
-	creationId: string,
-): GitHubApiReviewThread["comments"][number] | null {
-	const marker = directReplyMarker(creationId);
-	const matches = thread.comments
-		.slice(1)
-		.filter((comment) => comment.authorLogin === viewerLogin && comment.body.includes(marker));
-	if (matches.length > 1) {
-		throw new ReviewError("More than one GitHub reply matches this comment creation.", 409);
-	}
-	return matches[0] ?? null;
 }
 
 /** Submit the viewer's pending review with the chosen event, opening one if needed (e.g. a bare approval). */
@@ -1265,14 +528,9 @@ export async function submitRunReview(
 	run: ChapterRunRow,
 	event: ReviewEvent,
 	body: string,
-	creationId: string,
 ): Promise<void> {
 	await withLockedReviewTarget(run, async (target) => {
-		const { repo, prNumber, review } = target;
-		const marker = reviewSubmissionMarker(creationId);
-		if (await hasSubmittedReviewMarker(run.repoRoot, repo, prNumber, review.viewerLogin, marker)) {
-			return;
-		}
+		const { review } = target;
 		assertGitHubWritable(run, review);
 		if (review.viewerDidAuthor && event !== REVIEW_EVENT.COMMENT) {
 			throw new ReviewError("You can't approve or request changes on your own pull request.", 400);
@@ -1291,23 +549,9 @@ export async function submitRunReview(
 			);
 		}
 		await withPendingReview(run, target, (reviewNodeId) =>
-			submitReview(
-				run.repoRoot,
-				review.pullRequestNodeId,
-				reviewNodeId,
-				event,
-				reviewSubmissionBody(body, marker),
-			),
+			submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
 		);
 	});
-}
-
-function reviewSubmissionMarker(creationId: string): string {
-	return `<!-- stagereview-review-submission ${JSON.stringify(creationId)} -->`;
-}
-
-function reviewSubmissionBody(body: string, marker: string): string {
-	return body === "" ? marker : `${body}\n\n${marker}`;
 }
 
 /** Discard the viewer's pending review and all its draft comments. */
@@ -1332,12 +576,8 @@ export async function editGitHubComment(
 ): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
 		assertGitHubWritable(run, review);
-		const existing = requirePendingComment(review, nodeId);
-		await updateReviewComment(
-			run.repoRoot,
-			nodeId,
-			preserveGitHubCommentMarker(body, existing.body),
-		);
+		requirePendingComment(review, nodeId);
+		await updateReviewComment(run.repoRoot, nodeId, body);
 	});
 }
 

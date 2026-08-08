@@ -22,7 +22,6 @@ export const CommentThreadSchema = z.object({
 	startLine: z.number().int().positive(),
 	endLine: z.number().int().positive(),
 	resolvedAt: z.string().nullable(),
-	hasPromotionRecovery: z.boolean(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 	comments: z.array(CommentSchema),

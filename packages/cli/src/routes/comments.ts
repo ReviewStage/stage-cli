@@ -1,4 +1,3 @@
-import type { ServerResponse } from "node:http";
 import {
 	CommentBodySchema,
 	type Comment as CommentDto,
@@ -18,15 +17,7 @@ import {
 	commentThread,
 } from "../db/schema/index.js";
 import { type LocalThreadScope, loadLocalThreadRecords } from "../runs/local-comment-threads.js";
-import {
-	compactPromotionReplyNodeIds,
-	hasLocalThreadPromotionCheckpoint,
-	hasPromotionRecoveryState,
-	isLocalCommentPromotionPending,
-	isLocalThreadPromoting,
-	isLocalThreadPromotionInFlight,
-	isLocalThreadPromotionPending,
-} from "../runs/review.js";
+import { isLocalThreadPromotionInFlight } from "../runs/review.js";
 import { REVIEW_ACTION_SCOPE, reviewActions } from "../runs/review-action-queue.js";
 import { deriveScopeKey } from "../runs/scope-key.js";
 import type { Route } from "../server.js";
@@ -102,16 +93,12 @@ export function commentRoutes(db: StageDb): Route[] {
 				}
 				const body = await parseJsonBody(req, res, CommentBodySchema);
 				if (!body) return;
-				if (isLocalThreadPromotionPending(db, threadId)) {
+				if (isLocalThreadPromotionInFlight(threadId)) {
 					writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
 					return;
 				}
 
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
-					if (isLocalThreadPromoting(db, threadId)) {
-						writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
-						return;
-					}
 					if (!threadExists(db, threadId)) {
 						writeJson(res, 404, { error: `Thread ${threadId} not found` });
 						return;
@@ -148,16 +135,12 @@ export function commentRoutes(db: StageDb): Route[] {
 				}
 				const body = await parseJsonBody(req, res, ResolveThreadBodySchema);
 				if (!body) return;
-				if (isLocalThreadPromotionPending(db, threadId)) {
+				if (isLocalThreadPromotionInFlight(threadId)) {
 					writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
 					return;
 				}
 
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
-					if (isLocalThreadPromoting(db, threadId)) {
-						writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
-						return;
-					}
 					const [updated] = db
 						.update(commentThread)
 						.set({ resolvedAt: body.resolved ? new Date() : null })
@@ -182,21 +165,11 @@ export function commentRoutes(db: StageDb): Route[] {
 					writeJson(res, 400, { error: "Missing threadId" });
 					return;
 				}
-				if (
-					isLocalThreadPromotionPending(db, threadId) ||
-					hasLocalThreadPromotionCheckpoint(db, threadId)
-				) {
+				if (isLocalThreadPromotionInFlight(threadId)) {
 					writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
 					return;
 				}
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
-					if (
-						isLocalThreadPromoting(db, threadId) ||
-						hasLocalThreadPromotionCheckpoint(db, threadId)
-					) {
-						writeJson(res, 409, { error: THREAD_PROMOTION_IN_PROGRESS });
-						return;
-					}
 					// Idempotent: deleting an absent thread is a no-op. The cascade FK
 					// removes the thread's comments.
 					db.delete(commentThread).where(eq(commentThread.id, threadId)).run();
@@ -226,17 +199,6 @@ export function commentRoutes(db: StageDb): Route[] {
 					return;
 				}
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
-					const [existing] = db
-						.select({ threadId: comment.threadId })
-						.from(comment)
-						.where(eq(comment.id, commentId))
-						.limit(1)
-						.all();
-					if (!existing) {
-						writeJson(res, 404, { error: `Comment ${commentId} not found` });
-						return;
-					}
-					if (await blockPromotionCommentMutation(db, res, existing.threadId, commentId)) return;
 					const [updated] = db
 						.update(comment)
 						.set({ body: body.body })
@@ -271,17 +233,6 @@ export function commentRoutes(db: StageDb): Route[] {
 					return;
 				}
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
-					const [existing] = db
-						.select({ threadId: comment.threadId })
-						.from(comment)
-						.where(eq(comment.id, commentId))
-						.limit(1)
-						.all();
-					if (
-						existing &&
-						(await blockPromotionCommentMutation(db, res, existing.threadId, commentId))
-					)
-						return;
 					// Deleting the last comment removes its now-empty thread so no
 					// dangling anchors linger. Idempotent for an absent comment.
 					db.transaction((tx) => {
@@ -292,18 +243,6 @@ export function commentRoutes(db: StageDb): Route[] {
 							.limit(1)
 							.all();
 						if (!row) return;
-						const orderedComments = tx
-							.select({ id: comment.id })
-							.from(comment)
-							.where(eq(comment.threadId, row.threadId))
-							.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
-							.all();
-						const commentIndex = orderedComments.findIndex(
-							(candidate) => candidate.id === commentId,
-						);
-						if (commentIndex > 0) {
-							removePromotionReplyCheckpoint(tx, row.threadId, commentIndex - 1);
-						}
 						tx.delete(comment).where(eq(comment.id, commentId)).run();
 						const remaining = tx
 							.select({ id: comment.id })
@@ -322,24 +261,6 @@ export function commentRoutes(db: StageDb): Route[] {
 	];
 }
 
-function removePromotionReplyCheckpoint(db: StageDb, threadId: string, replyIndex: number): void {
-	const [thread] = db
-		.select({ promotionReplyNodeIds: commentThread.promotionReplyNodeIds })
-		.from(commentThread)
-		.where(eq(commentThread.id, threadId))
-		.limit(1)
-		.all();
-	if (!thread) return;
-	const nodeIds = compactPromotionReplyNodeIds([
-		...thread.promotionReplyNodeIds.slice(0, replyIndex),
-		...thread.promotionReplyNodeIds.slice(replyIndex + 1),
-	]);
-	db.update(commentThread)
-		.set({ promotionReplyNodeIds: nodeIds })
-		.where(eq(commentThread.id, threadId))
-		.run();
-}
-
 function findCommentThreadId(db: StageDb, commentId: string): string | null {
 	const [row] = db
 		.select({ threadId: comment.threadId })
@@ -348,25 +269,6 @@ function findCommentThreadId(db: StageDb, commentId: string): string | null {
 		.limit(1)
 		.all();
 	return row?.threadId ?? null;
-}
-
-async function blockPromotionCommentMutation(
-	db: StageDb,
-	res: ServerResponse,
-	threadId: string,
-	commentId: string,
-): Promise<boolean> {
-	try {
-		if (!(await isLocalCommentPromotionPending(db, threadId, commentId))) return false;
-		writeJson(res, 409, { error: "This comment is already part of the GitHub review." });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		process.stderr.write(`Unable to verify GitHub promotion state: ${message}\n`);
-		writeJson(res, 503, {
-			error: "GitHub is unavailable, so this comment cannot be safely changed yet.",
-		});
-	}
-	return true;
 }
 
 function resolveRunScope(db: StageDb, runId: string | undefined): LocalThreadScope | null {
@@ -422,7 +324,6 @@ function toThreadDto(thread: CommentThreadRow, comments: CommentRow[]): CommentT
 		startLine: thread.startLine,
 		endLine: thread.endLine,
 		resolvedAt: thread.resolvedAt?.toISOString() ?? null,
-		hasPromotionRecovery: hasPromotionRecoveryState(thread),
 		createdAt: thread.createdAt.toISOString(),
 		updatedAt: thread.updatedAt.toISOString(),
 		comments: comments.map(toCommentDto),

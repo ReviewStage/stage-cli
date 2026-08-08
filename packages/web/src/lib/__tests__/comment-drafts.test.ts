@@ -20,7 +20,6 @@ function makeThread(
 		id: `t-${over.side}-${over.endLine}`,
 		source: "local",
 		threadNodeId: null,
-		hasPromotionRecovery: false,
 		filePath: "a.ts",
 		startLine: over.endLine,
 		isResolved: false,
@@ -30,7 +29,7 @@ function makeThread(
 }
 
 function draftState(side: CommentDraft["side"], startLine: number, endLine: number): DraftState {
-	return { side, startLine, endLine, creationId: `draft-${side}-${endLine}`, error: null };
+	return { side, startLine, endLine, error: null };
 }
 
 function rowFor(
@@ -100,22 +99,6 @@ describe("upsertDraft", () => {
 		const result = upsertDraft([draftState("additions", 5, 5)], draftState("deletions", 8, 10));
 		expect(result).toHaveLength(2);
 		expect(findDraftAt(result, "deletions", 10)?.startLine).toBe(8);
-	});
-
-	it("renews the creation identity when re-opening a row with a new range", () => {
-		const existing = { ...draftState("additions", 3, 10), error: "boom" as string | null };
-		const result = upsertDraft([existing], draftState("additions", 7, 10));
-		expect(result).toHaveLength(1);
-		expect(result[0]?.startLine).toBe(7);
-		expect(result[0]?.creationId).not.toBe(existing.creationId);
-		// A re-drag clears any stale submit error.
-		expect(result[0]?.error).toBeNull();
-	});
-
-	it("keeps the creation identity when re-opening the exact same range", () => {
-		const existing = draftState("additions", 3, 10);
-		const result = upsertDraft([existing], draftState("additions", 3, 10));
-		expect(result[0]?.creationId).toBe(existing.creationId);
 	});
 
 	it("leaves other open drafts untouched when updating one", () => {

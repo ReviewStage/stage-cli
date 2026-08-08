@@ -39,7 +39,6 @@ describe("review API — GitHub authorization", () => {
 			"reply",
 			"/reply",
 			{
-				creationId: "00000000-0000-4000-8000-000000000001",
 				threadNodeId: "THREAD_other",
 				body: "Nope",
 				pending: false,

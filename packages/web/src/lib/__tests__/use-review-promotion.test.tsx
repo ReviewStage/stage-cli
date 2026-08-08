@@ -9,7 +9,6 @@ import { jsonResponse, makeWrapper } from "./fixtures";
 
 const LOCAL_THREAD: CommentThread = {
 	id: "THREAD_local",
-	hasPromotionRecovery: false,
 	filePath: "src/foo.ts",
 	side: "additions",
 	startLine: 3,
@@ -98,7 +97,6 @@ describe("useReview promotion", () => {
 		let mutationSettled = false;
 		const mutation = result.current
 			.createGitHubComment({
-				creationId: "00000000-0000-4000-8000-000000000001",
 				filePath: "src/foo.ts",
 				side: "additions",
 				startLine: 3,

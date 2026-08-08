@@ -74,7 +74,6 @@ function toReviewThread(thread: LocalCommentThread): LocalReviewThread {
 		id: thread.id,
 		source: THREAD_SOURCE.LOCAL,
 		threadNodeId: null,
-		hasPromotionRecovery: thread.hasPromotionRecovery,
 		filePath: thread.filePath,
 		side: thread.side,
 		startLine: thread.startLine,

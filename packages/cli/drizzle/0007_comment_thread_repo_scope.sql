@@ -14,11 +14,4 @@ SET `repoRoot` = COALESCE(
 	),
 	`repoRoot`
 );--> statement-breakpoint
-ALTER TABLE `comment_thread` ADD `promotionPullRequestNodeId` text;--> statement-breakpoint
-ALTER TABLE `comment_thread` ADD `promotionThreadNodeId` text;--> statement-breakpoint
-ALTER TABLE `comment_thread` ADD `promotionRootCommentNodeId` text;--> statement-breakpoint
-ALTER TABLE `comment_thread` ADD `promotionViewerLogin` text;--> statement-breakpoint
-ALTER TABLE `comment_thread` ADD `promotionRootBaselineThreadNodeIds` text;--> statement-breakpoint
-ALTER TABLE `comment_thread` ADD `promotionRootPublished` integer DEFAULT false NOT NULL;--> statement-breakpoint
-ALTER TABLE `comment_thread` ADD `promotionReplyNodeIds` text DEFAULT '[]' NOT NULL;--> statement-breakpoint
 CREATE INDEX `comment_thread_repo_scope_idx` ON `comment_thread` (`repoRoot`,`scopeKey`);

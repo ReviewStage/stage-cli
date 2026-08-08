@@ -9,7 +9,6 @@ import { jsonResponse, makeWrapper } from "./fixtures";
 
 const localThread = (id: string): CommentThread => ({
 	id: `THREAD_${id}`,
-	hasPromotionRecovery: false,
 	filePath: "src/foo.ts",
 	side: "additions",
 	startLine: 3,
@@ -46,7 +45,6 @@ const toReviewThread = (thread: CommentThread): LocalReviewThread => ({
 	id: thread.id,
 	source: "local",
 	threadNodeId: null,
-	hasPromotionRecovery: false,
 	filePath: thread.filePath,
 	side: thread.side,
 	startLine: thread.startLine,

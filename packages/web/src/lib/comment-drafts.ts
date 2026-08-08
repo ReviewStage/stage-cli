@@ -11,7 +11,6 @@ export interface CommentDraft {
 
 /** A draft plus the last submit error for its composer (null while clean). */
 export interface DraftState extends CommentDraft {
-	creationId: string;
 	error: string | null;
 }
 
@@ -69,16 +68,11 @@ export function findDraftAt(
  */
 export function upsertDraft(drafts: readonly DraftState[], anchor: CommentDraft): DraftState[] {
 	if (!findDraftAt(drafts, anchor.side, anchor.endLine)) {
-		return [...drafts, { ...anchor, creationId: crypto.randomUUID(), error: null }];
+		return [...drafts, { ...anchor, error: null }];
 	}
 	return drafts.map((draft) =>
 		isSameAnchor(draft, anchor.side, anchor.endLine)
-			? {
-					...draft,
-					startLine: anchor.startLine,
-					creationId: draft.startLine === anchor.startLine ? draft.creationId : crypto.randomUUID(),
-					error: null,
-				}
+			? { ...draft, startLine: anchor.startLine, error: null }
 			: draft,
 	);
 }

@@ -10,11 +10,9 @@ import {
 } from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
-const CREATION_ID = "00000000-0000-4000-8000-000000000001";
 
 function commentInput(overrides: Partial<GitHubCommentCreateBody> = {}): GitHubCommentCreateBody {
 	return {
-		creationId: CREATION_ID,
 		filePath: "src/foo.ts",
 		side: "additions",
 		startLine: 3,

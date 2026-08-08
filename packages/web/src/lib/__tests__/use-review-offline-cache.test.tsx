@@ -52,7 +52,6 @@ const OFFLINE: ReviewResponse = {
 			id: "THREAD_local",
 			source: "local",
 			threadNodeId: null,
-			hasPromotionRecovery: false,
 			filePath: "src/local.ts",
 			side: "additions",
 			startLine: 3,

@@ -9,7 +9,6 @@ import { jsonResponse, makeWrapper } from "./fixtures";
 
 const LOCAL_THREAD: CommentThread = {
 	id: "THREAD_local",
-	hasPromotionRecovery: false,
 	filePath: "src/local.ts",
 	side: "additions",
 	startLine: 3,

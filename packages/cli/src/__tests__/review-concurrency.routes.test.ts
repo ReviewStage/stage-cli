@@ -1,11 +1,7 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { chapterRun, comment } from "../db/schema/index.js";
-import {
-	addLocalThreadToReview,
-	isLocalThreadPromoting,
-	isLocalThreadPromotionPending,
-} from "../runs/review.js";
+import { addLocalThreadToReview, isLocalThreadPromotionInFlight } from "../runs/review.js";
 import { REVIEW_ACTION_SCOPE, reviewActions } from "../runs/review-action-queue.js";
 import { EMPTY_REVIEW, ReviewRouteHarness } from "./review-test-harness.js";
 
@@ -37,14 +33,8 @@ describe("review API — concurrency", () => {
 		};
 
 		const responses = await Promise.all([
-			harness.request(port, "POST", `/api/runs/${runId}/review/comment`, {
-				...body,
-				creationId: "00000000-0000-4000-8000-000000000001",
-			}),
-			harness.request(port, "POST", `/api/runs/${runId}/review/comment`, {
-				...body,
-				creationId: "00000000-0000-4000-8000-000000000002",
-			}),
+			harness.request(port, "POST", `/api/runs/${runId}/review/comment`, body),
+			harness.request(port, "POST", `/api/runs/${runId}/review/comment`, body),
 		]);
 
 		expect(responses.map((res) => res.status)).toEqual([200, 200]);
@@ -101,7 +91,7 @@ describe("review API — concurrency", () => {
 		await expect.poll(() => releaseThread !== undefined).toBe(true);
 
 		const promotion = addLocalThreadToReview(harness.db, run, localThreadId);
-		expect(isLocalThreadPromotionPending(harness.db, localThreadId)).toBe(true);
+		expect(isLocalThreadPromotionInFlight(localThreadId)).toBe(true);
 		const reply = await harness.request(
 			port,
 			"POST",
@@ -163,9 +153,6 @@ describe("review API — concurrency", () => {
 		const edit = reviewActions.run(
 			{ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId: localThreadId },
 			async () => {
-				if (isLocalThreadPromoting(harness.db, localThreadId)) {
-					throw new Error("Winning edit was incorrectly rejected as mid-promotion");
-				}
 				harness.db
 					.update(comment)
 					.set({ body: "Edited before promotion" })

@@ -9,7 +9,6 @@ import {
 } from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
-const SUBMISSION_ID = "00000000-0000-4000-8000-000000000001";
 
 beforeEach(async () => {
 	harness = new ReviewRouteHarness();
@@ -29,7 +28,7 @@ describe("review API — submission", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/submit`,
-			{ creationId: SUBMISSION_ID, event: "APPROVE", body: "LGTM" },
+			{ event: "APPROVE", body: "LGTM" },
 		);
 
 		expect(res.status).toBe(200);
@@ -46,11 +45,7 @@ describe("review API — submission", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/submit`,
-			{
-				creationId: SUBMISSION_ID,
-				event: "COMMENT",
-				body: "Finish the existing review",
-			},
+			{ event: "COMMENT", body: "Finish the existing review" },
 		);
 
 		expect(res.status, res.body).toBe(200);
@@ -65,7 +60,7 @@ describe("review API — submission", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/submit`,
-			{ creationId: SUBMISSION_ID, event: "COMMENT", body: "   " },
+			{ event: "COMMENT", body: "   " },
 		);
 
 		expect(res.status).toBe(400);
@@ -80,7 +75,7 @@ describe("review API — submission", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/submit`,
-			{ creationId: SUBMISSION_ID, event: "REQUEST_CHANGES", body: "   " },
+			{ event: "REQUEST_CHANGES", body: "   " },
 		);
 
 		expect(res.status).toBe(400);
@@ -98,7 +93,7 @@ describe("review API — submission", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/submit`,
-			{ creationId: SUBMISSION_ID, event: "APPROVE", body: "LGTM" },
+			{ event: "APPROVE", body: "LGTM" },
 		);
 
 		expect(res.status).toBe(400);
@@ -114,33 +109,12 @@ describe("review API — submission", () => {
 			await harness.start(),
 			"POST",
 			`/api/runs/${runId}/review/submit`,
-			{ creationId: SUBMISSION_ID, event: "APPROVE", body: "" },
+			{ event: "APPROVE", body: "" },
 		);
 		const log = (await harness.logLines()).find((line) => line.startsWith("submit")) ?? "";
 
 		expect(submit.status).toBe(200);
 		expect(log).toContain("body=");
 		expect(log).not.toContain("Existing draft summary");
-	});
-
-	it("recovers a submitted review after the client loses the response", async () => {
-		await harness.writeGhShim(REVIEW_QUERY_RESULT, { failSubmitAfterWrite: true });
-		const runId = harness.insertRun();
-		const port = await harness.start();
-		const input = { creationId: SUBMISSION_ID, event: "APPROVE", body: "LGTM" };
-
-		const interrupted = await harness.request(
-			port,
-			"POST",
-			`/api/runs/${runId}/review/submit`,
-			input,
-		);
-		const resumed = await harness.request(port, "POST", `/api/runs/${runId}/review/submit`, input);
-		const log = await harness.logLines();
-
-		expect(interrupted.status).toBe(500);
-		expect(resumed.status, resumed.body).toBe(200);
-		expect(log.filter((line) => line.startsWith("submit"))).toHaveLength(1);
-		expect(log.filter((line) => line.startsWith("create-review"))).toHaveLength(0);
 	});
 });

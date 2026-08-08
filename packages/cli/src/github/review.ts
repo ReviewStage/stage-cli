@@ -97,29 +97,6 @@ const REVIEW_THREAD_COMMENTS_QUERY = `query GetReviewThreadComments($threadId: I
   }
 }`;
 
-const SUBMITTED_REVIEWS_QUERY = `query GetSubmittedReviews($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
-  viewer { login }
-  repository(owner: $owner, name: $repo) {
-    pullRequest(number: $number) {
-      reviews(first: 100, after: $cursor) {
-        pageInfo { hasNextPage endCursor }
-        nodes { body state author { login } }
-      }
-    }
-  }
-}`;
-
-const PROMOTION_THREAD_QUERY = `query GetPromotionThread($threadId: ID!) {
-  node(id: $threadId) {
-    ... on PullRequestReviewThread {
-	  pullRequest { id number repository { name owner { login } } }
-      comments(first: 1) {
-		nodes { id author { login } pullRequestReview { state } }
-      }
-    }
-  }
-}`;
-
 const GqlActorSchema = z.object({ login: z.string(), avatarUrl: z.string() }).nullable();
 
 const GqlReviewCommentSchema = z.object({
@@ -206,56 +183,6 @@ const ReviewThreadCommentsQuerySchema = z.object({
 	}),
 });
 
-const SubmittedReviewsQuerySchema = z.object({
-	data: z.object({
-		viewer: z.object({ login: z.string() }),
-		repository: z
-			.object({
-				pullRequest: z
-					.object({
-						reviews: z.object({
-							pageInfo: GqlPageInfoSchema,
-							nodes: z.array(
-								z.object({
-									body: z.string(),
-									state: z.string(),
-									author: z.object({ login: z.string() }).nullable(),
-								}),
-							),
-						}),
-					})
-					.nullable(),
-			})
-			.nullable(),
-	}),
-});
-
-const PromotionThreadQuerySchema = z.object({
-	data: z.object({
-		node: z
-			.object({
-				pullRequest: z.object({
-					id: z.string(),
-					number: z.number(),
-					repository: z.object({
-						name: z.string(),
-						owner: z.object({ login: z.string() }),
-					}),
-				}),
-				comments: z.object({
-					nodes: z.array(
-						z.object({
-							id: z.string(),
-							author: z.object({ login: z.string() }).nullable(),
-							pullRequestReview: z.object({ state: z.string() }).nullable(),
-						}),
-					),
-				}),
-			})
-			.nullable(),
-	}),
-});
-
 /** A comment within a review thread, tagged with whether it's a draft (pending) or published. */
 export interface ReviewComment {
 	nodeId: string;
@@ -319,15 +246,6 @@ export interface PendingReviewComment {
 	filePath: string;
 	line: number | null;
 	body: string;
-}
-
-export interface PromotionThreadState {
-	repo: GitHubRepo;
-	pullRequestNodeId: string;
-	pullRequestNumber: number;
-	rootCommentNodeId: string | null;
-	rootAuthorLogin: string | null;
-	rootIsPending: boolean;
 }
 
 const PENDING_STATE = "PENDING";
@@ -525,76 +443,6 @@ export async function getReview(
 		pendingComments,
 		recoveryThreads,
 		threads,
-	};
-}
-
-/** Whether the viewer already submitted a review carrying a retry identity marker. */
-export async function hasSubmittedReviewMarker(
-	repoRoot: string,
-	repo: GitHubRepo,
-	prNumber: number,
-	viewerLogin: string,
-	marker: string,
-): Promise<boolean> {
-	let matches = 0;
-	let cursor: string | null = null;
-	do {
-		const args = [
-			"api",
-			"graphql",
-			"-f",
-			`query=${SUBMITTED_REVIEWS_QUERY}`,
-			"-f",
-			`owner=${repo.owner}`,
-			"-f",
-			`repo=${repo.repo}`,
-			"-F",
-			`number=${prNumber}`,
-		];
-		if (cursor !== null) args.push("-f", `cursor=${cursor}`);
-		const parsed = SubmittedReviewsQuerySchema.parse(
-			JSON.parse(await ghReadOrThrow(args, repoRoot)),
-		);
-		if (parsed.data.viewer.login !== viewerLogin) {
-			throw new Error("GitHub viewer changed while submitted reviews were loading");
-		}
-		const reviews = parsed.data.repository?.pullRequest?.reviews;
-		if (!reviews) throw new Error("Pull request not found on GitHub");
-		matches += reviews.nodes.filter(
-			(review) =>
-				review.state !== PENDING_STATE &&
-				review.author?.login === viewerLogin &&
-				review.body.includes(marker),
-		).length;
-		cursor = nextCursor(reviews.pageInfo);
-	} while (cursor !== null);
-	if (matches > 1) throw new Error("More than one submitted GitHub review has this identity");
-	return matches === 1;
-}
-
-/** Read the remote root needed to reconcile an interrupted local-to-GitHub promotion. */
-export async function getPromotionThreadState(
-	repoRoot: string,
-	threadNodeId: string,
-): Promise<PromotionThreadState | null> {
-	const stdout = await ghReadOrThrow(
-		["api", "graphql", "-f", `query=${PROMOTION_THREAD_QUERY}`, "-f", `threadId=${threadNodeId}`],
-		repoRoot,
-	);
-	const parsed = PromotionThreadQuerySchema.parse(JSON.parse(stdout));
-	const node = parsed.data.node;
-	if (node === null) return null;
-	const root = node.comments.nodes[0];
-	return {
-		repo: {
-			owner: node.pullRequest.repository.owner.login,
-			repo: node.pullRequest.repository.name,
-		},
-		pullRequestNodeId: node.pullRequest.id,
-		pullRequestNumber: node.pullRequest.number,
-		rootCommentNodeId: root?.id ?? null,
-		rootAuthorLogin: root?.author?.login ?? null,
-		rootIsPending: root?.pullRequestReview?.state === PENDING_STATE,
 	};
 }
 

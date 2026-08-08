@@ -78,12 +78,11 @@ describe("GitHub thread resolution", () => {
 });
 
 describe("local promotion recovery", () => {
-	it("keeps interrupted promotion available when the run is stale", () => {
+	it("requires a writable PR and an eligible anchor", () => {
 		const thread = ReviewThreadSchema.parse({
 			id: "local-thread",
 			source: THREAD_SOURCE.LOCAL,
 			threadNodeId: null,
-			hasPromotionRecovery: true,
 			filePath: "src/file.ts",
 			side: "additions",
 			startLine: 1,
@@ -93,10 +92,9 @@ describe("local promotion recovery", () => {
 		});
 		if (thread.source !== THREAD_SOURCE.LOCAL) throw new Error("Expected a local thread");
 
-		expect(canAddLocalThreadToReview(thread, true, false, false)).toBe(true);
-		expect(
-			canAddLocalThreadToReview({ ...thread, hasPromotionRecovery: false }, true, false, false),
-		).toBe(false);
+		expect(canAddLocalThreadToReview(thread, true, true, true)).toBe(true);
+		expect(canAddLocalThreadToReview(thread, true, false, true)).toBe(false);
+		expect(canAddLocalThreadToReview(thread, true, true, false)).toBe(false);
 	});
 });
 

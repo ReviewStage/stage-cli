@@ -26,7 +26,6 @@ describe("review API — pending review recovery", () => {
 		const read = await harness.request(port, "GET", `/api/runs/${runId}/review`);
 		const review = ReviewResponseSchema.parse(JSON.parse(read.body));
 		const submit = await harness.request(port, "POST", `/api/runs/${runId}/review/submit`, {
-			creationId: "00000000-0000-4000-8000-000000000001",
 			event: "COMMENT",
 			body: "",
 		});
@@ -65,7 +64,6 @@ describe("review API — pending review recovery", () => {
 		const read = await harness.request(port, "GET", `/api/runs/${runId}/review`);
 		const review = ReviewResponseSchema.parse(JSON.parse(read.body));
 		const submit = await harness.request(port, "POST", `/api/runs/${runId}/review/submit`, {
-			creationId: "00000000-0000-4000-8000-000000000001",
 			event: "COMMENT",
 			body: "Existing draft summary",
 		});

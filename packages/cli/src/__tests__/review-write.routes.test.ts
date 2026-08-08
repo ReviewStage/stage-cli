@@ -37,6 +37,40 @@ describe("review API — writes", () => {
 		expect(createReviewLogs[0]).toContain(`commitOID=${HEAD}`);
 	});
 
+	it("copies local replies into the promoted thread", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW);
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ withReply: true });
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/add`,
+			{ localThreadId },
+		);
+
+		expect(res.status, res.body).toBe(200);
+		expect((await harness.logLines()).filter((line) => line === "reply")).toHaveLength(1);
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
+	it("resolves the promoted GitHub thread when the local thread was resolved", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW);
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ resolved: true });
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/add`,
+			{ localThreadId },
+		);
+
+		expect(res.status, res.body).toBe(200);
+		expect(await harness.logLines()).toContain("resolve-thread");
+		expect(harness.db.select().from(commentThread).all()).toHaveLength(0);
+	});
+
 	it("rejects a local thread from another repository with the same diff", async () => {
 		await harness.writeGhShim(EMPTY_REVIEW);
 		const runId = harness.insertRun();
