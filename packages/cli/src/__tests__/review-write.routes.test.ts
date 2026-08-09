@@ -123,4 +123,21 @@ describe("review API — writes", () => {
 		expect(promote.status).toBe(500);
 		expect(thread?.repoRoot).toBe("");
 	});
+
+	it("keeps a legacy claim once the GitHub root exists and only a reply failed", async () => {
+		await harness.writeGhShim(EMPTY_REVIEW, { failAddReply: true, persistCreatedReview: true });
+		const runId = harness.insertRun();
+		const localThreadId = harness.seedLocalThread({ repoRoot: "", withReply: true });
+
+		const promote = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/add`,
+			{ localThreadId },
+		);
+		const [thread] = harness.db.select().from(commentThread).all();
+
+		expect(promote.status).toBe(500);
+		expect(thread?.repoRoot).not.toBe("");
+	});
 });

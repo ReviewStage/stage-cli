@@ -21,6 +21,7 @@ import {
 } from "../db/schema/index.js";
 import { type GitHubRepo, getPullRequestOrThrow, parseGitHubRepo } from "../github/index.js";
 import {
+	type AddedReviewThread,
 	addImmediateReviewComment,
 	addReviewReply,
 	addReviewThread,
@@ -397,11 +398,12 @@ async function promoteLocalThread(
 				throw new ReviewError("This comment belongs to another repository.", 400);
 			}
 		}
+		let addedThread: AddedReviewThread | null = null;
 		try {
 			const side = toGitHubSide(thread.side);
 			const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
 			const reviewNodeId = await openPendingReview(run, review);
-			const addedThread = await addReviewThread(run.repoRoot, {
+			addedThread = await addReviewThread(run.repoRoot, {
 				pullRequestNodeId: review.pullRequestNodeId,
 				reviewNodeId,
 				path: thread.filePath,
@@ -424,7 +426,10 @@ async function promoteLocalThread(
 				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
 			}
 		} catch (err) {
-			if (wasUnassigned) {
+			// Once the root exists on this PR, keep the repository claim — releasing it
+			// would let another checkout sharing these diff SHAs promote the same thread
+			// to a different pull request. Roll back only when nothing landed remotely.
+			if (wasUnassigned && addedThread === null) {
 				db.update(commentThread)
 					.set({ repoRoot: UNASSIGNED_REPO_ROOT })
 					.where(and(eq(commentThread.id, localThreadId), eq(commentThread.repoRoot, run.repoRoot)))
