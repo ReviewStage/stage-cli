@@ -10,6 +10,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	vi.restoreAllMocks();
 	await harness.teardown();
 });
 
@@ -37,7 +38,6 @@ describe("review API — merge base", () => {
 		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
 		expect(review.github).toBe("offline");
 		expect(stderr).toHaveBeenCalledWith(expect.stringContaining("Failed to load GitHub review"));
-		vi.restoreAllMocks();
 	});
 
 	it("hides GitHub threads when the run does not match the PR merge base", async () => {
