@@ -1,5 +1,5 @@
 import { ReviewResponseSchema } from "@stagereview/types/review";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { REVIEW_QUERY_RESULT, ReviewRouteHarness } from "./review-test-harness.js";
 
 let harness: ReviewRouteHarness;
@@ -25,6 +25,19 @@ describe("review API — merge base", () => {
 			args.some((arg) => arg.includes("/compare/")),
 		);
 		expect(compareCall).toEqual(expect.arrayContaining(["--jq", ".merge_base_commit.sha"]));
+	});
+
+	it("reports offline when the compare response has no merge base", async () => {
+		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, { mergeBaseOid: "null" });
+		const runId = harness.insertRun();
+
+		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
+
+		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
+		expect(review.github).toBe("offline");
+		expect(stderr).toHaveBeenCalledWith(expect.stringContaining("Failed to load GitHub review"));
+		vi.restoreAllMocks();
 	});
 
 	it("hides GitHub threads when the run does not match the PR merge base", async () => {

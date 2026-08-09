@@ -303,7 +303,7 @@ export async function getReview(
 	};
 }
 
-const MergeBaseOidSchema = z.string().min(1);
+const MergeBaseOidSchema = z.string().regex(/^[0-9a-f]{40}$/);
 
 async function getPullRequestMergeBase(
 	repoRoot: string,
