@@ -231,21 +231,6 @@ export function makeAnchorlessPendingReview(): unknown {
 	);
 }
 
-export function makePaginatedThreadReview(): unknown {
-	return makeReview(
-		[
-			{
-				...submittedThread,
-				comments: {
-					pageInfo: { hasNextPage: true, endCursor: "COMMENTS_cursor" },
-					nodes: submittedThread.comments.nodes,
-				},
-			},
-		],
-		"REVIEW_pending",
-	);
-}
-
 interface GhShimOptions {
 	addThreadDelayMs?: number;
 	discoveredPullRequest?: boolean;
@@ -253,7 +238,6 @@ interface GhShimOptions {
 	addConcurrentPendingCommentOnThreadFailure?: boolean;
 	failAddReply?: boolean;
 	failDiscardAfterWrite?: boolean;
-	failThreadComments?: boolean;
 	mergeBaseOid?: string;
 	noPullRequest?: boolean;
 	persistCreatedReview?: boolean;
@@ -356,21 +340,6 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 ) {
   fs.appendFileSync(log, "create-immediate-comment " + fields.replaceAll("\\n", "\\\\n") + "\\n");
   emit({ id: 123, node_id: "COMMENT_immediate" });
-} else if (query.includes("query GetReviewThreadComments")) {
-  fs.appendFileSync(log, "get-thread-comments\\n");
-  if (${options.failThreadComments ? "true" : "false"}) { process.stderr.write("gh: follow-up page failed\\n"); process.exit(1); }
-  emit({ data: { node: { comments: {
-    pageInfo: { hasNextPage: false, endCursor: null },
-    nodes: [{
-      id: "COMMENT_late",
-      url: "https://github.com/owner/repo/pull/5#discussion_r101",
-      body: "Late draft reply",
-      bodyHTML: "<p>Late draft reply</p>",
-      createdAt: "2026-01-04T00:00:00Z",
-      author: { login: "octocat", avatarUrl: "https://x/o.png" },
-      pullRequestReview: { state: "PENDING" }
-    }]
-  } } } });
 } else if (query.includes("query GetReview")) {
   sleep(${options.reviewQueryDelayMs ?? 0});
   const commentFields = query.slice(query.indexOf("comments(first:"), query.indexOf("author {"));

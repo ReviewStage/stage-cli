@@ -21,8 +21,9 @@ export type GitHubDiffSide = (typeof GITHUB_DIFF_SIDE)[keyof typeof GITHUB_DIFF_
 // PENDING (draft, viewer-only) comment from a submitted one — no REST list or
 // local mirror required.
 const REVIEW_THREAD_PAGE_SIZE = 10;
-const EMBEDDED_COMMENT_PAGE_SIZE = 1;
-const THREAD_COMMENT_PAGE_SIZE = 10;
+// Comments are embedded in the thread query, capped at GitHub's page maximum. A
+// thread with more than 100 comments is silently truncated — a known limitation.
+const EMBEDDED_COMMENT_PAGE_SIZE = 100;
 const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   viewer { login }
   repository(owner: $owner, name: $repo) {
@@ -47,7 +48,6 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
           diffSide
           startDiffSide
 		  comments(first: ${EMBEDDED_COMMENT_PAGE_SIZE}) {
-            pageInfo { hasNextPage endCursor }
             nodes {
               id
               url
@@ -58,25 +58,6 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
               pullRequestReview { state }
             }
           }
-        }
-      }
-    }
-  }
-}`;
-
-const REVIEW_THREAD_COMMENTS_QUERY = `query GetReviewThreadComments($threadId: ID!, $cursor: String) {
-  node(id: $threadId) {
-    ... on PullRequestReviewThread {
-	  comments(first: ${THREAD_COMMENT_PAGE_SIZE}, after: $cursor) {
-        pageInfo { hasNextPage endCursor }
-        nodes {
-          id
-          url
-          body
-          bodyHTML
-          createdAt
-          author { login avatarUrl }
-          pullRequestReview { state }
         }
       }
     }
@@ -101,7 +82,6 @@ const GqlPageInfoSchema = z.object({
 });
 
 const GqlReviewCommentsPageSchema = z.object({
-	pageInfo: GqlPageInfoSchema,
 	nodes: z.array(GqlReviewCommentSchema),
 });
 
@@ -151,16 +131,6 @@ const ReviewQuerySchema = z.object({
 	}),
 });
 
-const ReviewThreadCommentsQuerySchema = z.object({
-	data: z.object({
-		node: z
-			.object({
-				comments: GqlReviewCommentsPageSchema,
-			})
-			.nullable(),
-	}),
-});
-
 /** A comment within a review thread, tagged with whether it's a draft (pending) or published. */
 export interface ReviewComment {
 	nodeId: string;
@@ -190,8 +160,8 @@ export interface ReviewThread {
 	comments: ReviewComment[];
 }
 
-/** A review thread retained for write recovery even when GitHub no longer exposes an anchor. */
-export interface ReviewRecoveryThread extends Omit<ReviewThread, "line"> {
+/** A rooted review thread as loaded from GitHub; outdated/whole-file threads have no line. */
+export interface LoadedReviewThread extends Omit<ReviewThread, "line"> {
 	line: number | null;
 }
 
@@ -215,7 +185,7 @@ export interface GitHubReview {
 	/** Viewer's pending (draft) comments across all threads, including anchorless ones. */
 	pendingComments: PendingReviewComment[];
 	/** All rooted threads, including outdated/anchorless ones hidden from the line-based UI. */
-	recoveryThreads: ReviewRecoveryThread[];
+	allThreads: LoadedReviewThread[];
 	threads: ReviewThread[];
 }
 
@@ -227,7 +197,6 @@ export interface PendingReviewComment {
 }
 
 const PENDING_STATE = "PENDING";
-const THREAD_COMMENT_LOAD_CONCURRENCY = 5;
 
 /**
  * The PR's review threads (pending + submitted) as the viewer sees them, plus the
@@ -242,7 +211,7 @@ export async function getReview(
 	let identity: z.infer<typeof GqlPullRequestIdentitySchema> | null = null;
 	let viewerLogin = "";
 	const pendingComments: PendingReviewComment[] = [];
-	const recoveryThreads: ReviewRecoveryThread[] = [];
+	const allThreads: LoadedReviewThread[] = [];
 	const threads: ReviewThread[] = [];
 	let cursor: string | null = null;
 
@@ -272,8 +241,8 @@ export async function getReview(
 			viewerLogin = parsed.data.data.viewer.login;
 		}
 
-		const nodesWithComments = await loadThreadCommentsInBatches(repoRoot, pr.reviewThreads.nodes);
-		for (const { node, comments } of nodesWithComments) {
+		for (const node of pr.reviewThreads.nodes) {
+			const comments = node.comments.nodes;
 			// Count pending (draft) comments across every thread, including outdated/whole-file
 			// ones dropped below — so the tray count and the empty-review check don't undercount.
 			for (const c of comments) {
@@ -287,7 +256,7 @@ export async function getReview(
 			}
 			const root = comments[0];
 			if (!root) continue;
-			const recoveryThread: ReviewRecoveryThread = {
+			const loadedThread: LoadedReviewThread = {
 				threadNodeId: node.id,
 				isResolved: node.isResolved,
 				viewerCanResolve: node.viewerCanResolve,
@@ -300,9 +269,9 @@ export async function getReview(
 				startSide: node.startDiffSide,
 				comments: comments.map(toReviewComment),
 			};
-			recoveryThreads.push(recoveryThread);
+			allThreads.push(loadedThread);
 			if (node.line === null) continue;
-			threads.push({ ...recoveryThread, line: node.line });
+			threads.push({ ...loadedThread, line: node.line });
 		}
 		cursor = nextCursor(pr.reviewThreads.pageInfo);
 	} while (cursor !== null);
@@ -329,7 +298,7 @@ export async function getReview(
 		pendingReviewNodeId: pendingReview?.id ?? null,
 		pendingReviewBody: pendingReview?.body ?? "",
 		pendingComments,
-		recoveryThreads,
+		allThreads,
 		threads,
 	};
 }
@@ -352,71 +321,6 @@ async function getPullRequestMergeBase(
 		repoRoot,
 	);
 	return MergeBaseOidSchema.parse(stdout.trim());
-}
-
-async function loadThreadCommentsInBatches(
-	repoRoot: string,
-	nodes: z.infer<typeof GqlReviewThreadSchema>[],
-): Promise<
-	{
-		node: z.infer<typeof GqlReviewThreadSchema>;
-		comments: z.infer<typeof GqlReviewCommentSchema>[];
-	}[]
-> {
-	const loaded: {
-		node: z.infer<typeof GqlReviewThreadSchema>;
-		comments: z.infer<typeof GqlReviewCommentSchema>[];
-	}[] = [];
-	for (let start = 0; start < nodes.length; start += THREAD_COMMENT_LOAD_CONCURRENCY) {
-		const batch = nodes.slice(start, start + THREAD_COMMENT_LOAD_CONCURRENCY);
-		loaded.push(
-			...(await Promise.all(
-				batch.map(async (node) => ({
-					node,
-					comments: await loadReviewThreadComments(repoRoot, node.id, node.comments),
-				})),
-			)),
-		);
-	}
-	return loaded;
-}
-
-async function loadReviewThreadComments(
-	repoRoot: string,
-	threadNodeId: string,
-	firstPage: z.infer<typeof GqlReviewCommentsPageSchema>,
-): Promise<z.infer<typeof GqlReviewCommentSchema>[]> {
-	const comments = [...firstPage.nodes];
-	let cursor = nextCursor(firstPage.pageInfo);
-	while (cursor !== null) {
-		try {
-			const args = [
-				"api",
-				"graphql",
-				"-f",
-				`query=${REVIEW_THREAD_COMMENTS_QUERY}`,
-				"-f",
-				`threadId=${threadNodeId}`,
-				"-f",
-				`cursor=${cursor}`,
-			];
-			const parsed = ReviewThreadCommentsQuerySchema.safeParse(
-				JSON.parse(await ghReadOrThrow(args, repoRoot)),
-			);
-			if (!parsed.success || parsed.data.data.node === null) {
-				throw new Error("Unexpected response shape from GitHub review comments query");
-			}
-			const page = parsed.data.data.node.comments;
-			comments.push(...page.nodes);
-			cursor = nextCursor(page.pageInfo);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(
-				`Failed to load all comments for GitHub review thread ${threadNodeId}: ${message}`,
-			);
-		}
-	}
-	return comments;
 }
 
 function nextCursor(pageInfo: z.infer<typeof GqlPageInfoSchema>): string | null {

@@ -102,7 +102,7 @@ function requireReviewThread(review: GitHubReview, threadNodeId: string): GitHub
 }
 
 function requirePendingComment(review: GitHubReview, nodeId: string): GitHubApiReviewComment {
-	const comment = review.recoveryThreads
+	const comment = review.allThreads
 		.flatMap((thread) => thread.comments)
 		.find((candidate) => candidate.nodeId === nodeId);
 	if (comment?.isPending) return comment;

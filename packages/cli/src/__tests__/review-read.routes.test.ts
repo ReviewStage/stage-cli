@@ -2,7 +2,6 @@ import { ReviewResponseSchema } from "@stagereview/types/review";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	makeCrossSideRangeReview,
-	makePaginatedThreadReview,
 	REVIEW_QUERY_RESULT,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -77,47 +76,6 @@ describe("review API — read", () => {
 		const githubThread = body.threads.find((thread) => thread.source === "github");
 
 		expect(githubThread).toMatchObject({ side: "additions", startSide: "deletions" });
-	});
-
-	it("loads later pages of comments within a GitHub thread", async () => {
-		await harness.writeGhShim(makePaginatedThreadReview());
-		const runId = harness.insertRun();
-
-		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
-		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
-		const githubThread = review.threads.find((thread) => thread.source === "github");
-
-		expect(review.pendingComments.map((comment) => comment.id)).toEqual(["COMMENT_late"]);
-		expect(githubThread?.comments.map((comment) => comment.id)).toEqual([
-			"COMMENT_sub",
-			"COMMENT_late",
-		]);
-		expect(await harness.logLines()).toContain("get-thread-comments");
-		const queries = (await harness.ghArgvCalls()).flatMap((args) =>
-			args.filter((arg) => arg.startsWith("query=")),
-		);
-		expect(queries.find((query) => query.includes("query GetReview("))).toContain(
-			"reviewThreads(first: 10",
-		);
-		expect(queries.find((query) => query.includes("query GetReview("))).toContain(
-			"comments(first: 1)",
-		);
-		expect(queries.find((query) => query.includes("GetReviewThreadComments"))).toContain(
-			"comments(first: 10",
-		);
-	});
-
-	it("reports offline when a follow-up comment page fails", async () => {
-		const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-		await harness.writeGhShim(makePaginatedThreadReview(), { failThreadComments: true });
-		const runId = harness.insertRun();
-
-		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
-		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
-
-		expect(review.github).toBe("offline");
-		expect(review.threads).toEqual([]);
-		expect(stderr).toHaveBeenCalledWith(expect.stringContaining("gh: follow-up page failed"));
 	});
 
 	it("keeps local threads visible when GitHub is offline", async () => {
