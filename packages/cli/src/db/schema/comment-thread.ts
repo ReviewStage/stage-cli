@@ -6,9 +6,6 @@ export const commentThread = sqliteTable(
 	"comment_thread",
 	{
 		...baseColumns(),
-		// Repository checkout that owns this thread. Scope SHAs alone are not unique
-		// across upstream repositories and forks that share commit history.
-		repoRoot: text().notNull(),
 		// Anchors the thread to a diff scope rather than a single run, so comments
 		// survive re-imports of the same diff (mirrors how external_id keys view-state).
 		scopeKey: text().notNull(),
@@ -19,7 +16,7 @@ export const commentThread = sqliteTable(
 		/** Null while open; set to the resolution time once resolved. */
 		resolvedAt: integer({ mode: "timestamp_ms" }),
 	},
-	(table) => [index("comment_thread_repo_scope_idx").on(table.repoRoot, table.scopeKey)],
+	(table) => [index("comment_thread_scope_key_idx").on(table.scopeKey)],
 );
 
 export type CommentThreadRow = typeof commentThread.$inferSelect;

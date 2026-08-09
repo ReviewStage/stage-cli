@@ -50,13 +50,6 @@
       "when": 1780873869130,
       "tag": "0006_puzzling_beast",
       "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1786220376320,
-      "tag": "0007_comment_thread_repo_scope",
-      "breakpoints": true
     }
   ]
 }

@@ -11,7 +11,7 @@ import {
 	type ReviewThread as ReviewThreadDto,
 	THREAD_SOURCE,
 } from "@stagereview/types/review";
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import {
 	type ChapterRunRow,
@@ -21,7 +21,6 @@ import {
 } from "../db/schema/index.js";
 import { type GitHubRepo, getPullRequestOrThrow, parseGitHubRepo } from "../github/index.js";
 import {
-	type AddedReviewThread,
 	addImmediateReviewComment,
 	addReviewReply,
 	addReviewThread,
@@ -39,7 +38,7 @@ import {
 	updateReviewComment,
 } from "../github/review.js";
 import { DIFF_SIDE, type DiffSide, SCOPE_KIND } from "../schema.js";
-import { loadLocalThreadRecords, UNASSIGNED_REPO_ROOT } from "./local-comment-threads.js";
+import { loadLocalThreadRecords } from "./local-comment-threads.js";
 import { REVIEW_ACTION_SCOPE, reviewActions } from "./review-action-queue.js";
 import { deriveScopeKey } from "./scope-key.js";
 
@@ -116,33 +115,32 @@ function requirePendingComment(review: GitHubReview, nodeId: string): GitHubApiR
 // ─── Read: merged local + GitHub review ─────────────────────────────────────────
 
 function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
-	return loadLocalThreadRecords(db, {
-		repoRoot: run.repoRoot,
-		scopeKey: deriveScopeKey(run),
-	}).map(({ thread, comments }): LocalReviewThreadDto => {
-		return {
-			id: thread.id,
-			source: THREAD_SOURCE.LOCAL,
-			threadNodeId: null,
-			filePath: thread.filePath,
-			side: thread.side,
-			startLine: thread.startLine,
-			endLine: thread.endLine,
-			isResolved: thread.resolvedAt !== null,
-			comments: comments.map(
-				(c): LocalReviewCommentDto => ({
-					id: c.id,
-					state: COMMENT_STATE.LOCAL,
-					body: c.body,
-					bodyHtml: null,
-					author: null,
-					nodeId: null,
-					htmlUrl: null,
-					createdAt: c.createdAt.toISOString(),
-				}),
-			),
-		};
-	});
+	return loadLocalThreadRecords(db, deriveScopeKey(run)).map(
+		({ thread, comments }): LocalReviewThreadDto => {
+			return {
+				id: thread.id,
+				source: THREAD_SOURCE.LOCAL,
+				threadNodeId: null,
+				filePath: thread.filePath,
+				side: thread.side,
+				startLine: thread.startLine,
+				endLine: thread.endLine,
+				isResolved: thread.resolvedAt !== null,
+				comments: comments.map(
+					(c): LocalReviewCommentDto => ({
+						id: c.id,
+						state: COMMENT_STATE.LOCAL,
+						body: c.body,
+						bodyHtml: null,
+						author: null,
+						nodeId: null,
+						htmlUrl: null,
+						createdAt: c.createdAt.toISOString(),
+					}),
+				),
+			};
+		},
+	);
 }
 
 function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
@@ -360,9 +358,6 @@ async function promoteLocalThread(
 		.limit(1)
 		.all();
 	if (!thread) throw new ReviewError(`Thread ${localThreadId} not found`, 404);
-	if (thread.repoRoot !== run.repoRoot && thread.repoRoot !== UNASSIGNED_REPO_ROOT) {
-		throw new ReviewError("This comment belongs to another repository.", 400);
-	}
 	// The thread must belong to this run's diff scope; its anchor was computed
 	// against that diff, so promoting one from another scope would mis-anchor.
 	if (thread.scopeKey !== deriveScopeKey(run)) {
@@ -372,7 +367,7 @@ async function promoteLocalThread(
 		.select()
 		.from(comment)
 		.where(eq(comment.threadId, localThreadId))
-		.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
+		.orderBy(asc(commentInsertionOrder))
 		.all();
 	const root = comments[0];
 	if (!root) throw new ReviewError("Thread has no comments to add to the review.", 400);
@@ -381,61 +376,30 @@ async function promoteLocalThread(
 	await withLockedReviewTarget(run, async (target) => {
 		const { review } = target;
 		assertGitHubWritable(run, review);
-		const wasUnassigned = thread.repoRoot === UNASSIGNED_REPO_ROOT;
-		if (wasUnassigned) {
-			const [claimed] = db
-				.update(commentThread)
-				.set({ repoRoot: run.repoRoot })
-				.where(
-					and(
-						eq(commentThread.id, localThreadId),
-						eq(commentThread.repoRoot, UNASSIGNED_REPO_ROOT),
-					),
-				)
-				.returning({ id: commentThread.id })
-				.all();
-			if (!claimed) {
-				throw new ReviewError("This comment belongs to another repository.", 400);
-			}
+		const side = toGitHubSide(thread.side);
+		const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
+		const reviewNodeId = await openPendingReview(run, review);
+		const addedThread = await addReviewThread(run.repoRoot, {
+			pullRequestNodeId: review.pullRequestNodeId,
+			reviewNodeId,
+			path: thread.filePath,
+			body: root.body,
+			line: thread.endLine,
+			side,
+			startLine,
+			startSide: startLine !== null ? side : null,
+		});
+		for (const reply of replies) {
+			await addReviewReply(run.repoRoot, addedThread.threadNodeId, reply.body, reviewNodeId);
 		}
-		let addedThread: AddedReviewThread | null = null;
-		try {
-			const side = toGitHubSide(thread.side);
-			const startLine = thread.endLine !== thread.startLine ? thread.startLine : null;
-			const reviewNodeId = await openPendingReview(run, review);
-			addedThread = await addReviewThread(run.repoRoot, {
-				pullRequestNodeId: review.pullRequestNodeId,
-				reviewNodeId,
-				path: thread.filePath,
-				body: root.body,
-				line: thread.endLine,
-				side,
-				startLine,
-				startSide: startLine !== null ? side : null,
-			});
-			for (const reply of replies) {
-				await addReviewReply(run.repoRoot, addedThread.threadNodeId, reply.body, reviewNodeId);
+		if (thread.resolvedAt !== null) {
+			if (!addedThread.viewerCanResolve) {
+				throw new ReviewError(
+					"GitHub doesn't allow you to resolve this promoted review thread.",
+					403,
+				);
 			}
-			if (thread.resolvedAt !== null) {
-				if (!addedThread.viewerCanResolve) {
-					throw new ReviewError(
-						"GitHub doesn't allow you to resolve this promoted review thread.",
-						403,
-					);
-				}
-				await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
-			}
-		} catch (err) {
-			// Once the root exists on this PR, keep the repository claim — releasing it
-			// would let another checkout sharing these diff SHAs promote the same thread
-			// to a different pull request. Roll back only when nothing landed remotely.
-			if (wasUnassigned && addedThread === null) {
-				db.update(commentThread)
-					.set({ repoRoot: UNASSIGNED_REPO_ROOT })
-					.where(and(eq(commentThread.id, localThreadId), eq(commentThread.repoRoot, run.repoRoot)))
-					.run();
-			}
-			throw err;
+			await setThreadResolved(run.repoRoot, addedThread.threadNodeId, true);
 		}
 		// Every comment landed remotely; the cascade removes all local comment rows.
 		db.delete(commentThread).where(eq(commentThread.id, localThreadId)).run();

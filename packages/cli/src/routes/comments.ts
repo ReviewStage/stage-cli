@@ -16,7 +16,7 @@ import {
 	commentInsertionOrder,
 	commentThread,
 } from "../db/schema/index.js";
-import { type LocalThreadScope, loadLocalThreadRecords } from "../runs/local-comment-threads.js";
+import { loadLocalThreadRecords } from "../runs/local-comment-threads.js";
 import { isLocalThreadPromotionInFlight } from "../runs/review.js";
 import { REVIEW_ACTION_SCOPE, reviewActions } from "../runs/review-action-queue.js";
 import { deriveScopeKey } from "../runs/scope-key.js";
@@ -28,19 +28,19 @@ const THREAD_PROMOTION_IN_PROGRESS = "This comment thread is being added to the 
 
 export function commentRoutes(db: StageDb): Route[] {
 	return [
-		// Threads are anchored to a repository + diff scope, not a run, so they
-		// survive re-imports without crossing into a fork that shares the same SHAs.
+		// Threads are anchored to a diff scope rather than a single run, so
+		// comments survive re-imports of the same diff.
 		{
 			method: "GET",
 			pattern: "/api/runs/:runId/comment-threads",
 			handler: (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
-				const scope = resolveRunScope(db, params.runId);
-				if (scope === null) {
+				const scopeKey = resolveRunScopeKey(db, params.runId);
+				if (scopeKey === null) {
 					writeJson(res, 404, { error: `Run ${params.runId} not found` });
 					return;
 				}
-				writeJson(res, 200, listThreads(db, scope));
+				writeJson(res, 200, listThreads(db, scopeKey));
 			},
 		},
 		{
@@ -48,8 +48,8 @@ export function commentRoutes(db: StageDb): Route[] {
 			pattern: "/api/runs/:runId/comment-threads",
 			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
-				const scope = resolveRunScope(db, params.runId);
-				if (scope === null) {
+				const scopeKey = resolveRunScopeKey(db, params.runId);
+				if (scopeKey === null) {
 					writeJson(res, 404, { error: `Run ${params.runId} not found` });
 					return;
 				}
@@ -60,8 +60,7 @@ export function commentRoutes(db: StageDb): Route[] {
 					const [threadRow] = tx
 						.insert(commentThread)
 						.values({
-							repoRoot: scope.repoRoot,
-							scopeKey: scope.scopeKey,
+							scopeKey,
 							filePath: body.filePath,
 							side: body.side,
 							startLine: body.startLine,
@@ -271,11 +270,10 @@ function findCommentThreadId(db: StageDb, commentId: string): string | null {
 	return row?.threadId ?? null;
 }
 
-function resolveRunScope(db: StageDb, runId: string | undefined): LocalThreadScope | null {
+function resolveRunScopeKey(db: StageDb, runId: string | undefined): string | null {
 	if (!runId) return null;
 	const [run] = db
 		.select({
-			repoRoot: chapterRun.repoRoot,
 			scopeKind: chapterRun.scopeKind,
 			workingTreeRef: chapterRun.workingTreeRef,
 			baseSha: chapterRun.baseSha,
@@ -287,11 +285,11 @@ function resolveRunScope(db: StageDb, runId: string | undefined): LocalThreadSco
 		.limit(1)
 		.all();
 	if (!run) return null;
-	return { repoRoot: run.repoRoot, scopeKey: deriveScopeKey(run) };
+	return deriveScopeKey(run);
 }
 
-function listThreads(db: StageDb, scope: LocalThreadScope): CommentThreadDto[] {
-	return loadLocalThreadRecords(db, scope).map(({ thread, comments }) =>
+function listThreads(db: StageDb, scopeKey: string): CommentThreadDto[] {
+	return loadLocalThreadRecords(db, scopeKey).map(({ thread, comments }) =>
 		toThreadDto(thread, comments),
 	);
 }
@@ -301,7 +299,7 @@ function threadComments(db: StageDb, threadId: string): CommentRow[] {
 		.select()
 		.from(comment)
 		.where(eq(comment.threadId, threadId))
-		.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
+		.orderBy(asc(commentInsertionOrder))
 		.all();
 }
 

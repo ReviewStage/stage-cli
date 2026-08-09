@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import {
 	type CommentRow,
@@ -8,37 +8,17 @@ import {
 	commentThread,
 } from "../db/schema/index.js";
 
-/**
- * Migration 0007 cannot safely assign a repository to a legacy thread when the
- * same diff scope exists in multiple checkouts. Keep those rows visible in every
- * matching scope until the first promotion claims one for a concrete repository.
- */
-export const UNASSIGNED_REPO_ROOT = "";
-
-export interface LocalThreadScope {
-	repoRoot: string;
-	scopeKey: string;
-}
-
 export interface LocalThreadRecord {
 	thread: CommentThreadRow;
 	comments: CommentRow[];
 }
 
-/** Load a scope's local threads and all of their comments in two queries. */
-export function loadLocalThreadRecords(db: StageDb, scope: LocalThreadScope): LocalThreadRecord[] {
+/** Load a diff scope's local threads and all of their comments in two queries. */
+export function loadLocalThreadRecords(db: StageDb, scopeKey: string): LocalThreadRecord[] {
 	const threads = db
 		.select()
 		.from(commentThread)
-		.where(
-			and(
-				eq(commentThread.scopeKey, scope.scopeKey),
-				or(
-					eq(commentThread.repoRoot, scope.repoRoot),
-					eq(commentThread.repoRoot, UNASSIGNED_REPO_ROOT),
-				),
-			),
-		)
+		.where(eq(commentThread.scopeKey, scopeKey))
 		.orderBy(asc(commentThread.createdAt))
 		.all();
 	if (threads.length === 0) return [];
@@ -52,7 +32,7 @@ export function loadLocalThreadRecords(db: StageDb, scope: LocalThreadScope): Lo
 				threads.map((thread) => thread.id),
 			),
 		)
-		.orderBy(asc(comment.createdAt), asc(commentInsertionOrder))
+		.orderBy(asc(commentInsertionOrder))
 		.all();
 	const commentsByThread = new Map<string, CommentRow[]>();
 	for (const row of comments) {

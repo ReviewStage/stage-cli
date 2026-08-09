@@ -271,7 +271,6 @@ interface InsertRunOptions {
 interface SeedThreadOptions {
 	withReply?: boolean;
 	resolved?: boolean;
-	repoRoot?: string;
 }
 
 export class ReviewRouteHarness {
@@ -482,7 +481,6 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 		const [thread] = this.db
 			.insert(commentThread)
 			.values({
-				repoRoot: options.repoRoot ?? this.repoRoot,
 				scopeKey: SCOPE_KEY,
 				filePath: "src/foo.ts",
 				side: "additions",
