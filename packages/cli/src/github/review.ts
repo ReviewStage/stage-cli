@@ -673,10 +673,14 @@ export async function submitReview(
 		throw error;
 	}
 	const parsed = SubmittedReviewSchema.safeParse(JSON.parse(stdout));
+	if (!parsed.success) {
+		throw new Error(
+			`Unexpected response shape from submitPullRequestReview: ${parsed.error.message}`,
+		);
+	}
 	if (
-		parsed.success &&
-		(parsed.data.data.submitPullRequestReview === null ||
-			parsed.data.data.submitPullRequestReview.pullRequestReview === null)
+		parsed.data.data.submitPullRequestReview === null ||
+		parsed.data.data.submitPullRequestReview.pullRequestReview === null
 	) {
 		const nulledField =
 			parsed.data.data.submitPullRequestReview === null

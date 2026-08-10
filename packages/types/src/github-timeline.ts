@@ -139,8 +139,14 @@ export const AssignedEventSchema = ActorEventBaseSchema.extend({
 export type AssignedEvent = z.infer<typeof AssignedEventSchema>;
 
 export const ReviewRequestEventSchema = ActorEventBaseSchema.extend({
-	requested_reviewer: NullableTimelineUserSchema.optional(),
-	requested_team: z.object({ name: z.string() }).optional(),
+	// The unused selector arrives as null (a user request has requested_team:
+	// null and vice versa) — that's "absent", not a deleted account, so no
+	// ghost normalization here; the UI falls back reviewer → team → generic.
+	requested_reviewer: TimelineUserSchema.nullish().transform((v) => v ?? undefined),
+	requested_team: z
+		.object({ name: z.string() })
+		.nullish()
+		.transform((v) => v ?? undefined),
 });
 export type ReviewRequestEvent = z.infer<typeof ReviewRequestEventSchema>;
 

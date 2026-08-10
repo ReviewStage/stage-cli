@@ -33,9 +33,9 @@ export function timelineRoutes(db: StageDb): Route[] {
 					writeJson(res, 200, body);
 				} catch (err) {
 					// gh missing/unauthenticated/offline — degrade with an error the UI can show
-					writeJson(res, 502, {
-						error: err instanceof Error ? err.message : "Failed to load timeline",
-					});
+					const message = err instanceof Error ? err.message : "Failed to load timeline";
+					console.error(`Failed to load pull request timeline: ${message}`);
+					writeJson(res, 502, { error: message });
 				}
 			},
 		},

@@ -60,7 +60,7 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 		} catch (err: unknown) {
 			if (hasStringStdout(err)) {
 				patches.push(err.stdout);
-				totalBytes += err.stdout.length;
+				totalBytes += Buffer.byteLength(err.stdout);
 			}
 		}
 		// Post-append check so the total genuinely stays within the cap: the
