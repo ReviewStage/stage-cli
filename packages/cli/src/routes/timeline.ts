@@ -3,7 +3,13 @@ import type { StageDb } from "../db/client.js";
 import { getPullRequestTimeline } from "../github/timeline.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
-import { parseNumber, query, requireRepo, resolveRun } from "./pull-request-shared.js";
+import {
+	enforceSameOrigin,
+	parseNumber,
+	query,
+	requireRepo,
+	resolveRun,
+} from "./pull-request-shared.js";
 
 export function timelineRoutes(db: StageDb): Route[] {
 	return [
@@ -11,6 +17,7 @@ export function timelineRoutes(db: StageDb): Route[] {
 			method: "GET",
 			pattern: "/api/runs/:runId/timeline",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const repo = requireRepo(run, res);

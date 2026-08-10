@@ -678,11 +678,15 @@ export async function submitReview(
 		(parsed.data.data.submitPullRequestReview === null ||
 			parsed.data.data.submitPullRequestReview.pullRequestReview === null)
 	) {
+		const nulledField =
+			parsed.data.data.submitPullRequestReview === null
+				? "null submitPullRequestReview"
+				: "null pullRequestReview";
 		return await rethrowIfReviewNotPending(
 			repoRoot,
 			reviewNodeId,
 			new Error(
-				`submitPullRequestReview returned null pullRequestReview (pull request: ${pullRequestNodeId})`,
+				`submitPullRequestReview returned ${nulledField} (pull request: ${pullRequestNodeId})`,
 			),
 		);
 	}

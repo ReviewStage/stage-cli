@@ -31,6 +31,7 @@ export function SegmentedToggle<T extends string>({
 					)}
 					onClick={() => onChange(opt.value)}
 					aria-label={opt.ariaLabel}
+					aria-pressed={value === opt.value}
 				>
 					{opt.icon && <opt.icon className="size-3.5" aria-hidden="true" />}
 					{opt.label && <span className="ml-1 text-xs">{opt.label}</span>}

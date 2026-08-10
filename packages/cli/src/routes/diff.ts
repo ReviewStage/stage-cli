@@ -173,10 +173,34 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 	return results;
 }
 
-/** Strip the backslash escapes git adds inside quoted diff header paths. */
+/**
+ * Decode the C-style escapes git uses inside quoted diff header paths:
+ * `\\"` and `\\\\`, control shorthands (`\\t`, `\\n`, `\\r`), and octal byte
+ * escapes for non-ASCII names (decoded as UTF-8 byte sequences).
+ */
 function unquoteGitPath(headerPath: string | undefined): string | null {
 	if (headerPath === undefined) return null;
-	return headerPath.replace(/\\([\\"])/g, "$1");
+	const bytes: number[] = [];
+	for (let i = 0; i < headerPath.length; i++) {
+		const ch = headerPath[i];
+		if (ch !== "\\") {
+			for (const byte of Buffer.from(ch ?? "", "utf8")) bytes.push(byte);
+			continue;
+		}
+		const next = headerPath[i + 1];
+		if (next === undefined) break;
+		const octal = headerPath.slice(i + 1, i + 4);
+		if (/^[0-7]{3}$/.test(octal)) {
+			bytes.push(Number.parseInt(octal, 8));
+			i += 3;
+			continue;
+		}
+		const shorthand: Record<string, number> = { t: 0x09, n: 0x0a, r: 0x0d };
+		const code = shorthand[next];
+		bytes.push(code ?? Buffer.from(next, "utf8")[0] ?? 0);
+		i += 1;
+	}
+	return Buffer.from(bytes).toString("utf8");
 }
 
 async function getGitFileContent(

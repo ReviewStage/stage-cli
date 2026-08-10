@@ -51,7 +51,9 @@ export function ActivityPage({ runId }: { runId: string }) {
 			<div className="flex items-start gap-3 rounded-lg border border-destructive/50 p-4 text-destructive">
 				<AlertTriangle className="mt-0.5 size-4 shrink-0" />
 				<div className="min-w-0 text-sm">
-					<p className="font-medium">Failed to load timeline</p>
+					<p className="font-medium">
+						{prError ? "Failed to load pull request" : "Failed to load timeline"}
+					</p>
 					<p className="mt-1 text-destructive/90">
 						{error instanceof Error && error.message ? error.message : "An unknown error occurred."}
 					</p>

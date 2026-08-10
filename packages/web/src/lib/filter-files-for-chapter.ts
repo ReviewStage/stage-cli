@@ -1,5 +1,5 @@
 import { getSingularPatch, parseDiffFromFile } from "@pierre/diffs";
-import type { HunkReference } from "@stagereview/types/chapters";
+import { HEADER_ONLY_OLD_START, type HunkReference } from "@stagereview/types/chapters";
 import type { FileContentsMap } from "@stagereview/types/diff";
 import type { FileDiffEntry } from "./parse-diff";
 import { fileDiffToPullRequestFile } from "./parse-diff";
@@ -155,6 +155,9 @@ export function filterFilesForChapter(
 
 		const allHunks = parseHunksFromSegment(segment.text);
 		if (allHunks.length === 0) {
+			// Only the header-only sentinel selects a zero-hunk file; a ref with a
+			// real oldStart that matches nothing is simply invalid and stays ignored.
+			if (!chapterOldStarts.has(HEADER_ONLY_OLD_START)) continue;
 			// Header-only files (binary contents, pure renames) have no hunks to
 			// filter; include them whole — matched via the HEADER_ONLY_OLD_START
 			// sentinel ref — so chapter views can render them through the

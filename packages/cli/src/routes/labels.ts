@@ -46,6 +46,7 @@ export function labelRoutes(db: StageDb): Route[] {
 			method: "GET",
 			pattern: "/api/runs/:runId/pull-request/labels",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const repo = requireRepo(run, res);
@@ -69,7 +70,8 @@ export function labelRoutes(db: StageDb): Route[] {
 			// Errors surface so the picker can show its failed-load state.
 			method: "GET",
 			pattern: "/api/runs/:runId/pull-request/labels/repository",
-			handler: async (_req, res, params) => {
+			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const repo = requireRepo(run, res);

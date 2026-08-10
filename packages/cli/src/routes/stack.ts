@@ -6,7 +6,13 @@ import { type GitHubRepo, parseGitHubRepo } from "../github/index.js";
 import { getPullRequestStack } from "../github/pull-request-stack.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
-import { parseNumber, query, requireRepo, resolveRun } from "./pull-request-shared.js";
+import {
+	enforceSameOrigin,
+	parseNumber,
+	query,
+	requireRepo,
+	resolveRun,
+} from "./pull-request-shared.js";
 
 /** GitHub owner/repo names are case-insensitive, and remote URLs vary in casing. */
 function isSameRepo(a: GitHubRepo, b: GitHubRepo): boolean {
@@ -49,6 +55,7 @@ export function stackRoutes(db: StageDb): Route[] {
 			method: "GET",
 			pattern: "/api/runs/:runId/pull-request/stack",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const repo = requireRepo(run, res);

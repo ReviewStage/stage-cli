@@ -286,9 +286,12 @@ export async function getThreadMetadata(
 			"graphql",
 			"-f",
 			`query=${THREAD_METADATA_QUERY}`,
-			"-F",
+			// `-f` keeps string GraphQL variables as strings; `-F` would coerce a
+			// repo/owner literally named `123` or `true` into the wrong type.
+			// Only `number` (Int!) uses `-F`.
+			"-f",
 			`owner=${repo.owner}`,
-			"-F",
+			"-f",
 			`repo=${repo.repo}`,
 			"-F",
 			`number=${number}`,
