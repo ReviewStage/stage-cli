@@ -591,7 +591,9 @@ class GitHubViewSync {
 		}
 	}
 
-	private async resolveTarget(runId: string): Promise<{ repoRoot: string; nodeId: string } | null> {
+	private async resolveTarget(
+		runId: string,
+	): Promise<{ repoRoot: string; nodeId: string } | "no-pr" | "unresolved"> {
 		const cached = this.targets.get(runId);
 		if (cached !== undefined) return cached;
 
