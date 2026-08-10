@@ -7,10 +7,8 @@ import {
 	ChevronRight,
 	Circle,
 	CircleCheck,
-	Copy,
-	MoreHorizontal,
+	MessageSquare,
 } from "lucide-react";
-import { LineCounts } from "@/components/shared/line-counts";
 import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
@@ -20,14 +18,18 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Markdown } from "@/components/ui/markdown";
 import { useChapterContext } from "@/lib/chapter-context";
 import { SHORTCUT_KEY } from "@/lib/keyboard-shortcuts";
 import { cn } from "@/lib/utils";
+import { ChapterActionsMenu } from "./chapter-actions-menu";
+import { RiskBadge } from "./risk-badge";
 
 interface ChapterNavigatorProps {
 	chapter: Chapter;
 	chapterIndex: number;
 	viewedChapterIds: ReadonlySet<string>;
+	chapterCommentCounts: ReadonlyMap<string, number>;
 	onToggleViewed: (externalId: string) => void;
 	onCopyChapter: () => void;
 }
@@ -36,6 +38,7 @@ export function ChapterNavigator({
 	chapter,
 	chapterIndex,
 	viewedChapterIds,
+	chapterCommentCounts,
 	onToggleViewed,
 	onCopyChapter,
 }: ChapterNavigatorProps) {
@@ -47,7 +50,7 @@ export function ChapterNavigator({
 	const nextChapter = canNext ? allChapters[chapterIndex + 1] : null;
 
 	return (
-		<div className="pl-6 pr-4 py-3 lg:pl-8">
+		<div className="pl-[var(--panel-pl,2rem)] pr-[var(--panel-pr,1rem)] py-3">
 			<div className="flex items-center gap-1">
 				<ShortcutTooltip
 					shortcutKey={SHORTCUT_KEY.MARK_CHAPTER_AS_VIEWED}
@@ -95,12 +98,13 @@ export function ChapterNavigator({
 					</DropdownMenuTrigger>
 					<DropdownMenuContent
 						align="center"
-						className="max-h-[60vh] w-[var(--radix-dropdown-menu-trigger-width)] min-w-72 overflow-y-auto"
+						className="scrollbar-thin max-h-[60vh] w-[var(--radix-dropdown-menu-trigger-width)] min-w-72 overflow-y-auto"
 					>
 						{allChapters.map((ch, index) => {
 							const isActive = index === chapterIndex;
 							const isChViewed = viewedChapterIds.has(ch.externalId);
 							const counts = chapterLineCountsMap.get(ch.id);
+							const commentCount = chapterCommentCounts.get(ch.id) ?? 0;
 							return (
 								<DropdownMenuItem key={ch.id} asChild className="gap-3 px-3 py-2.5">
 									<Link
@@ -119,7 +123,7 @@ export function ChapterNavigator({
 										>
 											<div
 												className={cn(
-													"flex size-6 shrink-0 items-center justify-center rounded-full font-bold text-[10px]",
+													"flex size-6 shrink-0 items-center justify-center rounded-full font-bold text-[0.625rem]",
 													isActive
 														? "bg-primary text-primary-foreground"
 														: "bg-muted text-muted-foreground",
@@ -128,14 +132,32 @@ export function ChapterNavigator({
 												{ch.order + 1}
 											</div>
 										</StatusBadge>
-										<span className="min-w-0 flex-1 truncate text-sm">{ch.title}</span>
-										{counts && (
-											<LineCounts
-												additions={counts.linesAdded}
-												deletions={counts.linesDeleted}
-												className="shrink-0 opacity-70"
+										<div className="min-w-0 flex-1 space-y-0.5">
+											<Markdown
+												content={ch.title}
+												inheritSize
+												className="block truncate text-sm [&_.md-p]:my-0 [&_.md-p]:inline"
 											/>
-										)}
+											<span className="flex items-center gap-1.5 font-medium text-[0.6875rem] opacity-70">
+												{ch.riskLevel !== null && <RiskBadge level={ch.riskLevel} />}
+												{counts && counts.linesAdded > 0 && (
+													<span className="text-green-600 dark:text-green-500">
+														+{counts.linesAdded}
+													</span>
+												)}
+												{counts && counts.linesDeleted > 0 && (
+													<span className="text-red-600 dark:text-red-500">
+														-{counts.linesDeleted}
+													</span>
+												)}
+												{commentCount > 0 && (
+													<span className="ml-auto flex items-center gap-0.5 text-muted-foreground">
+														<MessageSquare className="size-2.5" />
+														{commentCount}
+													</span>
+												)}
+											</span>
+										</div>
 									</Link>
 								</DropdownMenuItem>
 							);
@@ -158,24 +180,7 @@ export function ChapterNavigator({
 					<span className="invisible inline-flex size-7" aria-hidden="true" />
 				)}
 
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<Button
-							variant="ghost"
-							size="icon"
-							className="size-7 shrink-0 cursor-pointer"
-							aria-label="Chapter actions"
-						>
-							<MoreHorizontal className="size-4" />
-						</Button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end">
-						<DropdownMenuItem onClick={onCopyChapter}>
-							<Copy className="size-4" />
-							Copy chapter summary
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
+				<ChapterActionsMenu onCopyChapter={onCopyChapter} />
 			</div>
 		</div>
 	);

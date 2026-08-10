@@ -8,11 +8,20 @@ import { ReviewPanel } from "@/components/pull-request/review-panel";
 import { SectionLabel } from "@/components/pull-request/section-label";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChapterProvider } from "@/lib/chapter-context";
 import { CollapseActionsProvider, useCollapseActionsFromNav } from "@/lib/collapse-actions-context";
 import { useFileDiffEntries } from "@/lib/parse-diff";
 import { PullRequestProvider } from "@/lib/pull-request-context";
+import {
+	buildHunkIndex,
+	collectViewedChapterHunkRefs,
+	computeFileLineCounts,
+	computeRemainingPullRequestLineCounts,
+	type HunkIndex,
+	type LineCounts,
+} from "@/lib/remaining-line-counts";
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { usePullRequest, usePullRequestMergeStatus } from "@/lib/use-pull-request";
@@ -65,6 +74,48 @@ function TabLink({ tab, runId, isActive, countLabel }: TabLinkProps) {
 				<span className="text-muted-foreground text-xs tabular-nums">{countLabel}</span>
 			)}
 		</Link>
+	);
+}
+
+interface HeaderLineCounts {
+	counts: LineCounts;
+	/** Present only when `counts` is the remaining (not total) lines. */
+	totalCounts?: LineCounts;
+}
+
+function LineCountValues({ counts }: { counts: LineCounts }) {
+	return (
+		<>
+			<span className="font-medium text-green-600 tabular-nums dark:text-green-500">
+				+{counts.linesAdded.toLocaleString()}
+			</span>
+			<span className="font-medium text-red-600 tabular-nums dark:text-red-500">
+				-{counts.linesDeleted.toLocaleString()}
+			</span>
+		</>
+	);
+}
+
+function HeaderLineCountsDisplay({ lineCounts }: { lineCounts: HeaderLineCounts }) {
+	if (!lineCounts.totalCounts) {
+		return <LineCountValues counts={lineCounts.counts} />;
+	}
+
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<div className="flex items-center gap-3 rounded-md border border-border bg-muted/40 px-2.5 py-1">
+					<LineCountValues counts={lineCounts.counts} />
+					<span className="font-medium text-muted-foreground text-xs">left</span>
+				</div>
+			</TooltipTrigger>
+			<TooltipContent>
+				<div className="flex items-center gap-3">
+					<LineCountValues counts={lineCounts.totalCounts} />
+					<span className="font-medium text-muted-foreground text-xs">total</span>
+				</div>
+			</TooltipContent>
+		</Tooltip>
 	);
 }
 
@@ -213,15 +264,51 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		}
 	}, []);
 
-	const { totalAdditions, totalDeletions } = useMemo(() => {
-		let additions = 0;
-		let deletions = 0;
-		for (const entry of fileEntries) {
-			additions += entry.file.additions;
-			deletions += entry.file.deletions;
+	// The hunk index is built once from the stable diff so viewed toggles only
+	// pay for the subtraction, letting the badge update in the same render as
+	// the optimistic viewed-state cache writes.
+	const files = useMemo(() => fileEntries.map((entry) => entry.file), [fileEntries]);
+	const hunkIndex = useMemo<HunkIndex>(() => buildHunkIndex(files), [files]);
+
+	const viewedChapterHunkRefs = useMemo(
+		() => (chapters ? collectViewedChapterHunkRefs(chapters, chapterIdSet, filePathSet) : []),
+		[chapters, chapterIdSet, filePathSet],
+	);
+
+	const headerLineCounts = useMemo<HeaderLineCounts | null>(() => {
+		if (diffData === undefined) return null;
+
+		// Unlike the hosted app (which anchors totals on GitHub's API and must
+		// guard against the PR metadata and diff resolving for different heads),
+		// the CLI's chapters, diff, and view-state all describe the same run, so
+		// the parsed diff is both the total and the remaining baseline.
+		const totalCounts = computeFileLineCounts(files);
+
+		// A viewed file's lines are subtracted whole. Partially viewed chapters
+		// are applied at the hunk level via viewedChapterHunkRefs so hunks a file
+		// has outside its viewed chapters are not subtracted until they are
+		// actually reviewed.
+		const remainingCounts = computeRemainingPullRequestLineCounts(
+			files,
+			(path) => filePathSet.has(path),
+			viewedChapterHunkRefs,
+			hunkIndex,
+		);
+
+		// Show the plain total unless there is real reviewed progress with lines
+		// still left. Gating on the computed remaining lines (rather than a
+		// separate viewed-file count) means the badge never labels the full diff
+		// as "left".
+		const hasViewedLines =
+			remainingCounts.linesAdded < totalCounts.linesAdded ||
+			remainingCounts.linesDeleted < totalCounts.linesDeleted;
+		const hasLinesLeft = remainingCounts.linesAdded > 0 || remainingCounts.linesDeleted > 0;
+		if (!hasViewedLines || !hasLinesLeft) {
+			return { counts: totalCounts };
 		}
-		return { totalAdditions: additions, totalDeletions: deletions };
-	}, [fileEntries]);
+
+		return { counts: remainingCounts, totalCounts };
+	}, [diffData, files, filePathSet, viewedChapterHunkRefs, hunkIndex]);
 
 	if (error) return <ErrorState error={error} />;
 
@@ -303,12 +390,14 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 							</PopoverContent>
 						</Popover>
 						<div className="hidden items-center gap-3 @5xl:flex">
-							<span className="font-medium text-green-600 dark:text-green-500">
-								+{totalAdditions.toLocaleString()}
-							</span>
-							<span className="font-medium text-red-600 dark:text-red-500">
-								-{totalDeletions.toLocaleString()}
-							</span>
+							{headerLineCounts ? (
+								<HeaderLineCountsDisplay lineCounts={headerLineCounts} />
+							) : (
+								<>
+									<Skeleton className="h-4 w-12" />
+									<Skeleton className="h-4 w-12" />
+								</>
+							)}
 						</div>
 					</div>
 				</nav>

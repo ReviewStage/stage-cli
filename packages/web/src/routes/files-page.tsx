@@ -2,16 +2,15 @@ import { useCallback, useMemo } from "react";
 import { FileDiffList, FilePicker, SidebarLayout, type ViewedConfig } from "@/components/files";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProvideCollapseActions } from "@/lib/collapse-actions-context";
+import { buildFileCommentCountsMap } from "@/lib/comment-counts";
 import { FILE_STATUS, FILE_VIEWED_STATE } from "@/lib/diff-types";
 import { buildFileTree, flattenFileTree, sortFileTree } from "@/lib/file-tree";
 import { type FileDiffEntry, useFileDiffEntries } from "@/lib/parse-diff";
+import { useReviewContext } from "@/lib/review-context";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
 import { useFileDiffNavigation } from "@/lib/use-file-diff-navigation";
 import { useViewState } from "@/lib/use-view-state";
-
-// The CLI has no review comments, so the file tree never renders comment badges.
-const NO_COMMENT_COUNTS: Map<string, number> = new Map();
 
 interface FilesPageProps {
 	runId: string;
@@ -23,6 +22,12 @@ export function FilesPage({ runId }: FilesPageProps) {
 	const rawEntries = useFileDiffEntries(diffData?.patch, diffData?.fileContents);
 	const entries = useMemo(() => sortFileDiffEntries(rawEntries), [rawEntries]);
 	const files = useMemo(() => entries.map((e) => e.file), [entries]);
+
+	const { threads } = useReviewContext();
+	const fileCommentCounts = useMemo(
+		() => buildFileCommentCountsMap(files, threads),
+		[files, threads],
+	);
 
 	const { filePathSet, markFileViewed, unmarkFileViewed } = useViewState(runId);
 	const handleToggleViewed = useCallback(
@@ -81,7 +86,7 @@ export function FilesPage({ runId }: FilesPageProps) {
 					files={files}
 					focusedFilePath={currentFilePath}
 					viewed={viewed}
-					commentCountsByPath={NO_COMMENT_COUNTS}
+					commentCountsByPath={fileCommentCounts}
 					onSelectFile={handleSelectFile}
 				/>
 			}

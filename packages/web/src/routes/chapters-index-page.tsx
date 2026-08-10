@@ -1,7 +1,15 @@
 import type { Chapter } from "@stagereview/types/chapters";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowRight, ChevronRight, Circle, CircleCheck, FileCode } from "lucide-react";
+import {
+	ArrowRight,
+	ChevronRight,
+	Circle,
+	CircleCheck,
+	FileCode,
+	MessageSquare,
+} from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { RiskBadge } from "@/components/chapter/risk-badge";
 import { OverviewColumnHeader } from "@/components/pull-request/overview-column-header";
 import { SectionLabel } from "@/components/pull-request/section-label";
 import { CopyMarkdownButton } from "@/components/shared/copy-markdown-button";
@@ -10,7 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChapterContext } from "@/lib/chapter-context";
+import { buildChapterCommentCountsMap } from "@/lib/comment-counts";
 import { formatAllChaptersAsMarkdown } from "@/lib/format-chapter-markdown";
+import { useReviewContext } from "@/lib/review-context";
 import {
 	NAVIGATION_DIRECTION,
 	type NavigationDirection,
@@ -32,9 +42,14 @@ function ChapterLoadingSkeleton() {
 
 function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string }) {
 	const { chapterLineCountsMap } = useChapterContext();
+	const { threads } = useReviewContext();
 	const view = useViewState(runId);
 
 	const sorted = useMemo(() => [...chapters].sort((a, b) => a.order - b.order), [chapters]);
+	const chapterCommentCounts = useMemo(
+		() => buildChapterCommentCountsMap(sorted, threads),
+		[sorted, threads],
+	);
 
 	const total = sorted.length;
 	const viewedCount = sorted.reduce(
@@ -49,6 +64,7 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 			{sorted.map((ch, index) => {
 				const isViewed = view.isChapterViewed(ch.externalId);
 				const counts = chapterLineCountsMap.get(ch.id);
+				const commentCount = chapterCommentCounts.get(ch.id) ?? 0;
 				const fileCount = new Set(ch.hunkRefs.map((h) => h.filePath)).size;
 				const isNextToReview = index === firstUnviewedIndex;
 
@@ -116,6 +132,7 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 									</span>
 								</div>
 								<div className="mt-0.5 flex items-center gap-1.5 text-muted-foreground text-xs">
+									{ch.riskLevel !== null && <RiskBadge level={ch.riskLevel} />}
 									{counts && (
 										<LineCounts
 											additions={counts.linesAdded}
@@ -131,6 +148,13 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 									)}
 								</div>
 							</div>
+
+							{commentCount > 0 && (
+								<span className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
+									<MessageSquare className="size-3" />
+									{commentCount}
+								</span>
+							)}
 
 							{isNextToReview ? (
 								<Button size="sm" asChild className="pointer-events-none shrink-0 gap-1.5">

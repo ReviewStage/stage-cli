@@ -1,10 +1,9 @@
 import { useMemo, useState } from "react";
 import { FileFilterInput } from "@/components/files/file-filter-input";
 import { FileTree, type ViewedConfig } from "@/components/files/file-tree";
+import { buildFileCommentCountsMap } from "@/lib/comment-counts";
 import { FILE_VIEWED_STATE, type PullRequestFile } from "@/lib/diff-types";
-
-// The CLI has no review comments, so the tree never renders comment badges.
-const NO_COMMENT_COUNTS: Map<string, number> = new Map();
+import { useReviewContext } from "@/lib/review-context";
 
 interface ChapterFileListProps {
 	files: PullRequestFile[];
@@ -22,6 +21,7 @@ export function ChapterFileList({
 	onSelectFile,
 }: ChapterFileListProps) {
 	const [filter, setFilter] = useState("");
+	const { threads } = useReviewContext();
 
 	const viewed = useMemo<ViewedConfig>(
 		() => ({
@@ -36,8 +36,13 @@ export function ChapterFileList({
 		[files, viewedPathSet, onToggleFileViewed],
 	);
 
+	const commentCountsByPath = useMemo(
+		() => buildFileCommentCountsMap(files, threads),
+		[files, threads],
+	);
+
 	return (
-		<div className="py-3 pl-6 pr-4 lg:pl-8">
+		<div className="pl-[var(--panel-pl,2rem)] pr-[var(--panel-pr,1rem)] py-3">
 			<h2 className="mb-2 font-medium text-[11px] text-muted-foreground uppercase tracking-wider">
 				Files <span className="text-muted-foreground/60">({files.length})</span>
 			</h2>
@@ -47,7 +52,7 @@ export function ChapterFileList({
 				focusedFilePath={focusedFilePath}
 				onSelectFile={onSelectFile}
 				viewed={viewed}
-				commentCountsByPath={NO_COMMENT_COUNTS}
+				commentCountsByPath={commentCountsByPath}
 				filter={filter}
 			/>
 		</div>
