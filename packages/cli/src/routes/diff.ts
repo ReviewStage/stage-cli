@@ -40,12 +40,6 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 	const patches: string[] = [];
 	let totalBytes = 0;
 	for (const file of files) {
-		if (totalBytes > MAX_DIFF_BYTES) {
-			console.error(
-				`Untracked diff output exceeded ${MAX_DIFF_BYTES} bytes; omitting remaining untracked files from the response`,
-			);
-			break;
-		}
 		try {
 			await execFileAsync(
 				"git",
@@ -68,6 +62,14 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 				patches.push(err.stdout);
 				totalBytes += err.stdout.length;
 			}
+		}
+		// Post-append check so the total genuinely stays within the cap: the
+		// current file (itself up to MAX_DIFF_BYTES) is already counted.
+		if (totalBytes >= MAX_DIFF_BYTES) {
+			console.error(
+				`Untracked diff output reached ${MAX_DIFF_BYTES} bytes; omitting remaining untracked files from the response`,
+			);
+			break;
 		}
 	}
 	return patches.filter(Boolean).join("\n");
