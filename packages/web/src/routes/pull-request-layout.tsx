@@ -4,6 +4,7 @@ import { type CSSProperties, useCallback, useMemo, useRef, useState } from "reac
 import { DiffSettingsForm } from "@/components/diff/diff-settings-form";
 import { PullRequestHeader } from "@/components/pull-request/pull-request-header";
 import { PullRequestHeaderSkeleton } from "@/components/pull-request/pull-request-header-skeleton";
+import { ReviewPanel } from "@/components/pull-request/review-panel";
 import { SectionLabel } from "@/components/pull-request/section-label";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -279,6 +280,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 					</div>
 					<div className="flex shrink-0 items-center gap-3 text-sm @xl:gap-6">
 						<CollapseExpandAllButton />
+						<ReviewPanel key={runId} />
 						<Popover>
 							<Tooltip>
 								<TooltipTrigger asChild>

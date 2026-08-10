@@ -1,5 +1,5 @@
 import type { PullRequestMergeMethod } from "@stagereview/types/pull-request";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 
 function prPath(runId: string, suffix: string): string {
 	return `/api/runs/${encodeURIComponent(runId)}/pull-request${suffix}`;
@@ -37,15 +37,21 @@ async function write(
 }
 
 /** Invalidate every PR-derived query for a run after a mutation. */
+export function invalidatePullRequestQueries(
+	queryClient: QueryClient,
+	runId: string,
+): Promise<unknown> {
+	return Promise.all([
+		queryClient.invalidateQueries({ queryKey: ["pull-request", runId] }),
+		queryClient.invalidateQueries({ queryKey: ["pull-request-reviews", runId] }),
+		queryClient.invalidateQueries({ queryKey: ["pull-request-merge-status", runId] }),
+		queryClient.invalidateQueries({ queryKey: ["pull-request-checks", runId] }),
+	]);
+}
+
 export function useInvalidatePullRequest(runId: string): () => Promise<unknown> {
 	const queryClient = useQueryClient();
-	return () =>
-		Promise.all([
-			queryClient.invalidateQueries({ queryKey: ["pull-request", runId] }),
-			queryClient.invalidateQueries({ queryKey: ["pull-request-reviews", runId] }),
-			queryClient.invalidateQueries({ queryKey: ["pull-request-merge-status", runId] }),
-			queryClient.invalidateQueries({ queryKey: ["pull-request-checks", runId] }),
-		]);
+	return () => invalidatePullRequestQueries(queryClient, runId);
 }
 
 // Mutation-option factories — mirror hosted's `orpc.pullRequests.X.mutationOptions()`

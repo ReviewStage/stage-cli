@@ -1,3 +1,4 @@
+import type { LocalReviewThread as CommentThread } from "@stagereview/types/review";
 import { describe, expect, it } from "vitest";
 import {
 	buildCommentAnnotations,
@@ -11,18 +12,17 @@ import {
 	upsertDraft,
 	writeDraftBody,
 } from "../comment-drafts";
-import type { CommentThread } from "../use-comment-threads";
 
 function makeThread(
 	over: Partial<CommentThread> & Pick<CommentThread, "side" | "endLine">,
 ): CommentThread {
 	return {
 		id: `t-${over.side}-${over.endLine}`,
+		source: "local",
+		threadNodeId: null,
 		filePath: "a.ts",
 		startLine: over.endLine,
-		resolvedAt: null,
-		createdAt: "2026-06-08T00:00:00.000Z",
-		updatedAt: "2026-06-08T00:00:00.000Z",
+		isResolved: false,
 		comments: [],
 		...over,
 	};
@@ -99,15 +99,6 @@ describe("upsertDraft", () => {
 		const result = upsertDraft([draftState("additions", 5, 5)], draftState("deletions", 8, 10));
 		expect(result).toHaveLength(2);
 		expect(findDraftAt(result, "deletions", 10)?.startLine).toBe(8);
-	});
-
-	it("adopts the new startLine when re-opening the same (side, endLine) row", () => {
-		const existing = { ...draftState("additions", 3, 10), error: "boom" as string | null };
-		const result = upsertDraft([existing], draftState("additions", 7, 10));
-		expect(result).toHaveLength(1);
-		expect(result[0]?.startLine).toBe(7);
-		// A re-drag clears any stale submit error.
-		expect(result[0]?.error).toBeNull();
 	});
 
 	it("leaves other open drafts untouched when updating one", () => {

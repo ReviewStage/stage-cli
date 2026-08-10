@@ -10,6 +10,7 @@ import { commentRoutes } from "./routes/comments.js";
 import { diffRoutes } from "./routes/diff.js";
 import { pullRequestRoutes } from "./routes/pull-request.js";
 import { pullRequestMutationRoutes } from "./routes/pull-request-mutations.js";
+import { reviewRoutes } from "./routes/review.js";
 import { runRoutes } from "./routes/runs.js";
 import { viewStateRoutes } from "./routes/view-state.js";
 import { viewerRoutes } from "./routes/viewer.js";
@@ -29,13 +30,15 @@ import { LOOPBACK_HOST, startServer } from "./server.js";
 export async function show(jsonPath: string, options: DiffScopeOptions): Promise<void> {
 	const db = getDb();
 	const { chaptersFile, prNumber } = await buildChaptersFile(jsonPath, options);
-	const { runId } = insertChaptersFile(db, chaptersFile, readRepoContext(), prNumber);
+	const repoContext = readRepoContext();
+	const { runId } = insertChaptersFile(db, chaptersFile, repoContext, prNumber);
 
 	const handle = await startServer({
 		routes: [
 			...runRoutes(db),
 			...viewStateRoutes(db),
 			...commentRoutes(db),
+			...reviewRoutes(db),
 			...viewerRoutes(),
 			...diffRoutes(db),
 			...pullRequestRoutes(db),

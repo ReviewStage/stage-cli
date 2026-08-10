@@ -1,6 +1,6 @@
 import type { DiffLineAnnotation } from "@pierre/diffs";
 import type { DiffSide } from "@/lib/diff-types";
-import type { CommentThread } from "@/lib/use-comment-threads";
+import type { ReviewThread as CommentThread } from "@/lib/use-review";
 
 /** An in-progress comment the reviewer is composing, anchored to a line range. */
 export interface CommentDraft {

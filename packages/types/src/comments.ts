@@ -3,8 +3,7 @@ import { DIFF_SIDE } from "./chapters.ts";
 
 // A single authored comment. Replies are sibling comments sharing a thread, so a
 // comment carries no positional data of its own — the thread owns the anchor.
-// Non-strict (like the other wire response schemas) so the server can add fields
-// the SPA doesn't yet read without the response failing to parse.
+// These are CLI-local comments; GitHub review comments use the `review` wire model.
 export const CommentSchema = z.object({
 	id: z.string(),
 	body: z.string(),

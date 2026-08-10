@@ -53,6 +53,7 @@ export function ChapterDetailPage({ runId, chapterNumber }: ChapterDetailPagePro
 
 	return (
 		<ChapterDetailContent
+			key={runId}
 			chapter={chapter}
 			chapterIndex={chapterIndex}
 			patch={diffData.patch}

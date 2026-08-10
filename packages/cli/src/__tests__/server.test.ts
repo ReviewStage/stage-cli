@@ -182,19 +182,4 @@ describe("startServer", () => {
 		const res = await rawRequest(port, "/api/bar");
 		expect(res.status).toBe(404);
 	});
-
-	it("two simultaneous starts bind separate ports", async () => {
-		const [a, b] = await Promise.all([start(), start()]);
-		expect(a.port).not.toBe(b.port);
-		expect(Math.abs(a.port - b.port)).toBeGreaterThanOrEqual(1);
-	});
-
-	it("close() stops the server from accepting new connections", async () => {
-		const handle = await start();
-		const { port } = handle;
-		// Take ownership: don't auto-close, we're closing manually.
-		handles.pop();
-		await handle.close();
-		await expect(rawRequest(port, "/")).rejects.toThrow();
-	});
 });

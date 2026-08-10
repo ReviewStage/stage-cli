@@ -19,7 +19,7 @@ import {
 	useState,
 } from "react";
 import { CommentForm } from "@/components/comments/comment-form";
-import { CommentThreadView } from "@/components/comments/comment-thread";
+import { ReviewThreadView } from "@/components/comments/review-thread";
 import {
 	buildCommentAnnotations,
 	type CommentDraft,
@@ -32,20 +32,23 @@ import {
 	upsertDraft,
 	writeDraftBody,
 } from "@/lib/comment-drafts";
-import { useCommentThreadsContext } from "@/lib/comment-threads-context";
+import { resolveCommentControls, useCommentPreferences } from "@/lib/comment-preferences";
 import {
 	type AnnotatedLineRef,
 	COMMENT_SIDE,
 	DIFF_SIDE,
+	type DiffSide,
 	type LineRef,
 	SIDE_TO_DIFF,
 } from "@/lib/diff-types";
+import { useReviewContext } from "@/lib/review-context";
 import { resolveSyntaxTheme } from "@/lib/syntax-themes";
-import type { CommentThread } from "@/lib/use-comment-threads";
 import { useDiffSettings } from "@/lib/use-diff-settings";
+import type { ReviewThread as CommentThread } from "@/lib/use-review";
 import { toSingleSideSelection, useTextSelection } from "@/lib/use-text-selection";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
 import { TextSelectionPopup } from "./text-selection-popup";
+import { useThreadHover } from "./use-thread-hover";
 
 type AppTheme = "light" | "dark";
 
@@ -180,6 +183,10 @@ export function PierreDiffViewer({
 	const deferredLineNumbers = useDeferredValue(lineNumbers);
 	const deferredSyntaxTheme = useDeferredValue(syntaxTheme);
 	const deferredExpandUnchanged = useDeferredValue(expandUnchanged);
+	const diffHunks = useMemo(
+		() => (fileDiff ? fileDiff.hunks : getSingularPatch(patch).hunks),
+		[fileDiff, patch],
+	);
 
 	const diffContainerRef = useRef<HTMLDivElement>(null);
 
@@ -194,8 +201,9 @@ export function PierreDiffViewer({
 	}, [allLineRefsByFile, filePath]);
 
 	// ---- Line-anchored comments ----
-	const comments = useCommentThreadsContext();
-	const { createThread } = comments;
+	const comments = useReviewContext();
+	const { createGitHubComment, createLocalThread } = comments;
+	const { local, setLocal, setStartReview, startReview } = useCommentPreferences();
 	const fileThreads = useMemo(
 		() => (filePath ? (comments.threadsByFile.get(filePath) ?? []) : []),
 		[comments.threadsByFile, filePath],
@@ -208,11 +216,14 @@ export function PierreDiffViewer({
 	const draftBodiesRef = useRef<DraftBodies>(new Map());
 	const { selectionInfo, clearSelection } = useTextSelection(diffContainerRef);
 
-	// Hovering a thread highlights its anchored lines. Highlighting sets Pierre's
-	// `selectedLines`, which makes Pierre fire `onLineSelected` — the ref lets us
-	// tell that apart from a genuine drag so a hover doesn't open the composer.
-	const [hoverLines, setHoverLines] = useState<SelectedLineRange | null>(null);
-	const isHoveringRef = useRef(false);
+	// Hovering a thread highlights its anchored lines. The hook also clears the
+	// synthetic selection if a mutation removes the hovered thread before mouseleave.
+	const {
+		enter: handleThreadMouseEnter,
+		hoverLines,
+		isHovering,
+		leave: handleThreadMouseLeave,
+	} = useThreadHover(fileThreads);
 
 	const lineAnnotations = useMemo(
 		() => buildCommentAnnotations(fileThreads, drafts),
@@ -231,50 +242,48 @@ export function PierreDiffViewer({
 	}, []);
 
 	const handleCreateComment = useCallback(
-		async (draft: CommentDraft, body: string) => {
+		async (draft: DraftState, body: string, isLocal: boolean, pending: boolean) => {
 			if (!filePath) return;
 			const setError = (error: string | null) =>
 				setDrafts((prev) =>
 					prev.map((d) => (isSameAnchor(d, draft.side, draft.endLine) ? { ...d, error } : d)),
 				);
 			setError(null);
+			const anchor = {
+				filePath,
+				side: draft.side,
+				startLine: draft.startLine,
+				endLine: draft.endLine,
+				body,
+			};
 			try {
-				await createThread({
-					filePath,
-					side: draft.side,
-					startLine: draft.startLine,
-					endLine: draft.endLine,
-					body,
-				});
+				if (isLocal) await createLocalThread(anchor);
+				else await createGitHubComment({ ...anchor, pending });
 				closeDraft(draft);
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Failed to add comment");
 				throw err; // keep the composer open with the body intact
 			}
 		},
-		[filePath, createThread, closeDraft],
+		[filePath, createLocalThread, createGitHubComment, closeDraft],
 	);
-
-	const handleThreadMouseEnter = useCallback((thread: CommentThread) => {
-		isHoveringRef.current = true;
-		setHoverLines({
-			start: thread.startLine,
-			side: thread.side,
-			end: thread.endLine,
-			endSide: thread.side,
-		});
-	}, []);
-
-	const handleThreadMouseLeave = useCallback(() => {
-		isHoveringRef.current = false;
-		setHoverLines(null);
-	}, []);
 
 	const renderAnnotation = useCallback(
 		(annotation: DiffLineAnnotation<CommentThread[]>): ReactNode => {
 			const threads = annotation.metadata ?? [];
 			const draft = findDraftAt(drafts, annotation.side, annotation.lineNumber);
 			if (threads.length === 0 && !draft) return null;
+			const controls =
+				draft === undefined
+					? null
+					: resolveCommentControls(
+							{ local, startReview },
+							{
+								canWriteToGitHub: comments.canWriteToGitHub,
+								hasPendingReview: comments.hasPendingReview,
+								isGitHubAnchor: isGitHubReviewAnchor(diffHunks, draft),
+							},
+						);
 			return (
 				<div
 					className="space-y-2 px-3 py-2 font-sans"
@@ -285,9 +294,14 @@ export function PierreDiffViewer({
 						<div
 							key={thread.id}
 							onMouseEnter={() => handleThreadMouseEnter(thread)}
-							onMouseLeave={handleThreadMouseLeave}
+							onMouseLeave={() => handleThreadMouseLeave(thread.id)}
 						>
-							<CommentThreadView thread={thread} />
+							<ReviewThreadView
+								model={{
+									thread,
+									githubAnchorEligible: isGitHubReviewAnchor(diffHunks, thread),
+								}}
+							/>
 						</div>
 					))}
 					{draft && (
@@ -298,20 +312,56 @@ export function PierreDiffViewer({
 						<CommentForm
 							key={`draft-${draft.side}-${draft.endLine}`}
 							label="Comment"
+							allowsSuggestedChanges={canSuggestChanges(draft.side)}
 							placeholder="Leave a comment…"
 							error={draft.error}
 							initialBody={readDraftBody(draftBodiesRef.current, draft.side, draft.endLine)}
 							onBodyChange={(body) =>
 								writeDraftBody(draftBodiesRef.current, draft.side, draft.endLine, body)
 							}
-							onSubmit={(body) => handleCreateComment(draft, body)}
+							controls={{
+								local: {
+									checked: controls?.local === true,
+									disabled: controls?.localDisabled,
+									onCheckedChange: setLocal,
+								},
+								...(controls?.showStartReview
+									? {
+											startReview: {
+												checked: controls.startReview,
+												onCheckedChange: setStartReview,
+											},
+										}
+									: {}),
+							}}
+							onSubmit={(body) =>
+								handleCreateComment(
+									draft,
+									body,
+									controls?.local === true,
+									controls?.startReview === true,
+								)
+							}
 							onCancel={() => closeDraft(draft)}
 						/>
 					)}
 				</div>
 			);
 		},
-		[drafts, handleCreateComment, closeDraft, handleThreadMouseEnter, handleThreadMouseLeave],
+		[
+			drafts,
+			comments.canWriteToGitHub,
+			comments.hasPendingReview,
+			diffHunks,
+			local,
+			startReview,
+			setLocal,
+			setStartReview,
+			handleCreateComment,
+			closeDraft,
+			handleThreadMouseEnter,
+			handleThreadMouseLeave,
+		],
 	);
 
 	const renderGutterUtility = useCallback(
@@ -361,13 +411,13 @@ export function PierreDiffViewer({
 	const handleLineSelected = useCallback(
 		(range: SelectedLineRange | null) => {
 			// Bail only while hovering a thread, whose highlight also fires onLineSelected.
-			if (isHoveringRef.current || !range) return;
+			if (isHovering() || !range) return;
 			// A thread anchors to one side, so cross-side gutter drags are ignored.
 			const selection = toSingleSideSelection(range);
 			if (!selection) return;
 			openDraft(selection);
 		},
-		[openDraft],
+		[openDraft, isHovering],
 	);
 
 	const options = useMemo(
@@ -496,6 +546,18 @@ export function findContainingHunk(
 		const count = side === DIFF_SIDE.ADDITIONS ? hunk.additionCount : hunk.deletionCount;
 		return line >= start && line < start + count;
 	});
+}
+
+/** GitHub line comments must start and end inside the same hunk in the PR diff. */
+export function isGitHubReviewAnchor(hunks: Hunk[], anchor: CommentDraft): boolean {
+	const startHunk = findContainingHunk(hunks, anchor.startLine, anchor.side);
+	if (!startHunk) return false;
+	return findContainingHunk(hunks, anchor.endLine, anchor.side) === startHunk;
+}
+
+/** GitHub suggestions can only target the head/right side of a diff. */
+function canSuggestChanges(side: DiffSide): boolean {
+	return side === DIFF_SIDE.ADDITIONS;
 }
 
 /**
