@@ -14,6 +14,7 @@ import { pullRequestRoutes } from "./routes/pull-request.js";
 import { pullRequestMutationRoutes } from "./routes/pull-request-mutations.js";
 import { reviewRoutes } from "./routes/review.js";
 import { runRoutes } from "./routes/runs.js";
+import { timelineRoutes } from "./routes/timeline.js";
 import { viewStateRoutes } from "./routes/view-state.js";
 import { viewerRoutes } from "./routes/viewer.js";
 import { insertChaptersFile } from "./runs/import-chapters.js";
@@ -47,6 +48,7 @@ export async function show(jsonPath: string, options: DiffScopeOptions): Promise
 			...diffRoutes(db),
 			...pullRequestRoutes(db),
 			...pullRequestMutationRoutes(db),
+			...timelineRoutes(db),
 			...labelRoutes(db),
 			...imageProxyRoutes(),
 		],

@@ -1,6 +1,14 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { BookOpen, FileText, FoldVertical, Settings2, UnfoldVertical } from "lucide-react";
+import {
+	BookOpen,
+	FileText,
+	FoldVertical,
+	MessagesSquare,
+	Settings2,
+	UnfoldVertical,
+} from "lucide-react";
 import { type CSSProperties, useCallback, useMemo, useRef, useState } from "react";
+import { isDiscussionEvent } from "@/components/conversation";
 import { DiffSettingsForm } from "@/components/diff/diff-settings-form";
 import { PullRequestHeader } from "@/components/pull-request/pull-request-header";
 import { PullRequestHeaderSkeleton } from "@/components/pull-request/pull-request-header-skeleton";
@@ -11,6 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChapterProvider } from "@/lib/chapter-context";
+import { ChapterViewStateProvider } from "@/lib/chapter-view-state-context";
 import { CollapseActionsProvider, useCollapseActionsFromNav } from "@/lib/collapse-actions-context";
 import { useFileDiffEntries } from "@/lib/parse-diff";
 import { PullRequestProvider } from "@/lib/pull-request-context";
@@ -25,11 +34,13 @@ import {
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { usePullRequest, usePullRequestMergeStatus } from "@/lib/use-pull-request";
+import { useTimeline } from "@/lib/use-timeline";
 import { countViewedChapters, useViewStateData } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
 
 const PR_TAB = {
 	CHAPTERS: "chapters",
+	ACTIVITY: "activity",
 	FILES: "files",
 } as const;
 type PrTab = (typeof PR_TAB)[keyof typeof PR_TAB];
@@ -38,8 +49,16 @@ type PrTab = (typeof PR_TAB)[keyof typeof PR_TAB];
 // never scrolls — only the prologue/chapters panels do.
 const TOPBAR_PX = 48;
 
+// Mirrors hosted's tab order: Chapters, Activity, Files changed. The Activity
+// tab is a GitHub-only affordance and is offered only for PR runs.
 const tabs = [
 	{ id: PR_TAB.CHAPTERS, label: "Chapters", icon: BookOpen, to: "/runs/$runId" as const },
+	{
+		id: PR_TAB.ACTIVITY,
+		label: "Activity",
+		icon: MessagesSquare,
+		to: "/runs/$runId/activity" as const,
+	},
 	{
 		id: PR_TAB.FILES,
 		label: "Files changed",
@@ -181,10 +200,12 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		isPrOpen,
 	);
 	const activeTab = useRouterState({
-		select: (state): PrTab =>
-			state.matches.some((match) => match.routeId === "/runs/$runId/files")
-				? PR_TAB.FILES
-				: PR_TAB.CHAPTERS,
+		select: (state): PrTab => {
+			const routeIds = new Set(state.matches.map((match) => match.routeId));
+			if (routeIds.has("/runs/$runId/activity")) return PR_TAB.ACTIVITY;
+			if (routeIds.has("/runs/$runId/files")) return PR_TAB.FILES;
+			return PR_TAB.CHAPTERS;
+		},
 	});
 	// The chapters index uses contained scroll (the page is locked to the viewport
 	// and only the panels scroll); files and chapter detail keep page scroll for
@@ -233,6 +254,19 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		if (viewedFileCount > 0) return `${viewedFileCount}/${totalFileCount} viewed`;
 		return String(totalFileCount);
 	})();
+
+	// Comment count for the Activity tab (issue comments + reviews), suppressed
+	// until the timeline loads. React-query dedupes this with the Activity page.
+	const { data: timelineData } = useTimeline(runId, pullRequest?.number ?? null);
+	const activityCountLabel = (() => {
+		const timeline = timelineData?.timeline;
+		if (timeline === undefined) return undefined;
+		return String(timeline.events.filter(isDiscussionEvent).length);
+	})();
+
+	// The Activity tab is meaningless for local (non-PR) runs — gate it like the
+	// PR header and other GitHub-only affordances.
+	const visibleTabs = pullRequest ? tabs : tabs.filter((tab) => tab.id !== PR_TAB.ACTIVITY);
 
 	// Page-scroll tabs read `--content-top` (topbar + sticky nav) to pin their own
 	// sticky content; the contained index instead measures the content area height
@@ -313,122 +347,126 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 	if (error) return <ErrorState error={error} />;
 
 	return (
-		<CollapseActionsProvider>
-			<div
-				className={cn(
-					"@container flex flex-col px-6 pt-6 lg:px-8",
-					usesPageScroll ? "flex-1" : "h-[calc(100vh_-_3rem)] overflow-hidden",
-				)}
-			>
-				<div className={cn("mb-4", !usesPageScroll && "shrink-0")}>
-					{isPrLoading ? (
-						<PullRequestHeaderSkeleton />
-					) : pullRequest ? (
-						<PullRequestProvider runId={runId} pullRequest={pullRequest}>
-							<PullRequestHeader
-								pullRequest={pullRequest}
-								mergeInfo={mergeStatusData?.mergeStatus ?? undefined}
-							/>
-						</PullRequestProvider>
-					) : (
-						<header className="space-y-1">
-							<SectionLabel>Run</SectionLabel>
-							<p className="break-all font-mono text-foreground/80 text-xs">
-								{data?.run.id ?? runId}
-							</p>
-						</header>
-					)}
-				</div>
-				<nav
-					ref={navRef}
+		<ChapterViewStateProvider>
+			<CollapseActionsProvider>
+				<div
 					className={cn(
-						"z-20 flex items-center justify-between gap-4 py-2",
-						usesPageScroll
-							? "-mx-6 lg:-mx-8 sticky top-12 mb-6 bg-background px-6 lg:px-8"
-							: "mb-6 shrink-0",
+						"@container flex flex-col px-6 pt-6 lg:px-8",
+						usesPageScroll ? "flex-1" : "h-[calc(100vh_-_3rem)] overflow-hidden",
 					)}
 				>
-					<div className="flex shrink-0 items-center gap-1">
-						{tabs.map((tab) => (
-							<TabLink
-								key={tab.id}
-								tab={tab}
-								runId={runId}
-								isActive={tab.id === activeTab}
-								countLabel={
-									tab.id === PR_TAB.CHAPTERS
-										? chapterCountLabel
-										: tab.id === PR_TAB.FILES
-											? fileCountLabel
-											: undefined
+					<div className={cn("mb-4", !usesPageScroll && "shrink-0")}>
+						{isPrLoading ? (
+							<PullRequestHeaderSkeleton />
+						) : pullRequest ? (
+							<PullRequestProvider runId={runId} pullRequest={pullRequest}>
+								<PullRequestHeader
+									pullRequest={pullRequest}
+									mergeInfo={mergeStatusData?.mergeStatus ?? undefined}
+								/>
+							</PullRequestProvider>
+						) : (
+							<header className="space-y-1">
+								<SectionLabel>Run</SectionLabel>
+								<p className="break-all font-mono text-foreground/80 text-xs">
+									{data?.run.id ?? runId}
+								</p>
+							</header>
+						)}
+					</div>
+					<nav
+						ref={navRef}
+						className={cn(
+							"z-20 flex items-center justify-between gap-4 py-2",
+							usesPageScroll
+								? "-mx-6 lg:-mx-8 sticky top-12 mb-6 bg-background px-6 lg:px-8"
+								: "mb-6 shrink-0",
+						)}
+					>
+						<div className="flex shrink-0 items-center gap-1">
+							{visibleTabs.map((tab) => (
+								<TabLink
+									key={tab.id}
+									tab={tab}
+									runId={runId}
+									isActive={tab.id === activeTab}
+									countLabel={
+										tab.id === PR_TAB.CHAPTERS
+											? chapterCountLabel
+											: tab.id === PR_TAB.ACTIVITY
+												? activityCountLabel
+												: tab.id === PR_TAB.FILES
+													? fileCountLabel
+													: undefined
+									}
+								/>
+							))}
+						</div>
+						<div className="flex shrink-0 items-center gap-3 text-sm @xl:gap-6">
+							<CollapseExpandAllButton />
+							<ReviewPanel key={runId} />
+							<Popover>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<PopoverTrigger asChild>
+											<Button
+												variant="outline"
+												size="sm"
+												className="h-7 cursor-pointer px-2"
+												aria-label="Display settings"
+											>
+												<Settings2 className="size-3.5" />
+												<span className="ml-1 hidden text-xs @7xl:inline">Display</span>
+											</Button>
+										</PopoverTrigger>
+									</TooltipTrigger>
+									<TooltipContent>Display settings</TooltipContent>
+								</Tooltip>
+								<PopoverContent align="end" className="w-80">
+									<DiffSettingsForm compact />
+								</PopoverContent>
+							</Popover>
+							<div className="hidden items-center gap-3 @5xl:flex">
+								{headerLineCounts ? (
+									<HeaderLineCountsDisplay lineCounts={headerLineCounts} />
+								) : (
+									<>
+										<Skeleton className="h-4 w-12" />
+										<Skeleton className="h-4 w-12" />
+									</>
+								)}
+							</div>
+						</div>
+					</nav>
+					<ChapterProvider runId={runId}>
+						{usesPageScroll ? (
+							<div
+								style={
+									{
+										"--content-top": `${TOPBAR_PX + navHeight}px`,
+										"--main-height": "100vh",
+									} as CSSProperties
 								}
-							/>
-						))}
-					</div>
-					<div className="flex shrink-0 items-center gap-3 text-sm @xl:gap-6">
-						<CollapseExpandAllButton />
-						<ReviewPanel key={runId} />
-						<Popover>
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<PopoverTrigger asChild>
-										<Button
-											variant="outline"
-											size="sm"
-											className="h-7 cursor-pointer px-2"
-											aria-label="Display settings"
-										>
-											<Settings2 className="size-3.5" />
-											<span className="ml-1 hidden text-xs @7xl:inline">Display</span>
-										</Button>
-									</PopoverTrigger>
-								</TooltipTrigger>
-								<TooltipContent>Display settings</TooltipContent>
-							</Tooltip>
-							<PopoverContent align="end" className="w-80">
-								<DiffSettingsForm compact />
-							</PopoverContent>
-						</Popover>
-						<div className="hidden items-center gap-3 @5xl:flex">
-							{headerLineCounts ? (
-								<HeaderLineCountsDisplay lineCounts={headerLineCounts} />
-							) : (
-								<>
-									<Skeleton className="h-4 w-12" />
-									<Skeleton className="h-4 w-12" />
-								</>
-							)}
-						</div>
-					</div>
-				</nav>
-				<ChapterProvider runId={runId}>
-					{usesPageScroll ? (
-						<div
-							style={
-								{
-									"--content-top": `${TOPBAR_PX + navHeight}px`,
-									"--main-height": "100vh",
-								} as CSSProperties
-							}
-						>
-							<Outlet />
-						</div>
-					) : (
-						<div
-							ref={contentRef}
-							className="scrollbar-thin min-h-0 flex-1 overflow-y-auto"
-							style={
-								{
-									"--content-top": "0px",
-									"--main-height": `${contentHeight}px`,
-								} as CSSProperties
-							}
-						>
-							<Outlet />
-						</div>
-					)}
-				</ChapterProvider>
-			</div>
-		</CollapseActionsProvider>
+							>
+								<Outlet />
+							</div>
+						) : (
+							<div
+								ref={contentRef}
+								className="scrollbar-thin min-h-0 flex-1 overflow-y-auto"
+								style={
+									{
+										"--content-top": "0px",
+										"--main-height": `${contentHeight}px`,
+									} as CSSProperties
+								}
+							>
+								<Outlet />
+							</div>
+						)}
+					</ChapterProvider>
+				</div>
+			</CollapseActionsProvider>
+		</ChapterViewStateProvider>
 	);
 }
