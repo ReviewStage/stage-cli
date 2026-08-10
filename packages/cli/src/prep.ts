@@ -57,10 +57,15 @@ export async function runPrep(options: PrepOptions): Promise<string> {
 	const pullRequest =
 		prNumber === null ? null : await getPullRequestOrThrow(repoRoot, originUrl, prNumber);
 	if (pullRequest) {
+		// Hosted's <author_provided_context> wrapper (summary-agent.ts): the tags
+		// mark the title/body as untrusted author text so ===-style lines inside a
+		// PR description can't masquerade as prep section structure.
 		sections.push(
 			"=== PULL REQUEST ===",
+			"<author_provided_context>",
 			`PR Title: ${pullRequest.title}`,
 			`PR Description: ${truncatePrBody(pullRequest.body) || "(none)"}`,
+			"</author_provided_context>",
 			"",
 		);
 	}
