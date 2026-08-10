@@ -127,6 +127,45 @@ describe("GitHub unmark sync", () => {
 		expect(names).toEqual(["GetPullRequestIdentity", "GetPullRequestIdentity"]);
 	});
 
+	it("never mutates GitHub when the unmarked externalId spans multiple runs", async () => {
+		await harness.writeGhShim();
+		// A local-only sibling shares the externalId with a fresh PR run.
+		harness.seedRun(undefined, { originUrl: null, prNumber: null });
+		const pr = harness.seedRun();
+		const [prChapter] = pr.chapters;
+		if (!prChapter) throw new Error("seed: missing chapter");
+		const port = await harness.start();
+		// Mark through the PR run's own row first so GitHub has state to lose.
+		await harness.request(port, "POST", `/api/chapter-view/${prChapter.id}`);
+
+		const res = await harness.request(port, "DELETE", `/api/chapter-view/${prChapter.externalId}`);
+
+		// The externalId alone can't identify the run the user was reviewing, so
+		// the fresh sibling's PR is left untouched while local state still clears
+		// across the whole fan-out.
+		expect(res.status).toBe(200);
+		expect(await unmarkCalls()).toEqual([]);
+		expect(harness.db.select().from(chapterView).all()).toHaveLength(0);
+		expect(harness.db.select().from(fileView).all()).toHaveLength(0);
+	});
+
+	it("unmarks the initiating fresh run's PR even when a no-PR sibling shares the externalId", async () => {
+		await harness.writeGhShim();
+		harness.seedRun(undefined, { originUrl: null, prNumber: null });
+		const pr = harness.seedRun();
+		const port = await harness.start();
+		await harness.request(port, "POST", `/api/runs/${pr.runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+
+		const res = await harness.request(port, "DELETE", `/api/runs/${pr.runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+
+		expect(res.status).toBe(200);
+		expect((await unmarkCalls()).map((c) => c.fields.path)).toEqual(["src/foo.ts"]);
+	});
+
 	it("never calls gh when unmarking on a run without a GitHub remote", async () => {
 		await harness.writeGhShim();
 		const { runId } = harness.seedRun(undefined, { originUrl: null, prNumber: null });

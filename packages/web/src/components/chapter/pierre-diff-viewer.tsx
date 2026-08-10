@@ -22,12 +22,12 @@ import {
 import { CommentForm } from "@/components/comments/comment-form";
 import { ReviewThreadView } from "@/components/comments/review-thread";
 import { MinimizedAnnotationIndicator } from "@/components/diff/minimized-annotation-indicator";
+import { useFileCommentDrafts } from "@/lib/comment-draft-store";
 import {
 	buildCommentAnnotations,
 	type CommentAnnotation,
 	type CommentDraft,
 	clearDraftBody,
-	type DraftBodies,
 	type DraftState,
 	findDraftAt,
 	isSameAnchor,
@@ -356,12 +356,12 @@ export function PierreDiffViewer({
 		() => (filePath ? (comments.threadsByFile.get(filePath) ?? []) : []),
 		[comments.threadsByFile, filePath],
 	);
-	// In-progress comment composers, one per anchor row — several can be open at once.
-	const [drafts, setDrafts] = useState<DraftState[]>([]);
-	// Composer text indexed by anchor, kept in a ref so typing never rebuilds the
-	// annotation list and a composer's text survives the remount that opening or
-	// closing another draft can trigger.
-	const draftBodiesRef = useRef<DraftBodies>(new Map());
+	// In-progress comment composers, one per anchor row — several can be open at
+	// once. Both the open anchors and their typed text live in the run-level
+	// draft store (keyed by file path) so they survive this viewer unmounting
+	// when Virtuoso scrolls its row beyond the overscan window. The bodies map
+	// is held outside React state so typing never rebuilds the annotation list.
+	const { drafts, setDrafts, draftBodies } = useFileCommentDrafts(filePath);
 	const { selectionInfo, clearSelection } = useTextSelection(diffContainerRef);
 
 	// Rows the user expanded while inline comments are minimized ('i' toggle).
@@ -426,14 +426,20 @@ export function PierreDiffViewer({
 
 	// Open a composer at an anchor. A row holds at most one composer, so re-opening the
 	// same (side, endLine) adopts the new range's startLine rather than duplicating it.
-	const openDraft = useCallback((anchor: CommentDraft) => {
-		setDrafts((prev) => upsertDraft(prev, anchor));
-	}, []);
+	const openDraft = useCallback(
+		(anchor: CommentDraft) => {
+			setDrafts((prev) => upsertDraft(prev, anchor));
+		},
+		[setDrafts],
+	);
 
-	const closeDraft = useCallback((draft: CommentDraft) => {
-		clearDraftBody(draftBodiesRef.current, draft.side, draft.endLine);
-		setDrafts((prev) => prev.filter((d) => !isSameAnchor(d, draft.side, draft.endLine)));
-	}, []);
+	const closeDraft = useCallback(
+		(draft: CommentDraft) => {
+			clearDraftBody(draftBodies, draft.side, draft.endLine);
+			setDrafts((prev) => prev.filter((d) => !isSameAnchor(d, draft.side, draft.endLine)));
+		},
+		[draftBodies, setDrafts],
+	);
 
 	const handleCreateComment = useCallback(
 		async (draft: DraftState, body: string, isLocal: boolean, pending: boolean) => {
@@ -459,7 +465,7 @@ export function PierreDiffViewer({
 				throw err; // keep the composer open with the body intact
 			}
 		},
-		[filePath, createLocalThread, createGitHubComment, closeDraft],
+		[filePath, createLocalThread, createGitHubComment, closeDraft, setDrafts],
 	);
 
 	const renderAnnotation = useCallback(
@@ -542,9 +548,9 @@ export function PierreDiffViewer({
 								allowsSuggestedChanges={canSuggestChanges(draft.side)}
 								placeholder="Leave a comment…"
 								error={draft.error}
-								initialBody={readDraftBody(draftBodiesRef.current, draft.side, draft.endLine)}
+								initialBody={readDraftBody(draftBodies, draft.side, draft.endLine)}
 								onBodyChange={(body) =>
-									writeDraftBody(draftBodiesRef.current, draft.side, draft.endLine, body)
+									writeDraftBody(draftBodies, draft.side, draft.endLine, body)
 								}
 								controls={{
 									local: {
@@ -578,6 +584,7 @@ export function PierreDiffViewer({
 		},
 		[
 			drafts,
+			draftBodies,
 			comments.canWriteToGitHub,
 			comments.hasPendingReview,
 			eligibilityHunks,

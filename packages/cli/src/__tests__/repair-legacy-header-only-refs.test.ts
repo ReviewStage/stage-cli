@@ -15,10 +15,6 @@ function makeChapter(overrides: Partial<Chapter> & Pick<Chapter, "id" | "order">
 	};
 }
 
-function expectedMap(entries: [string, number[]][]): Map<string, Set<number>> {
-	return new Map(entries.map(([filePath, starts]) => [filePath, new Set(starts)]));
-}
-
 describe("repairLegacyHeaderOnlyRefs", () => {
 	it("appends missing header-only sentinels to the existing other-changes chapter", () => {
 		const chapters = [
@@ -33,14 +29,9 @@ describe("repairLegacyHeaderOnlyRefs", () => {
 				hunkRefs: [{ filePath: "pnpm-lock.yaml", oldStart: 3 }],
 			}),
 		];
-		const expected = expectedMap([
-			["src/foo.ts", [1]],
-			["pnpm-lock.yaml", [3]],
-			["assets/logo.png", [HEADER_ONLY_OLD_START]],
-			["docs/renamed.md", [HEADER_ONLY_OLD_START]],
-		]);
+		const headerOnlyPaths = new Set(["assets/logo.png", "docs/renamed.md"]);
 
-		const repaired = repairLegacyHeaderOnlyRefs(expected, chapters);
+		const repaired = repairLegacyHeaderOnlyRefs(headerOnlyPaths, chapters);
 
 		expect(repaired[0]).toBe(chapters[0]);
 		expect(repaired[1]?.hunkRefs).toEqual([
@@ -58,12 +49,8 @@ describe("repairLegacyHeaderOnlyRefs", () => {
 				hunkRefs: [{ filePath: "src/foo.ts", oldStart: 1 }],
 			}),
 		];
-		const expected = expectedMap([
-			["src/foo.ts", [1]],
-			["assets/logo.png", [HEADER_ONLY_OLD_START]],
-		]);
 
-		const repaired = repairLegacyHeaderOnlyRefs(expected, chapters);
+		const repaired = repairLegacyHeaderOnlyRefs(new Set(["assets/logo.png"]), chapters);
 
 		expect(repaired).toHaveLength(2);
 		expect(repaired[1]).toMatchObject({
@@ -73,7 +60,7 @@ describe("repairLegacyHeaderOnlyRefs", () => {
 		});
 	});
 
-	it("leaves chapters untouched when only real hunk refs are missing", () => {
+	it("leaves chapters untouched when no files are header-only", () => {
 		const chapters = [
 			makeChapter({
 				id: "chapter-1",
@@ -81,9 +68,8 @@ describe("repairLegacyHeaderOnlyRefs", () => {
 				hunkRefs: [{ filePath: "src/foo.ts", oldStart: 1 }],
 			}),
 		];
-		const expected = expectedMap([["src/foo.ts", [1, 42]]]);
 
-		expect(repairLegacyHeaderOnlyRefs(expected, chapters)).toBe(chapters);
+		expect(repairLegacyHeaderOnlyRefs(new Set(), chapters)).toBe(chapters);
 	});
 
 	it("leaves chapters untouched when sentinels are already covered", () => {
@@ -94,8 +80,23 @@ describe("repairLegacyHeaderOnlyRefs", () => {
 				hunkRefs: [{ filePath: "assets/logo.png", oldStart: HEADER_ONLY_OLD_START }],
 			}),
 		];
-		const expected = expectedMap([["assets/logo.png", [HEADER_ONLY_OLD_START]]]);
 
-		expect(repairLegacyHeaderOnlyRefs(expected, chapters)).toBe(chapters);
+		expect(repairLegacyHeaderOnlyRefs(new Set(["assets/logo.png"]), chapters)).toBe(chapters);
+	});
+
+	it("does not absorb an added file's missing real oldStart-0 hunk", () => {
+		// An added file's only hunk is `@@ -0,0 +1,N @@` — oldStart 0, the same
+		// value as the header-only sentinel. The file HAS hunks, so it is not
+		// header-only, and its missing ref must be left for coverage validation
+		// to reject rather than appended to Other Changes.
+		const chapters = [
+			makeChapter({
+				id: "chapter-1",
+				order: 1,
+				hunkRefs: [{ filePath: "src/foo.ts", oldStart: 1 }],
+			}),
+		];
+
+		expect(repairLegacyHeaderOnlyRefs(new Set(), chapters)).toBe(chapters);
 	});
 });

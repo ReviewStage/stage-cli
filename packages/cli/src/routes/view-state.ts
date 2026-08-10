@@ -35,7 +35,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 			pattern: "/api/chapter-view/:chapterId",
 			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
-				const rows = resolveChapterRows(db, params.chapterId);
+				const { rows, initiatingRunId } = resolveChapterRows(db, params.chapterId);
 				if (rows.length === 0) {
 					writeJson(res, 404, { error: `Chapter ${params.chapterId} not found` });
 					return;
@@ -59,7 +59,9 @@ export function viewStateRoutes(db: StageDb): Route[] {
 				});
 				// Hosted's mark rule: a file reaches GitHub only once every chapter
 				// containing it is viewed — exactly the promotion condition above.
-				await new GitHubViewSync(db).mark(promoted);
+				// Sibling rows updated by the fan-out stay local-only: GitHub sync is
+				// scoped to the run the user acted in (see initiatingRunPaths).
+				await new GitHubViewSync(db).mark(initiatingRunPaths(promoted, initiatingRunId));
 				writeJson(res, 200, {});
 			},
 		},
@@ -68,7 +70,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 			pattern: "/api/chapter-view/:chapterId",
 			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
-				const rows = resolveChapterRows(db, params.chapterId);
+				const { rows, initiatingRunId } = resolveChapterRows(db, params.chapterId);
 				if (rows.length === 0) {
 					// Idempotent: if the chapter doesn't exist there's nothing to delete. The SPA
 					// shouldn't have to distinguish "row was gone" from "chapter was gone".
@@ -114,8 +116,9 @@ export function viewStateRoutes(db: StageDb): Route[] {
 					}
 				});
 				// Hosted's unmark rule: any chapter-file unview unmarks the path on
-				// GitHub unconditionally, mirroring the file_view clear above.
-				await new GitHubViewSync(db).unmark(touched);
+				// GitHub unconditionally, mirroring the file_view clear above — but
+				// only on the initiating run's own PR (see initiatingRunPaths).
+				await new GitHubViewSync(db).unmark(initiatingRunPaths(touched, initiatingRunId));
 				writeJson(res, 200, {});
 			},
 		},
@@ -296,14 +299,49 @@ interface ResolvedChapterRow {
 	hunkRefs: typeof chapter.$inferSelect.hunkRefs;
 }
 
+interface ResolvedChapters {
+	rows: ResolvedChapterRow[];
+	/**
+	 * The run the request was made in: the matched row's run for a uuid lookup,
+	 * or the single run every externalId match lives in. Null when the
+	 * externalId spans multiple runs — the request alone can't tell which
+	 * sibling the user was viewing. GitHub sync is scoped to this run; local
+	 * writes always apply to every resolved row.
+	 */
+	initiatingRunId: string | null;
+}
+
 // Looks up by uuid first, falling back to externalId so re-imports of the same
 // scope (which share an externalId across chapter rows) all get the cascade.
-function resolveChapterRows(db: StageDb, idOrExternalId: string | undefined): ResolvedChapterRow[] {
-	if (!idOrExternalId) return [];
+function resolveChapterRows(db: StageDb, idOrExternalId: string | undefined): ResolvedChapters {
+	if (!idOrExternalId) return { rows: [], initiatingRunId: null };
 	const cols = { id: chapter.id, runId: chapter.runId, hunkRefs: chapter.hunkRefs };
 	const byPk = db.select(cols).from(chapter).where(eq(chapter.id, idOrExternalId)).all();
-	if (byPk.length > 0) return byPk;
-	return db.select(cols).from(chapter).where(eq(chapter.externalId, idOrExternalId)).all();
+	const rows =
+		byPk.length > 0
+			? byPk
+			: db.select(cols).from(chapter).where(eq(chapter.externalId, idOrExternalId)).all();
+	const runIds = new Set(rows.map((r) => r.runId));
+	const [first] = rows;
+	return { rows, initiatingRunId: first !== undefined && runIds.size === 1 ? first.runId : null };
+}
+
+/**
+ * Filters fan-out paths down to the initiating run before GitHub sync. Local
+ * view-state deliberately fans out across every run sharing a chapter's
+ * externalId, but only the run the user was actually reviewing may touch its
+ * pull request — sibling runs (re-imports, clones, forks) reviewed the same
+ * diff in sessions the user wasn't in. When the initiating run is unknown (an
+ * externalId matching rows in several runs), GitHub is left untouched.
+ */
+function initiatingRunPaths(paths: RunPath[], initiatingRunId: string | null): RunPath[] {
+	if (initiatingRunId !== null) return paths.filter((p) => p.runId === initiatingRunId);
+	if (paths.length > 0) {
+		console.error(
+			"Skipping GitHub view sync: the chapter id matches rows in multiple runs, so the initiating run is unknown",
+		);
+	}
+	return [];
 }
 
 function chapterFileViewInserts(
@@ -616,35 +654,21 @@ function chainGitHubMutations(pairs: RunPath[], task: () => Promise<void>): Prom
 	return next;
 }
 
-/** A run's sync decision: a writable PR target, or why it has none. */
-type SyncDecision = { repoRoot: string; nodeId: string } | "no-pr" | "skipped" | "unresolved";
-
 /**
  * Best-effort per-request propagation of file view marks to GitHub, mirroring
  * hosted Stage's chapter-file-view sync rules: mark a file only when every
  * chapter containing it is viewed (the exact condition under which
  * promoteFullyCoveredFiles promotes it locally), and unmark unconditionally
- * whenever any chapter-file view is removed. Writes are freshness-gated the
- * way review writes are (see review.ts's runMatchesPrDiff): only a committed
- * run whose recorded head is still the PR's live head may touch the PR —
- * anything else reviewed different contents. Every GitHub failure is logged
- * and swallowed — the local operation always succeeds regardless.
+ * whenever any chapter-file view is removed. Sync is scoped to the initiating
+ * run — callers pass only that run's paths (see initiatingRunPaths), so a
+ * batch never touches any PR other than the one the user was reviewing.
+ * Writes are freshness-gated the way review writes are (see review.ts's
+ * runMatchesPrDiff): only a committed run whose recorded head is still the
+ * PR's live head may touch the PR — anything else reviewed different
+ * contents. Every GitHub failure is logged and swallowed — the local
+ * operation always succeeds regardless.
  */
 class GitHubViewSync {
-	/**
-	 * runId → sync decision. "no-pr" rows are safely ignorable in the ambiguity
-	 * check: the run either has no GitHub remote (a local-only diff that can't
-	 * reference any PR) or its checked-out branch has no PR (nothing to
-	 * mutate) — since branch runs now resolve their PR via gh, "no-pr" never
-	 * conceals a live PR. "skipped" rows resolved fine but are write-gated
-	 * (working-tree scope, or a head that is no longer the PR's), a deliberate
-	 * per-run skip that shouldn't block sibling runs. "unresolved" rows failed
-	 * PR resolution and must poison every path they touch — otherwise a fork
-	 * with unavailable GitHub access would make another run's PR look
-	 * unambiguous.
-	 */
-	private readonly targets = new Map<string, SyncDecision>();
-
 	constructor(private readonly db: StageDb) {}
 
 	mark(paths: RunPath[]): Promise<void> {
@@ -660,64 +684,42 @@ class GitHubViewSync {
 		mutate: (repoRoot: string, pullRequestNodeId: string, path: string) => Promise<void>,
 		verb: "viewed" | "unviewed",
 	): Promise<void> {
-		if (paths.length === 0) return Promise.resolve();
+		const [first] = paths;
+		if (!first) return Promise.resolve();
 		// Enqueued synchronously (before any await) so overlapping requests chain
 		// in the same order their local writes committed.
-		return chainGitHubMutations(paths, () => this.performSync(paths, mutate, verb));
+		return chainGitHubMutations(paths, () =>
+			this.performSync(
+				first.runId,
+				paths.map((p) => p.filePath),
+				mutate,
+				verb,
+			),
+		);
 	}
 
 	private async performSync(
-		paths: RunPath[],
+		runId: string,
+		filePaths: string[],
 		mutate: (repoRoot: string, pullRequestNodeId: string, path: string) => Promise<void>,
 		verb: "viewed" | "unviewed",
 	): Promise<void> {
-		// External-id fan-out can match runs from clones or forks that share a
-		// commit range but belong to different PRs. Syncing all of them would
-		// mark files on foreign repositories' PRs, so a path only syncs when
-		// every run it fanned out to resolves to one PR (node id); same-PR
-		// re-imports dedupe to a single mutation.
-		const targetsByPath = new Map<string, Map<string, { repoRoot: string; nodeId: string }>>();
-		const unresolvedPaths = new Set<string>();
-		for (const { runId, filePath } of paths) {
-			const target = await this.resolveTarget(runId);
-			if (target === "no-pr" || target === "skipped") continue;
-			if (target === "unresolved") {
-				unresolvedPaths.add(filePath);
-				continue;
-			}
-			let byNode = targetsByPath.get(filePath);
-			if (!byNode) {
-				byNode = new Map();
-				targetsByPath.set(filePath, byNode);
-			}
-			byNode.set(target.nodeId, target);
-		}
-		for (const [filePath, byNode] of targetsByPath) {
-			if (byNode.size > 1 || unresolvedPaths.has(filePath)) {
-				console.error(
-					`Skipping GitHub ${verb} sync for ${filePath}: matched runs do not resolve to a single pull request`,
-				);
-				continue;
-			}
-			for (const target of byNode.values()) {
-				try {
-					await mutate(target.repoRoot, target.nodeId, filePath);
-				} catch (err) {
-					console.error(`Failed to sync file ${verb} state to GitHub: ${errorMessage(err)}`);
-				}
+		const target = await this.resolveTarget(runId);
+		if (target === null) return;
+		for (const filePath of filePaths) {
+			try {
+				await mutate(target.repoRoot, target.nodeId, filePath);
+			} catch (err) {
+				console.error(`Failed to sync file ${verb} state to GitHub: ${errorMessage(err)}`);
 			}
 		}
 	}
 
-	private async resolveTarget(runId: string): Promise<SyncDecision> {
-		const cached = this.targets.get(runId);
-		if (cached !== undefined) return cached;
-		const decision = await this.decideTarget(runId);
-		this.targets.set(runId, decision);
-		return decision;
-	}
-
-	private async decideTarget(runId: string): Promise<SyncDecision> {
+	/**
+	 * The initiating run's writable PR target, or null (with the reason logged)
+	 * when the run has no PR or is write-gated by the freshness check.
+	 */
+	private async resolveTarget(runId: string): Promise<{ repoRoot: string; nodeId: string } | null> {
 		const [run] = this.db
 			.select({
 				repoRoot: chapterRun.repoRoot,
@@ -730,7 +732,9 @@ class GitHubViewSync {
 			.where(eq(chapterRun.id, runId))
 			.limit(1)
 			.all();
-		if (!run) return "no-pr";
+		// Every caller resolved the run (or a chapter row referencing it) before
+		// enqueueing the sync, so the row is guaranteed to exist.
+		if (!run) throw new Error(`Run ${runId} not found for GitHub view sync`);
 
 		let decision: FreshPullRequestDecision;
 		try {
@@ -739,21 +743,21 @@ class GitHubViewSync {
 			console.error(
 				`Failed to resolve the run's pull request for GitHub view sync: ${errorMessage(err)}`,
 			);
-			return "unresolved";
+			return null;
 		}
 		switch (decision.kind) {
 			case "no-pr":
-				return "no-pr";
+				return null;
 			case "working-tree":
 				console.error(
 					"Skipping GitHub viewed sync: working-tree runs don't review the pull request's commits",
 				);
-				return "skipped";
+				return null;
 			case "stale-head":
 				console.error(
 					`Skipping GitHub viewed sync for pull request #${decision.prNumber}: the run's head commit is no longer the pull request's head`,
 				);
-				return "skipped";
+				return null;
 			case "fresh":
 				return { repoRoot: decision.repoRoot, nodeId: decision.nodeId };
 		}

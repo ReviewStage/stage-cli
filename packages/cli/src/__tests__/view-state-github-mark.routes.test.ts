@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { fileView } from "../db/schema/index.js";
+import { chapterView, fileView } from "../db/schema/index.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 import { makeFixture, SHA } from "./fixtures.js";
 import { PR_NODE_ID, PR_NUMBER, ViewStateGitHubHarness } from "./view-state-github-harness.js";
@@ -179,6 +179,64 @@ describe("GitHub mark sync", () => {
 		expect(await harness.rawCalls()).toEqual([]);
 		const rows = harness.db.select().from(fileView).where(eq(fileView.runId, runId)).all();
 		expect(rows.map((r) => r.filePath)).toEqual(["src/foo.ts"]);
+	});
+
+	it("never mutates GitHub when the marked externalId spans multiple runs", async () => {
+		await harness.writeGhShim();
+		// Identical fixtures share a scope key, so the two runs' chapter rows
+		// share an externalId: a local-only run plus a fresh PR run.
+		const local = harness.seedRun(undefined, { originUrl: null, prNumber: null });
+		const pr = harness.seedRun();
+		const [localChapter] = local.chapters;
+		const [prChapter] = pr.chapters;
+		if (!localChapter || !prChapter) throw new Error("seed: missing chapters");
+		expect(prChapter.externalId).toBe(localChapter.externalId);
+		const port = await harness.start();
+
+		// The request names only the shared externalId, so the initiating run —
+		// the one the user was actually reviewing — is unknown. The fresh PR run
+		// must not be picked as the target: the user may have been reviewing the
+		// local-only sibling.
+		const res = await harness.request(port, "POST", `/api/chapter-view/${localChapter.externalId}`);
+
+		expect(res.status).toBe(200);
+		expect(await harness.rawCalls()).toEqual([]);
+		// The local fan-out is unaffected: rows for both runs still update.
+		const viewedChapterIds = harness.db
+			.select()
+			.from(chapterView)
+			.all()
+			.map((r) => r.chapterId)
+			.sort();
+		expect(viewedChapterIds).toEqual([localChapter.id, prChapter.id].sort());
+		const viewedRunIds = harness.db
+			.select()
+			.from(fileView)
+			.all()
+			.map((r) => r.runId)
+			.sort();
+		expect(viewedRunIds).toEqual([local.runId, pr.runId].sort());
+	});
+
+	it("syncs the initiating fresh run's PR even when a no-PR sibling shares the externalId", async () => {
+		await harness.writeGhShim();
+		harness.seedRun(undefined, { originUrl: null, prNumber: null });
+		const pr = harness.seedRun();
+		const [prChapter] = pr.chapters;
+		if (!prChapter) throw new Error("seed: missing chapter");
+		const port = await harness.start();
+
+		// Acting through the PR run's own routes pins the initiating run, so the
+		// sibling's existence never blocks the sync: via the file-view route...
+		const res = await harness.request(port, "POST", `/api/runs/${pr.runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+		expect(res.status).toBe(200);
+		expect((await markCalls()).map((c) => c.fields.path)).toEqual(["src/foo.ts"]);
+
+		// ...and via the chapter row's uuid (not the shared externalId).
+		await harness.request(port, "POST", `/api/chapter-view/${prChapter.id}`);
+		expect((await markCalls()).map((c) => c.fields.path)).toEqual(["src/foo.ts", "src/foo.ts"]);
 	});
 
 	it("never calls gh when marking on a run without a GitHub remote", async () => {

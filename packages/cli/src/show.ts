@@ -122,7 +122,7 @@ async function buildChaptersFile(
 function revalidateChaptersFile(file: ChaptersFile): ChaptersFile {
 	const allFiles = parseGitDiff(getRawDiffForScope(file.scope));
 	const expected = expectedHunkStarts(allFiles, { includeHeaderOnly: true });
-	const repaired = repairLegacyHeaderOnlyRefs(expected, file.chapters);
+	const repaired = repairLegacyHeaderOnlyRefs(headerOnlyFilePaths(allFiles), file.chapters);
 	validateHunkCoverage(expected, repaired);
 	const chapters = unescapeChapters(sanitizeLineRefs(repaired, allFiles));
 	return { ...file, chapters, prologue: unescapePrologue(file.prologue) };
@@ -164,29 +164,26 @@ function assembleChaptersFile(
  * entirely. Repair those files by appending the missing sentinel refs to the
  * other-changes chapter instead of rejecting them; genuinely missing hunk refs
  * still hard-fail in `validateHunkCoverage`.
+ *
+ * `headerOnlyPaths` — not the sentinel value — decides eligibility: an added
+ * file's real hunk also has oldStart 0, and a chapters file missing that hunk
+ * must fail coverage, not be silently absorbed into Other Changes.
  */
 export function repairLegacyHeaderOnlyRefs(
-	expected: Map<string, Set<number>>,
+	headerOnlyPaths: ReadonlySet<string>,
 	chapters: Chapter[],
 ): Chapter[] {
-	const covered = new Map<string, Set<number>>();
+	const covered = new Set<string>();
 	for (const chapter of chapters) {
 		for (const ref of chapter.hunkRefs) {
-			let starts = covered.get(ref.filePath);
-			if (!starts) {
-				starts = new Set();
-				covered.set(ref.filePath, starts);
-			}
-			starts.add(ref.oldStart);
+			if (ref.oldStart === HEADER_ONLY_OLD_START) covered.add(ref.filePath);
 		}
 	}
 
 	const missingHeaderOnly: HunkReference[] = [];
-	for (const [filePath, starts] of expected) {
-		for (const oldStart of starts) {
-			if (oldStart === HEADER_ONLY_OLD_START && !covered.get(filePath)?.has(oldStart)) {
-				missingHeaderOnly.push({ filePath, oldStart });
-			}
+	for (const filePath of headerOnlyPaths) {
+		if (!covered.has(filePath)) {
+			missingHeaderOnly.push({ filePath, oldStart: HEADER_ONLY_OLD_START });
 		}
 	}
 	if (missingHeaderOnly.length === 0) return chapters;
@@ -250,6 +247,13 @@ function unescapePrologue(prologue: Prologue | undefined): Prologue | undefined 
  * `includeHeaderOnly`, files without hunks (pure renames/moves, binary files)
  * expect the HEADER_ONLY_OLD_START sentinel their other-changes refs carry.
  */
+/** Files whose diff carries no hunks at all (binary changes, pure renames). */
+function headerOnlyFilePaths(
+	files: { path: string; hunks: { oldStart: number }[] }[],
+): Set<string> {
+	return new Set(files.filter((file) => file.hunks.length === 0).map((file) => file.path));
+}
+
 function expectedHunkStarts(
 	files: { path: string; hunks: { oldStart: number }[] }[],
 	{ includeHeaderOnly }: { includeHeaderOnly: boolean },

@@ -21,6 +21,7 @@ import { findRenderedDiffLine } from "@/components/chapter/rendered-line-target"
 import { ImageDiffViewer } from "@/components/diff/image-diff-viewer";
 import type { AnnotatedLineRef, DiffSide, LineRef } from "@/lib/diff-types";
 import { FILE_STATUS } from "@/lib/diff-types";
+import { useFileExpansion } from "@/lib/file-expansion-context";
 import { buildFullFilePreviewDiff, isFullFilePreview } from "@/lib/full-file-preview";
 import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import type { FileDiffEntry } from "@/lib/parse-diff";
@@ -391,7 +392,11 @@ export const FileDiffSection = memo(function FileDiffSection({
 }: FileDiffSectionProps) {
 	const { file, diff } = entry;
 	const isCollapsed = collapseState.collapsedFiles.has(file.path);
-	const [isExpanded, setIsExpanded] = useState(false);
+	// "Expand unchanged lines" lives above the virtualizer so it survives this
+	// row unmounting once it scrolls beyond Virtuoso's overscan (mirrors the
+	// hosted app's expandedFiles in its pull-request context).
+	const { expandedFiles, toggleFileExpanded } = useFileExpansion();
+	const isExpanded = expandedFiles.has(file.path);
 
 	const handleToggle = useCallback(
 		() => collapseState.toggleFileCollapsed(file.path),
@@ -401,7 +406,10 @@ export const FileDiffSection = memo(function FileDiffSection({
 		() => (isCollapsed ? collapseState.expandAllFiles() : collapseState.collapseAllFiles()),
 		[isCollapsed, collapseState],
 	);
-	const handleToggleExpand = useCallback(() => setIsExpanded((v) => !v), []);
+	const handleToggleExpand = useCallback(
+		() => toggleFileExpanded(file.path),
+		[toggleFileExpanded, file.path],
+	);
 	const handleToggleViewed = useCallback(() => {
 		onToggleViewed?.(file.path);
 	}, [onToggleViewed, file.path]);
