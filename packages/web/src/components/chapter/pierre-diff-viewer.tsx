@@ -126,6 +126,20 @@ export function getVisibleLineRange(
  * (number column darker, content lighter) plus the same indicator bar Pierre
  * draws on `[data-column-number]::before` when `indicators="bars"`.
  */
+/**
+ * Pierre 1.1.20 sets `isolation: isolate` on its `pre`, which flattens the whole
+ * diff into one paint unit — the light-DOM key-change highlight boxes (z-2/z-3
+ * siblings of the host) would then paint over comment annotation rows, which
+ * Pierre pins at z-index 2. Release the isolation (our diff container is itself
+ * `isolate`, so nothing leaks past it) and lift annotation rows above both box
+ * layers so comments always render on top of line highlights. The selection
+ * popup sits at z-50 and stays above everything.
+ */
+export const ANNOTATION_STACKING_CSS = `
+	pre { isolation: auto; }
+	[data-line-annotation] { z-index: 4; }
+`;
+
 export function buildChangeAnnotationCSS(additionSlots: string[], deletionSlots: string[]): string {
 	function buildSide(slots: string[], side: "addition" | "deletion"): string {
 		if (slots.length === 0) return "";
@@ -392,7 +406,7 @@ export function PierreDiffViewer({
 			}
 		}
 
-		return buildChangeAnnotationCSS(additionSlots, deletionSlots);
+		return `${ANNOTATION_STACKING_CSS}${buildChangeAnnotationCSS(additionSlots, deletionSlots)}`;
 	}, [lineAnnotations, diffHunks, drafts, inlineCommentsMinimized, forceShownLines]);
 
 	// Open a composer at an anchor. A row holds at most one composer, so re-opening the
