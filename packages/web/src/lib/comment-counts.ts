@@ -81,14 +81,14 @@ export function buildHunkRangeIndex(files: readonly HunkRangeSource[]): HunkRang
 }
 
 /**
- * Mirrors hosted's `commentMatchesHunk` for the CLI's thread model: a whole-file
- * thread matches every hunk of its file, and a line thread's anchor (`endLine`,
- * GitHub's `line`) must fall inside the hunk's range on the thread's side. The
- * CLI drops outdated (line-less) threads before they reach the wire, so hosted's
- * `original_line` fallback for those has no counterpart here.
+ * Mirrors hosted's `commentMatchesHunk` for the CLI's thread model: a line
+ * thread's anchor (`endLine`, GitHub's `line`) must fall inside the hunk's
+ * range on the thread's side. Whole-file threads are matched by path before
+ * this runs (hosted's FILE branch), and the CLI drops outdated (line-less)
+ * threads before they reach the wire, so hosted's `original_line` fallback
+ * for those has no counterpart here.
  */
 function threadMatchesHunk(thread: CommentThreadLike, hunk: HunkRange): boolean {
-	if (thread.subjectType === SUBJECT_TYPE.FILE) return true;
 	if (thread.endLine === null) return false;
 	if (thread.side === DIFF_SIDE.DELETIONS) {
 		return thread.endLine >= hunk.oldStart && thread.endLine < hunk.oldStart + hunk.oldLines;
@@ -138,9 +138,17 @@ export function buildChapterCommentCountsMap(
 
 	for (const chapter of chapters) {
 		const hunks = resolveChapterHunkRanges(chapter.hunkRefs, index);
+		// FILE threads match by path alone, so header-only refs (binary changes,
+		// pure renames — no parsed hunk to resolve) still attract them; otherwise
+		// the file badge would count a thread its chapter badge ignores.
+		const chapterPaths = new Set(chapter.hunkRefs.map((ref) => ref.filePath));
 
 		let count = 0;
 		for (const thread of threads) {
+			if (thread.subjectType === SUBJECT_TYPE.FILE) {
+				if (chapterPaths.has(thread.filePath)) count++;
+				continue;
+			}
 			for (const { filePath, hunk } of hunks) {
 				if (thread.filePath === filePath && threadMatchesHunk(thread, hunk)) {
 					count++;

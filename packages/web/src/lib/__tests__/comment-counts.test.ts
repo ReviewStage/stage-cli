@@ -113,6 +113,21 @@ describe("buildChapterCommentCountsMap", () => {
 		);
 	});
 
+	it("counts a file-level thread toward a chapter whose only ref for the path is header-only", () => {
+		// Binary changes and pure renames carry the header-only sentinel
+		// (oldStart 0) with no parsed hunk in the index; a whole-file thread
+		// matches by path alone, keeping file and chapter badges consistent.
+		const index = buildHunkRangeIndex([makeFile("assets/logo.png", [])]);
+		const chapter = {
+			id: "other-changes",
+			hunkRefs: [{ filePath: "assets/logo.png", oldStart: 0 }],
+		};
+
+		const counts = buildChapterCommentCountsMap([chapter], index, [fileThread("assets/logo.png")]);
+
+		expect(counts.get("other-changes")).toBe(1);
+	});
+
 	it("matches an additions-side thread by the hunk's new-file line range", () => {
 		const index = buildHunkRangeIndex([
 			makeFile("src/app.ts", [{ oldStart: 1, oldLines: 10, newStart: 1, newLines: 12 }]),

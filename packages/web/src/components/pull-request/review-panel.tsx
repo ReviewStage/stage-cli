@@ -186,9 +186,11 @@ export function ReviewPanel() {
 	// mod+enter submits when focus is inside it. The global hotkey is the only
 	// mod+enter path — a textarea-level handler too would double-submit.
 	// Unlike hosted, the CLI renders this component on runs with no reachable
-	// PR (it returns null below), so the bindings are disabled there — a dead
-	// mod+j must not shadow the browser shortcut or toggle invisible state.
-	const hotkeysEnabled = review.github === GITHUB_REVIEW_STATUS.AVAILABLE;
+	// PR (it returns null below), so the bindings match the trigger's usable
+	// state — a dead mod+j must not shadow the browser shortcut, toggle
+	// invisible state, or open a tray whose trigger is disabled.
+	const hotkeysEnabled =
+		review.github === GITHUB_REVIEW_STATUS.AVAILABLE && review.hasPendingReview;
 	useHotkeys(
 		KEYBOARD_SHORTCUTS.TOGGLE_REVIEW_PANEL.hotkey,
 		() => setOpen((v) => !v),

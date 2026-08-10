@@ -191,8 +191,17 @@ export function isMaxBufferError(err: unknown): boolean {
 	);
 }
 
+const MAX_UNTRACKED_DIFF_BYTES = 50 * 1024 * 1024;
+
+/**
+ * One child process per file, per-file buffers capped, and the aggregate
+ * capped to the same 50 MiB budget the diff route enforces at view time — the
+ * two must omit the same tail, or chapters would be generated for files the
+ * viewer can never serve.
+ */
 export function getUntrackedDiff(files: string[]): string {
 	const patches: string[] = [];
+	let totalBytes = 0;
 	for (const file of files) {
 		try {
 			execFileSync(
@@ -212,7 +221,7 @@ export function getUntrackedDiff(files: string[]): string {
 				{
 					encoding: "utf8",
 					stdio: ["ignore", "pipe", "ignore"],
-					maxBuffer: 50 * 1024 * 1024,
+					maxBuffer: MAX_UNTRACKED_DIFF_BYTES,
 				},
 			);
 		} catch (err: unknown) {
@@ -221,7 +230,21 @@ export function getUntrackedDiff(files: string[]): string {
 				continue;
 			}
 			if (hasStringStdout(err)) {
+				const nextBytes = Buffer.byteLength(err.stdout);
+				if (totalBytes + nextBytes > MAX_UNTRACKED_DIFF_BYTES) {
+					console.error(
+						`Untracked diff output reached ${MAX_UNTRACKED_DIFF_BYTES} bytes; omitting remaining untracked files`,
+					);
+					break;
+				}
 				patches.push(err.stdout);
+				totalBytes += nextBytes;
+				if (totalBytes >= MAX_UNTRACKED_DIFF_BYTES) {
+					console.error(
+						`Untracked diff output reached ${MAX_UNTRACKED_DIFF_BYTES} bytes; omitting remaining untracked files`,
+					);
+					break;
+				}
 			}
 		}
 	}
