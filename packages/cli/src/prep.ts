@@ -8,7 +8,7 @@ import { parseGitDiff } from "./diff-parser.js";
 import { filterFilesForLlm, loadStageIgnore } from "./filter-files.js";
 import { formatHunkDiffWithLineNumbers } from "./format-diff.js";
 import { getCommitMessages, readRepoContext } from "./git.js";
-import { getPullRequest } from "./github/index.js";
+import { getPullRequestOrThrow } from "./github/index.js";
 import {
 	combineInstructions,
 	formatInstructionsBlock,
@@ -52,8 +52,10 @@ export async function runPrep(options: PrepOptions): Promise<string> {
 
 	const sections: string[] = [];
 
+	// --pr promised the title/body context; a silent null would produce
+	// chapters without it, so metadata failures surface loudly instead.
 	const pullRequest =
-		prNumber === null ? null : await getPullRequest(repoRoot, originUrl, prNumber);
+		prNumber === null ? null : await getPullRequestOrThrow(repoRoot, originUrl, prNumber);
 	if (pullRequest) {
 		sections.push(
 			"=== PULL REQUEST ===",

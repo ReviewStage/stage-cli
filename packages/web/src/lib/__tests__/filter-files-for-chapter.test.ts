@@ -169,4 +169,15 @@ index 1111111..2222222 100644
 		]);
 		expect(entries.map((e) => e.file.path)).toEqual(["src/foo.ts"]);
 	});
+
+	it("uses rename lines to name segments when the git header is ambiguous", () => {
+		const patch = `diff --git a/old b/name.png b/new b/name.png
+similarity index 100%
+rename from old b/name.png
+rename to new b/name.png
+`;
+		const entries = filterFilesForChapter(patch, [{ filePath: "new b/name.png", oldStart: 0 }]);
+		expect(entries).toHaveLength(1);
+		expect(entries[0]?.file.path).toBe("new b/name.png");
+	});
 });

@@ -7,9 +7,13 @@ import { jsonFetch } from "@/lib/use-view-state";
  * open base→head branch chains. Live PR data: never auto-refetch on
  * focus/reconnect, mirroring the queries in use-pull-request.ts.
  */
+export function pullRequestStackQueryKey(runId: string): readonly unknown[] {
+	return ["pull-request-stack", runId];
+}
+
 export function usePullRequestStack(runId: string, number: number) {
 	return useQuery<PullRequestStackResponse>({
-		queryKey: ["pull-request-stack", runId, number],
+		queryKey: [...pullRequestStackQueryKey(runId), number],
 		queryFn: async () =>
 			PullRequestStackResponseSchema.parse(
 				await jsonFetch(

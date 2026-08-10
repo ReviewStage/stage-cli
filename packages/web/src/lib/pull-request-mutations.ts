@@ -1,6 +1,7 @@
 import type { PullRequestMergeMethod } from "@stagereview/types/pull-request";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
+import { pullRequestStackQueryKey } from "@/lib/use-pull-request-stack";
 import { timelineQueryKey } from "@/lib/use-timeline";
 import { jsonFetch } from "@/lib/use-view-state";
 
@@ -51,6 +52,7 @@ export function invalidatePullRequestQueries(
 		queryClient.invalidateQueries({ queryKey: ["pull-request-checks", runId] }),
 		queryClient.invalidateQueries({ queryKey: ["pull-request-labels", runId] }),
 		queryClient.invalidateQueries({ queryKey: timelineQueryKey(runId) }),
+		queryClient.invalidateQueries({ queryKey: pullRequestStackQueryKey(runId) }),
 	]);
 }
 

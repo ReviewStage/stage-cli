@@ -69,7 +69,7 @@ export type TimelineIssueComment = z.infer<typeof TimelineIssueCommentSchema>;
 
 const ReviewDismissalSchema = z.object({
 	original_state: z.string(),
-	actor: TimelineUserSchema,
+	actor: NullableTimelineUserSchema,
 	dismissal_message: z.string().nullable(),
 	created_at: z.string(),
 });
@@ -124,7 +124,7 @@ export type TimelineCommittedEvent = z.infer<typeof TimelineCommittedEventSchema
 
 const ActorEventBaseSchema = z.object({
 	id: z.number(),
-	actor: TimelineUserSchema,
+	actor: NullableTimelineUserSchema,
 	created_at: z.string(),
 });
 

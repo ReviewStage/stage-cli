@@ -97,7 +97,26 @@ function splitEqualGitHeader(firstLine: string): [string, string] | null {
 	return null;
 }
 
+const RENAME_FROM_NAME_RE = /^(?:rename|copy) from (.+)$/m;
+const RENAME_TO_NAME_RE = /^(?:rename|copy) to (.+)$/m;
+
+function decodeRenameName(raw: string | undefined): string | undefined {
+	if (!raw) return undefined;
+	if (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) {
+		return decodeQuotedPath(raw.slice(1, -1));
+	}
+	return raw;
+}
+
 function parseFileNames(segment: string): { prevName?: string; name?: string } {
+	// rename/copy lines are authoritative and unambiguous — unlike the
+	// `diff --git` header, whose unquoted form can't be split reliably when a
+	// path itself contains " b/".
+	const renameFrom = decodeRenameName(segment.match(RENAME_FROM_NAME_RE)?.[1]);
+	const renameTo = decodeRenameName(segment.match(RENAME_TO_NAME_RE)?.[1]);
+	if (renameFrom !== undefined && renameTo !== undefined) {
+		return { prevName: renameFrom, name: renameTo };
+	}
 	const plusName = decodeHeaderName(segment.match(PLUS_NAME_RE)?.[1], "b/");
 	const minusName = decodeHeaderName(segment.match(MINUS_NAME_RE)?.[1], "a/");
 	const quotedGit = segment.match(DIFF_GIT_QUOTED_NAMES_RE);
