@@ -176,6 +176,21 @@ export function hasStringStdout(err: unknown): err is { stdout: string } {
 	);
 }
 
+/**
+ * A maxBuffer overflow still attaches the truncated output to `err.stdout`,
+ * making it indistinguishable from git's normal "differences found" exit
+ * without this check. Node uses ENOBUFS for execFileSync and
+ * ERR_CHILD_PROCESS_STDIO_MAXBUFFER for the async execFile.
+ */
+export function isMaxBufferError(err: unknown): boolean {
+	return (
+		typeof err === "object" &&
+		err !== null &&
+		"code" in err &&
+		(err.code === "ENOBUFS" || err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER")
+	);
+}
+
 export function getUntrackedDiff(files: string[]): string {
 	const patches: string[] = [];
 	for (const file of files) {
@@ -201,6 +216,10 @@ export function getUntrackedDiff(files: string[]): string {
 				},
 			);
 		} catch (err: unknown) {
+			if (isMaxBufferError(err)) {
+				console.error(`Untracked file ${file} produced a diff over the buffer cap; omitting it`);
+				continue;
+			}
 			if (hasStringStdout(err)) {
 				patches.push(err.stdout);
 			}

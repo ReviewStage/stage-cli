@@ -1,9 +1,10 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseRepoName, resolveScope } from "../git.js";
+import { isMaxBufferError, parseRepoName, resolveScope } from "../git.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 
 let tmpDir: string;
@@ -60,6 +61,35 @@ async function initDivergedRepo(): Promise<{
 	process.chdir(tmpDir);
 	return { commonSha, mainSha, featureSha };
 }
+
+describe("isMaxBufferError", () => {
+	it("recognizes both maxBuffer overflow codes with real child processes", async () => {
+		const opts = { encoding: "utf8", maxBuffer: 1000 } as const;
+		const args = ["-c", "yes | head -c 100000"];
+		let syncErr: unknown;
+		try {
+			execFileSync("sh", args, opts);
+		} catch (err: unknown) {
+			syncErr = err;
+		}
+		expect(isMaxBufferError(syncErr)).toBe(true);
+		const asyncErr: unknown = await promisify(execFile)("sh", args, opts).then(
+			() => undefined,
+			(err: unknown) => err,
+		);
+		expect(isMaxBufferError(asyncErr)).toBe(true);
+	});
+
+	it("does not match git's normal differences-found exit", () => {
+		let exitErr: unknown;
+		try {
+			execFileSync("sh", ["-c", "echo diff-output; exit 1"], { encoding: "utf8" });
+		} catch (err: unknown) {
+			exitErr = err;
+		}
+		expect(isMaxBufferError(exitErr)).toBe(false);
+	});
+});
 
 describe("parseRepoName", () => {
 	const FALLBACK_ROOT = "/Users/dev/conductor/workspaces/stage-cli/monterrey-v3";

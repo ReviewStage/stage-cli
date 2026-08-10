@@ -13,7 +13,7 @@ import { eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import type { ChapterRunRow } from "../db/schema/chapter-run.js";
 import { chapterRun } from "../db/schema/index.js";
-import { buildDiffArgs, hasStringStdout } from "../git.js";
+import { buildDiffArgs, hasStringStdout, isMaxBufferError } from "../git.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
@@ -58,6 +58,10 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 				{ cwd, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES },
 			);
 		} catch (err: unknown) {
+			if (isMaxBufferError(err)) {
+				console.error(`Untracked file ${file} produced a diff over the buffer cap; omitting it`);
+				continue;
+			}
 			if (hasStringStdout(err)) {
 				// Reject the prospective patch before retaining it so the
 				// aggregate never exceeds the advertised cap.

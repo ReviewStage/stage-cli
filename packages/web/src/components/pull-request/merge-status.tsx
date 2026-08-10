@@ -231,7 +231,9 @@ export function MergeStatus({
 			)}
 
 			{action === MERGE_ACTION.REMOVE_FROM_QUEUE && (
-				<AlertDialog>
+				// Keyed by run so stack navigation while the confirmation is open
+				// remounts (and closes) it instead of retargeting the sibling PR.
+				<AlertDialog key={runId}>
 					<AlertDialogTrigger asChild>
 						<Button variant="secondary" size="xs" disabled={isPending}>
 							{actionIcon}
