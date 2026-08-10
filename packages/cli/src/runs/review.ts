@@ -1,3 +1,4 @@
+import { REVIEWER_STATUS } from "@stagereview/types/pull-request";
 import {
 	COMMENT_STATE,
 	GITHUB_REVIEW_STATUS,
@@ -19,7 +20,12 @@ import {
 	commentInsertionOrder,
 	commentThread,
 } from "../db/schema/index.js";
-import { type GitHubRepo, getPullRequestOrThrow, parseGitHubRepo } from "../github/index.js";
+import {
+	type GitHubRepo,
+	getPullRequestOrThrow,
+	getReviews,
+	parseGitHubRepo,
+} from "../github/index.js";
 import {
 	addImmediateReviewComment,
 	addReviewReply,
@@ -32,6 +38,7 @@ import {
 	type ReviewThread as GitHubApiReviewThread,
 	type GitHubDiffSide,
 	type GitHubReview,
+	GitHubReviewNotPendingError,
 	getReview,
 	setThreadResolved,
 	submitReview,
@@ -517,10 +524,79 @@ export async function submitRunReview(
 				400,
 			);
 		}
-		await withPendingReview(run, target, (reviewNodeId) =>
-			submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
-		);
+		try {
+			await withPendingReview(run, target, (reviewNodeId) =>
+				submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
+			);
+		} catch (error) {
+			if (!(error instanceof GitHubReviewNotPendingError)) throw error;
+			await recoverFromStaleReviewAndSubmit(run, target, event, body);
+		}
 	});
+}
+
+/**
+ * The pending review died between the fresh read and the submit — it was
+ * submitted or discarded from another session. Re-read review state and retry:
+ * submit a pending review that reappeared, treat a reviewer decision that
+ * already matches the requested event as success (don't duplicate an approval
+ * submitted elsewhere), drop a submit left with no payload, and otherwise open
+ * a fresh review and submit it.
+ */
+async function recoverFromStaleReviewAndSubmit(
+	run: ChapterRunRow,
+	target: ReviewTarget,
+	event: ReviewEvent,
+	body: string,
+): Promise<void> {
+	try {
+		const review = await getReview(run.repoRoot, target.repo, target.prNumber);
+		assertGitHubWritable(run, review);
+
+		if (review.pendingReviewNodeId !== null) {
+			try {
+				await submitReview(
+					run.repoRoot,
+					review.pullRequestNodeId,
+					review.pendingReviewNodeId,
+					event,
+					body,
+				);
+				return;
+			} catch (error) {
+				if (!(error instanceof GitHubReviewNotPendingError)) throw error;
+			}
+		}
+
+		const reviewsSummary = await getReviews(run.repoRoot, target.repo, target.prNumber);
+		const currentReviewer = reviewsSummary?.reviewers.find(
+			(reviewer) => reviewer.user.login === review.viewerLogin,
+		);
+		const alreadyMatchesRequestedSubmit =
+			(event === REVIEW_EVENT.APPROVE && currentReviewer?.status === REVIEWER_STATUS.APPROVED) ||
+			(event === REVIEW_EVENT.REQUEST_CHANGES &&
+				currentReviewer?.status === REVIEWER_STATUS.CHANGES_REQUESTED) ||
+			(event === REVIEW_EVENT.COMMENT &&
+				currentReviewer?.status === REVIEWER_STATUS.COMMENTED &&
+				body.trim() !== "");
+		if (alreadyMatchesRequestedSubmit) return;
+
+		// The stale review's drafts died with it; a bare comment submit has nothing left to say.
+		const hasSubmitPayload =
+			review.pendingComments.length > 0 || body.trim() !== "" || event !== REVIEW_EVENT.COMMENT;
+		if (!hasSubmitPayload) return;
+
+		const reviewNodeId = await openPendingReview(run, review);
+		await submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body);
+	} catch (error) {
+		// Recovery exhausted with the review still not pending — surface it as a
+		// conflict (hosted maps GITHUB_REVIEW_NOT_PENDING to CONFLICT) so the UI can
+		// refresh instead of showing a raw GraphQL failure.
+		if (error instanceof GitHubReviewNotPendingError) {
+			throw new ReviewError(error.message, 409);
+		}
+		throw error;
+	}
 }
 
 /** Discard the viewer's pending review and all its draft comments. */

@@ -1,5 +1,7 @@
 import type { PullRequestMergeMethod } from "@stagereview/types/pull-request";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
+import { jsonFetch } from "@/lib/use-view-state";
 
 function prPath(runId: string, suffix: string): string {
 	return `/api/runs/${encodeURIComponent(runId)}/pull-request${suffix}`;
@@ -46,6 +48,7 @@ export function invalidatePullRequestQueries(
 		queryClient.invalidateQueries({ queryKey: ["pull-request-reviews", runId] }),
 		queryClient.invalidateQueries({ queryKey: ["pull-request-merge-status", runId] }),
 		queryClient.invalidateQueries({ queryKey: ["pull-request-checks", runId] }),
+		queryClient.invalidateQueries({ queryKey: ["pull-request-labels", runId] }),
 	]);
 }
 
@@ -158,5 +161,59 @@ export function removeReviewerMutationOptions(runId: string) {
 	return {
 		mutationFn: (v: RepoVars & { number: number; reviewer: string }) =>
 			write(runId, "/reviewers", "DELETE", { number: v.number, reviewers: [v.reviewer] }),
+	};
+}
+
+// ─── Labels (vendored from hosted `pullRequests.labels.*`, #1071) ───────────────
+
+// The label subset the UI renders. Hosted shares its REST-derived `GitHubLabel`
+// via @stage/types; the CLI's wire shape is defined by the labels route.
+const GitHubLabelSchema = z.object({
+	id: z.number(),
+	name: z.string(),
+	color: z.string(),
+	description: z.string().nullable().optional(),
+});
+export type GitHubLabel = z.infer<typeof GitHubLabelSchema>;
+
+// The PR's current labels; `null` when GitHub was unreachable (display degrades).
+const PullRequestLabelsResponseSchema = z.object({
+	labels: z.array(GitHubLabelSchema).nullable(),
+});
+// Every repository label, for the add-label picker (hosted `labels.list`).
+const RepositoryLabelsResponseSchema = z.object({ labels: z.array(GitHubLabelSchema) });
+
+/** The labels currently applied to the PR. */
+export function pullRequestLabelsQueryOptions(runId: string, number: number) {
+	return {
+		queryKey: ["pull-request-labels", runId, number] as const,
+		queryFn: async () =>
+			PullRequestLabelsResponseSchema.parse(
+				await jsonFetch(prPath(runId, `/labels?number=${number}`)),
+			).labels,
+	};
+}
+
+/** Every label defined on the repository. */
+export function repositoryLabelsQueryOptions(runId: string) {
+	return {
+		queryKey: ["repository-labels", runId] as const,
+		queryFn: async () =>
+			RepositoryLabelsResponseSchema.parse(await jsonFetch(prPath(runId, "/labels/repository")))
+				.labels,
+	};
+}
+
+export function addLabelsMutationOptions(runId: string) {
+	return {
+		mutationFn: (v: RepoVars & { number: number; labels: string[] }) =>
+			write(runId, "/labels", "POST", { number: v.number, labels: v.labels }),
+	};
+}
+
+export function removeLabelMutationOptions(runId: string) {
+	return {
+		mutationFn: (v: RepoVars & { number: number; label: string }) =>
+			write(runId, "/labels", "DELETE", { number: v.number, label: v.label }),
 	};
 }

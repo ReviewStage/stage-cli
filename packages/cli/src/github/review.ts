@@ -388,6 +388,15 @@ const DISCARD_REVIEW = `mutation DiscardReview($reviewId: ID!) {
   }
 }`;
 
+const GET_REVIEW_STATE = `query GetReviewState($reviewId: ID!) {
+  node(id: $reviewId) {
+    __typename
+    ... on PullRequestReview {
+      state
+    }
+  }
+}`;
+
 const RESOLVE_THREAD = `mutation ResolveThread($threadId: ID!) {
   resolveReviewThread(input: { threadId: $threadId }) { thread { id } }
 }`;
@@ -561,7 +570,79 @@ export async function deleteReviewComment(repoRoot: string, commentNodeId: strin
 	await writeGraphql(repoRoot, DELETE_REVIEW_COMMENT, { commentId: commentNodeId });
 }
 
-/** Submit the pending review with the chosen event (Comment / Approve / Request changes). */
+/**
+ * The review being submitted no longer exists or is no longer PENDING on GitHub —
+ * it was submitted or discarded from another session. Recoverable: the caller can
+ * re-read review state and retry against a live pending review.
+ */
+export class GitHubReviewNotPendingError extends Error {
+	constructor(message: string, cause: Error) {
+		super(message, { cause });
+		this.name = "GitHubReviewNotPendingError";
+	}
+}
+
+const ReviewStateSchema = z.object({
+	data: z.object({
+		node: z.object({ __typename: z.string(), state: z.string().optional() }).nullable(),
+	}),
+});
+
+const SubmittedReviewSchema = z.object({
+	data: z.object({
+		submitPullRequestReview: z
+			.object({ pullRequestReview: z.object({ id: z.string() }).nullable() })
+			.nullable(),
+	}),
+});
+
+/**
+ * A submit failed; check whether it failed because the review is no longer
+ * pending. Throws `GitHubReviewNotPendingError` when the review node is gone or
+ * has left the PENDING state, otherwise rethrows the original failure (including
+ * when the state lookup itself fails).
+ */
+async function rethrowIfReviewNotPending(
+	repoRoot: string,
+	reviewNodeId: string,
+	cause: Error,
+): Promise<never> {
+	let reviewState: z.infer<typeof ReviewStateSchema>;
+	try {
+		const stdout = await ghReadOrThrow(
+			["api", "graphql", "-f", `query=${GET_REVIEW_STATE}`, "-f", `reviewId=${reviewNodeId}`],
+			repoRoot,
+		);
+		reviewState = ReviewStateSchema.parse(JSON.parse(stdout));
+	} catch {
+		throw cause;
+	}
+
+	const node = reviewState.data.node;
+	if (node === null || node.__typename !== "PullRequestReview") {
+		throw new GitHubReviewNotPendingError(
+			`Review ${reviewNodeId} is no longer pending. ` +
+				"It was likely submitted or discarded from another session.",
+			cause,
+		);
+	}
+	if (node.state !== PENDING_STATE) {
+		throw new GitHubReviewNotPendingError(
+			`Review ${reviewNodeId} is no longer pending (state: ${node.state}). ` +
+				"It was likely submitted or discarded from another session.",
+			cause,
+		);
+	}
+	throw cause;
+}
+
+/**
+ * Submit the pending review with the chosen event (Comment / Approve / Request
+ * changes). When GitHub rejects the mutation (or returns a null review) because
+ * the pending review was submitted or discarded from another session, this
+ * throws `GitHubReviewNotPendingError` so callers can recover instead of
+ * surfacing the raw GraphQL failure.
+ */
 export async function submitReview(
 	repoRoot: string,
 	pullRequestNodeId: string,
@@ -569,12 +650,33 @@ export async function submitReview(
 	event: ReviewEvent,
 	body: string,
 ): Promise<void> {
-	await writeGraphql(repoRoot, SUBMIT_REVIEW, {
-		pullRequestId: pullRequestNodeId,
-		reviewId: reviewNodeId,
-		event,
-		body,
-	});
+	let stdout: string;
+	try {
+		stdout = await writeGraphql(repoRoot, SUBMIT_REVIEW, {
+			pullRequestId: pullRequestNodeId,
+			reviewId: reviewNodeId,
+			event,
+			body,
+		});
+	} catch (error) {
+		// gh exits non-zero when GitHub rejects the mutation (e.g. "Could not approve
+		// pull request review." for a review submitted elsewhere) — check whether the
+		// review is still pending before surfacing the raw failure.
+		if (error instanceof Error) {
+			return await rethrowIfReviewNotPending(repoRoot, reviewNodeId, error);
+		}
+		throw error;
+	}
+	const parsed = SubmittedReviewSchema.safeParse(JSON.parse(stdout));
+	if (parsed.success && parsed.data.data.submitPullRequestReview?.pullRequestReview === null) {
+		return await rethrowIfReviewNotPending(
+			repoRoot,
+			reviewNodeId,
+			new Error(
+				`submitPullRequestReview returned null pullRequestReview (pull request: ${pullRequestNodeId})`,
+			),
+		);
+	}
 }
 
 /** Throw away the pending review and all its draft comments. */

@@ -9,6 +9,7 @@ import { getRawDiffForScope, readRepoContext, readRepoRoot } from "./git.js";
 import { commentRoutes } from "./routes/comments.js";
 import { diffRoutes } from "./routes/diff.js";
 import { imageProxyRoutes } from "./routes/image-proxy.js";
+import { labelRoutes } from "./routes/labels.js";
 import { pullRequestRoutes } from "./routes/pull-request.js";
 import { pullRequestMutationRoutes } from "./routes/pull-request-mutations.js";
 import { reviewRoutes } from "./routes/review.js";
@@ -46,6 +47,7 @@ export async function show(jsonPath: string, options: DiffScopeOptions): Promise
 			...diffRoutes(db),
 			...pullRequestRoutes(db),
 			...pullRequestMutationRoutes(db),
+			...labelRoutes(db),
 			...imageProxyRoutes(),
 		],
 	});

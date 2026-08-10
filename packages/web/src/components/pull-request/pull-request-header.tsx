@@ -11,6 +11,7 @@ import { Check, GitBranch, Github, Pencil, ScanSearch, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { CIChecks } from "@/components/pull-request/ci-checks";
+import { Labels } from "@/components/pull-request/labels";
 import { MergeStatus } from "@/components/pull-request/merge-status";
 import { PullRequestStatus } from "@/components/pull-request/pull-request-status";
 import { Reviewers } from "@/components/pull-request/reviewers";
@@ -329,6 +330,7 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 						</>
 					)}
 					<Reviewers />
+					<Labels />
 				</div>
 			</header>
 

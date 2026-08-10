@@ -1,4 +1,11 @@
 export {
+	addLabelsToPullRequest,
+	type GitHubLabel,
+	listPullRequestLabels,
+	listRepositoryLabels,
+	removeLabelFromPullRequest,
+} from "./labels.js";
+export {
 	addReviewers,
 	closePullRequest,
 	editTitle,

@@ -242,9 +242,22 @@ interface GhShimOptions {
 	addConcurrentPendingCommentOnThreadFailure?: boolean;
 	failAddReply?: boolean;
 	failDiscardAfterWrite?: boolean;
+	/**
+	 * The first SubmitReview mutation fails like GitHub rejecting a stale pending
+	 * review, and the pending review (with its draft comments) disappears from the
+	 * review fixture — subsequent submits succeed.
+	 */
+	failSubmitReviewOnce?: boolean;
 	mergeBaseOid?: string;
 	noPullRequest?: boolean;
 	persistCreatedReview?: boolean;
+	/**
+	 * GetReviewState's answer for the stale review: a review state string,
+	 * `null` for a deleted node, or omit for `"PENDING"`.
+	 */
+	reviewStateAfterSubmit?: string | null;
+	/** REST `pulls/:number/reviews` pages (`--paginate --slurp` shape: array of pages). */
+	restReviews?: unknown;
 	reviewQueryDelayMs?: number;
 }
 
@@ -312,6 +325,14 @@ export class ReviewRouteHarness {
 		const reviewPath = path.join(this.tmpDir, "review.json");
 		await fs.writeFile(reviewPath, JSON.stringify(reviewResult));
 		const promotionThread = makePromotionThread("PENDING");
+		const reviewStateNode =
+			options.reviewStateAfterSubmit === null
+				? null
+				: {
+						__typename: "PullRequestReview",
+						state: options.reviewStateAfterSubmit ?? "PENDING",
+					};
+		const submitFailMarker = path.join(this.tmpDir, "submit-fail-marker");
 		const shim = `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -344,6 +365,12 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 ) {
   fs.appendFileSync(log, "create-immediate-comment " + fields.replaceAll("\\n", "\\\\n") + "\\n");
   emit({ id: 123, node_id: "COMMENT_immediate" });
+} else if (args.some((arg) => arg.includes("/pulls/") && arg.endsWith("/reviews"))) {
+  fs.appendFileSync(log, "rest-reviews\\n");
+  emit(${JSON.stringify(options.restReviews ?? [])});
+} else if (query.includes("query GetReviewState")) {
+  fs.appendFileSync(log, "review-state\\n");
+  emit({ data: { node: ${JSON.stringify(reviewStateNode)} } });
 } else if (query.includes("query GetReview")) {
   sleep(${options.reviewQueryDelayMs ?? 0});
   const commentFields = query.slice(query.indexOf("comments(first:"), query.indexOf("author {"));
@@ -410,6 +437,21 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   if (${options.failAddReply ? "true" : "false"}) { process.stderr.write("gh: reply failed\\n"); process.exit(1); }
   emit({ data: { addPullRequestReviewThreadReply: { comment: { id: "C" } } } });
 } else if (query.includes("mutation SubmitReview")) {
+  const submitFailMarker = ${JSON.stringify(submitFailMarker)};
+  if (${options.failSubmitReviewOnce ? "true" : "false"} && !fs.existsSync(submitFailMarker)) {
+    fs.writeFileSync(submitFailMarker, "1");
+    fs.appendFileSync(log, "submit-fail " + fields + "\\n");
+    // The stale review (and its drafts) are gone from GitHub's point of view.
+    const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+    review.data.repository.pullRequest.reviews.nodes = [];
+    review.data.repository.pullRequest.reviewThreads.nodes = review.data.repository.pullRequest.reviewThreads.nodes.flatMap((thread) => {
+      thread.comments.nodes = thread.comments.nodes.filter((comment) => comment.pullRequestReview.state !== "PENDING");
+      return thread.comments.nodes.length === 0 ? [] : [thread];
+    });
+    fs.writeFileSync(reviewPath, JSON.stringify(review));
+    process.stderr.write("GraphQL: Could not approve pull request review. (submitPullRequestReview)\\n");
+    process.exit(1);
+  }
   fs.appendFileSync(log, "submit " + fields + "\\n");
   emit({ data: { submitPullRequestReview: { pullRequestReview: { id: "R" } } } });
 } else {

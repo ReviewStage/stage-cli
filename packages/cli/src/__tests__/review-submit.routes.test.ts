@@ -85,6 +85,97 @@ describe("review API — submission", () => {
 		expect((await harness.logLines()).join("\n")).not.toMatch(/create-review|submit/);
 	});
 
+	it("recovers from a stale pending review by opening a fresh review and resubmitting", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, {
+			failSubmitReviewOnce: true,
+			reviewStateAfterSubmit: "APPROVED",
+		});
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/submit`,
+			{ event: "APPROVE", body: "LGTM" },
+		);
+
+		expect(res.status).toBe(200);
+		const log = await harness.logLines();
+		expect(log.some((line) => line.startsWith("submit-fail"))).toBe(true);
+		expect(log).toContain("review-state");
+		expect(log.some((line) => line.startsWith("create-review"))).toBe(true);
+		expect(log.some((line) => line.startsWith("submit "))).toBe(true);
+	});
+
+	it("recovers when the stale review node was deleted entirely", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, {
+			failSubmitReviewOnce: true,
+			reviewStateAfterSubmit: null,
+		});
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/submit`,
+			{ event: "APPROVE", body: "" },
+		);
+
+		expect(res.status).toBe(200);
+		const log = await harness.logLines();
+		expect(log.some((line) => line.startsWith("create-review"))).toBe(true);
+		expect(log.some((line) => line.startsWith("submit "))).toBe(true);
+	});
+
+	it("does not duplicate a decision already submitted from another session", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, {
+			failSubmitReviewOnce: true,
+			reviewStateAfterSubmit: "APPROVED",
+			restReviews: [
+				[
+					{
+						user: { login: "octocat", type: "User", avatar_url: "https://x/o.png" },
+						state: "APPROVED",
+					},
+				],
+			],
+		});
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/submit`,
+			{ event: "APPROVE", body: "LGTM" },
+		);
+
+		expect(res.status).toBe(200);
+		const log = await harness.logLines();
+		expect(log.some((line) => line.startsWith("submit-fail"))).toBe(true);
+		expect(log).toContain("rest-reviews");
+		expect(log.some((line) => line.startsWith("create-review"))).toBe(false);
+		expect(log.some((line) => line.startsWith("submit "))).toBe(false);
+	});
+
+	it("surfaces the original failure when the review is still pending", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, {
+			failSubmitReviewOnce: true,
+			reviewStateAfterSubmit: "PENDING",
+		});
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/submit`,
+			{ event: "APPROVE", body: "LGTM" },
+		);
+
+		expect(res.status).toBe(500);
+		expect(JSON.parse(res.body).error).toMatch(/could not approve pull request review/i);
+		expect((await harness.logLines()).some((line) => line.startsWith("create-review"))).toBe(false);
+	});
+
 	it("allows an existing pending summary to be cleared", async () => {
 		await harness.writeGhShim(makeSummaryOnlyPendingReview());
 		const runId = harness.insertRun();
