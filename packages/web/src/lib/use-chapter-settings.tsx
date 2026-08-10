@@ -58,6 +58,12 @@ function isChapterViewMode(value: string): value is ChapterViewMode {
 	return CHAPTER_VIEW_MODES.has(value);
 }
 
+const PANEL_POSITIONS = new Set<string>(Object.values(PANEL_POSITION));
+
+function isPanelPosition(value: string): value is PanelPosition {
+	return PANEL_POSITIONS.has(value);
+}
+
 interface ChapterSettingsContextValue {
 	panelPosition: PanelPosition;
 	setPanelPosition: (position: PanelPosition) => void;
@@ -70,10 +76,11 @@ interface ChapterSettingsContextValue {
 const ChapterSettingsContext = createContext<ChapterSettingsContextValue | null>(null);
 
 export function ChapterSettingsProvider({ children }: { children: ReactNode }) {
-	const [panelPosition, setPanelPosition] = useLocalStorage<PanelPosition>(
+	const [rawPanelPosition, setPanelPosition] = useLocalStorage<string>(
 		CHAPTER_PANEL_POSITION_STORAGE_KEY,
 		PANEL_POSITION.LEFT,
 	);
+	const panelPosition = isPanelPosition(rawPanelPosition) ? rawPanelPosition : PANEL_POSITION.LEFT;
 	const [showWhatToReview, setShowWhatToReview] = useLocalStorage<boolean>(
 		CHAPTER_SHOW_WHAT_TO_REVIEW_STORAGE_KEY,
 		true,

@@ -28,31 +28,31 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 	const files = stdout.split("\0").filter(Boolean);
 	if (files.length === 0) return "";
 
-	const patches = await Promise.all(
-		files.map(async (file) => {
-			try {
-				await execFileAsync(
-					"git",
-					[
-						"-c",
-						"core.quotepath=off",
-						"diff",
-						"--no-index",
-						"--no-color",
-						"--src-prefix=a/",
-						"--dst-prefix=b/",
-						"--",
-						"/dev/null",
-						file,
-					],
-					{ cwd, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES },
-				);
-				return "";
-			} catch (err: unknown) {
-				return hasStringStdout(err) ? err.stdout : "";
-			}
-		}),
-	);
+	// Sequential like git.ts's getUntrackedDiff: one child process per file at
+	// a time, so thousands of untracked files can't exhaust processes/memory.
+	const patches: string[] = [];
+	for (const file of files) {
+		try {
+			await execFileAsync(
+				"git",
+				[
+					"-c",
+					"core.quotepath=off",
+					"diff",
+					"--no-index",
+					"--no-color",
+					"--src-prefix=a/",
+					"--dst-prefix=b/",
+					"--",
+					"/dev/null",
+					file,
+				],
+				{ cwd, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES },
+			);
+		} catch (err: unknown) {
+			if (hasStringStdout(err)) patches.push(err.stdout);
+		}
+	}
 	return patches.filter(Boolean).join("\n");
 }
 

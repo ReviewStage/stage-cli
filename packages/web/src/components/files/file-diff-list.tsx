@@ -364,8 +364,13 @@ export function resolveFileContent(
 interface FileDiffSectionProps {
 	entry: FileDiffEntry;
 	content?: FileContent;
-	/** Container element id; defaults to the Files tab's `file-${path}` convention. */
-	containerId?: string;
+	/**
+	 * Container element id; defaults to the Files tab's `file-${path}`
+	 * convention. Pass null to render no id (continuous mode locates sections
+	 * via data attributes instead, and the same file can appear in several
+	 * chapter sections, so per-chapter ids would collide or be ambiguous).
+	 */
+	containerId?: string | null;
 	isViewed: boolean;
 	isFocused: boolean;
 	onToggleViewed?: (path: string) => void;
@@ -400,7 +405,11 @@ export const FileDiffSection = memo(function FileDiffSection({
 		onToggleViewed?.(file.path);
 	}, [onToggleViewed, file.path]);
 
-	const isImage = isImageFile(file.path);
+	// A symlink named logo.png is a one-line target-path change, not image
+	// data; git marks it with mode 120000, and rendering it as an image would
+	// show a broken or misleading picture instead of the link edit.
+	const isSymlink = diff.mode === "120000" || diff.prevMode === "120000";
+	const isImage = !isSymlink && isImageFile(file.path);
 	const isPreviewOnlyFile = isFullFilePreview(entry);
 	// Joining the full line arrays is only needed for the two special renderers.
 	// The raw content entry wins when present: it covers binary images (base64)
@@ -457,7 +466,7 @@ export const FileDiffSection = memo(function FileDiffSection({
 	return (
 		<div
 			ref={containerRef}
-			id={containerId ?? `file-${file.path}`}
+			id={containerId === null ? undefined : (containerId ?? `file-${file.path}`)}
 			data-focused-file={isFocused ? "true" : undefined}
 			className={cn("rounded-lg", isFocused && "outline-2 outline-primary/70")}
 		>
@@ -485,6 +494,7 @@ export const FileDiffSection = memo(function FileDiffSection({
 					) : (
 						<PierreDiffViewer
 							fileDiff={previewDiff ?? diff}
+							anchorHunks={previewDiff ? diff.hunks : undefined}
 							filePath={file.path}
 							// Full-file previews promise the complete file, but Pierre still
 							// collapses their single context-only hunk past its unchanged-line

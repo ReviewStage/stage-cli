@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 
 // Repository-level custom instructions (persistent, configured in repo settings)
@@ -50,5 +50,14 @@ export function formatInstructionsBlock(instructions: string | null | undefined)
 export function loadStageInstructions(repoRoot: string): string | null {
 	const instructionsPath = path.join(repoRoot, ".stageinstructions");
 	if (!existsSync(instructionsPath)) return null;
-	return readFileSync(instructionsPath, "utf8");
+	// A committed symlink could point outside the checkout and copy arbitrary
+	// user-readable files into the generation prompt; require the real path to
+	// stay inside the repository.
+	const real = realpathSync(instructionsPath);
+	const rel = path.relative(realpathSync(repoRoot), real);
+	if (rel.startsWith("..") || path.isAbsolute(rel)) {
+		console.error(".stageinstructions resolves outside the repository; ignoring it");
+		return null;
+	}
+	return readFileSync(real, "utf8");
 }

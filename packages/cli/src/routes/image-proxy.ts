@@ -5,6 +5,7 @@ import { enforceSameOrigin, query } from "./pull-request-shared.js";
 
 const MAX_IMAGE_SIZE = 25 * 1024 * 1024; // 25 MB
 const GH_TOKEN_TIMEOUT_MS = 10_000;
+const UPSTREAM_FETCH_TIMEOUT_MS = 30_000;
 
 class ImageTooLargeError extends Error {}
 
@@ -129,9 +130,13 @@ export function imageProxyRoutes(): Route[] {
 				const token = await getGitHubToken();
 				// Node's fetch strips the Authorization header on cross-origin
 				// redirects, so the token never reaches GitHub's CDN hosts.
+				// Hosted's serverless runtime enforces an execution deadline for it;
+				// this long-lived local server needs its own so a stalled upstream
+				// can't accumulate stuck requests.
 				const upstream = await fetch(imageUrl, {
 					redirect: "follow",
 					headers: token ? { authorization: `Bearer ${token}` } : undefined,
+					signal: AbortSignal.timeout(UPSTREAM_FETCH_TIMEOUT_MS),
 				});
 
 				if (!upstream.ok) {
@@ -153,6 +158,10 @@ export function imageProxyRoutes(): Route[] {
 				} catch (error) {
 					if (error instanceof ImageTooLargeError) {
 						writeJson(res, 413, { error: "Image too large" });
+						return;
+					}
+					if (error instanceof DOMException && error.name === "TimeoutError") {
+						writeJson(res, 502, { error: "Upstream image fetch timed out" });
 						return;
 					}
 					throw error;

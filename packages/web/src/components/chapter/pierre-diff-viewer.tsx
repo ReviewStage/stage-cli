@@ -210,6 +210,12 @@ type PierreDiffViewerProps = {
 	filePath?: string;
 	selectedLines?: SelectedLineRange | null;
 	expandUnchanged?: boolean;
+	/**
+	 * Hunks GitHub review comments may anchor to, when they differ from the
+	 * rendered diff (full-file previews render synthetic context hunks that
+	 * GitHub would reject as anchors). Defaults to the rendered diff's hunks.
+	 */
+	anchorHunks?: Hunk[];
 	/** All key change line refs grouped by file path. */
 	allLineRefsByFile?: Map<string, AnnotatedLineRef[]> | null;
 	/** Currently focused key change line refs grouped by file path. */
@@ -279,6 +285,7 @@ export function PierreDiffViewer({
 	filePath,
 	selectedLines: selectedLinesProp,
 	expandUnchanged = false,
+	anchorHunks,
 	allLineRefsByFile,
 	focusedLineRefsByFile,
 	focusedKeyChangeId = null,
@@ -324,6 +331,10 @@ export function PierreDiffViewer({
 		() => (fileDiff ? fileDiff.hunks : getSingularPatch(patch).hunks),
 		[fileDiff, patch],
 	);
+	// GitHub can only anchor review comments on real patch hunks; synthetic
+	// full-file preview hunks render fine but must not admit anchors GitHub
+	// would reject on submission.
+	const eligibilityHunks = anchorHunks ?? diffHunks;
 
 	const diffContainerRef = useRef<HTMLDivElement>(null);
 
@@ -485,7 +496,7 @@ export function PierreDiffViewer({
 							{
 								canWriteToGitHub: comments.canWriteToGitHub,
 								hasPendingReview: comments.hasPendingReview,
-								isGitHubAnchor: isGitHubReviewAnchor(diffHunks, draft),
+								isGitHubAnchor: isGitHubReviewAnchor(eligibilityHunks, draft),
 							},
 						);
 			return (
@@ -515,7 +526,7 @@ export function PierreDiffViewer({
 								<ReviewThreadView
 									model={{
 										thread,
-										githubAnchorEligible: isGitHubReviewAnchor(diffHunks, thread),
+										githubAnchorEligible: isGitHubReviewAnchor(eligibilityHunks, thread),
 									}}
 								/>
 							</div>
@@ -569,7 +580,7 @@ export function PierreDiffViewer({
 			drafts,
 			comments.canWriteToGitHub,
 			comments.hasPendingReview,
-			diffHunks,
+			eligibilityHunks,
 			local,
 			startReview,
 			setLocal,

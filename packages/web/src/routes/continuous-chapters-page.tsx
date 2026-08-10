@@ -573,12 +573,15 @@ const ContinuousChapterSection = memo(function ContinuousChapterSection({
 		return ids;
 	}, [files, chapterFilePathSet, view.filePathSet]);
 
-	const collapseResetKey = `${shared.runId}/continuous-chapter/${chapter.id}`;
-	const collapseState = useFileCollapseState(defaultCollapsedIds, filePaths, collapseResetKey);
+	// Identity parts passed separately (AGENTS.md forbids concatenated keys).
+	const collapseState = useFileCollapseState(defaultCollapsedIds, filePaths, [
+		shared.runId,
+		chapter.id,
+	]);
 
 	const scrollToFile = useCallback(
 		(filePath: string) => {
-			const element = document.getElementById(getFileContainerId(chapter.id, filePath));
+			const element = findFileContainer(chapter.id, filePath);
 			if (!element) return;
 			alignElementTopToContentTop(scrollContainer, element);
 		},
@@ -594,7 +597,7 @@ const ContinuousChapterSection = memo(function ContinuousChapterSection({
 
 	const scrollToLine = useCallback(
 		(target: LineRef) => {
-			const container = document.getElementById(getFileContainerId(chapter.id, target.filePath));
+			const container = findFileContainer(chapter.id, target.filePath);
 			if (!container) return;
 
 			cancelPendingLineScroll();
@@ -724,11 +727,16 @@ const ContinuousChapterSection = memo(function ContinuousChapterSection({
 				    id — FileDiffList's default `file-${path}` ids would collide when the
 				    same file appears in multiple chapters of the continuous stream. */}
 				{entries.map((entry) => (
-					<div key={entry.file.path} style={{ paddingTop: 16 }}>
+					<div
+						key={entry.file.path}
+						style={{ paddingTop: 16 }}
+						data-continuous-chapter-id={chapter.id}
+						data-continuous-file-path={entry.file.path}
+					>
 						<FileDiffSection
 							entry={entry}
 							content={resolveFileContent(shared.fileContents, entry)}
-							containerId={getFileContainerId(chapter.id, entry.file.path)}
+							containerId={null}
 							isViewed={view.filePathSet.has(entry.file.path)}
 							isFocused={entry.file.path === focusedFilePath}
 							onToggleViewed={handleToggleFileViewed}
@@ -792,8 +800,15 @@ function ActiveCollapseRegistration({
 	return null;
 }
 
-function getFileContainerId(chapterId: string, filePath: string): string {
-	return `continuous-chapter-${chapterId}-file-${filePath}`;
+/**
+ * Locate a chapter section's file container via paired data attributes —
+ * serializing both identities into one DOM id could collide when a chapter id
+ * and file path embed the delimiter (AGENTS.md forbids concatenated keys).
+ */
+function findFileContainer(chapterId: string, filePath: string): HTMLElement | null {
+	return document.querySelector<HTMLElement>(
+		`[data-continuous-chapter-id="${CSS.escape(chapterId)}"][data-continuous-file-path="${CSS.escape(filePath)}"]`,
+	);
 }
 
 function LoadingState() {
