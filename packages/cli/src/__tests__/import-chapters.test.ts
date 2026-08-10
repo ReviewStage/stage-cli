@@ -44,7 +44,7 @@ describe("chapter import", () => {
 		expect(chapters).toHaveLength(1);
 		expect(chapters[0]?.runId).toBe(result.runId);
 		expect(chapters[0]?.externalId).toMatch(/^[0-9a-f]{24}$/);
-		expect(chapters[0]?.chapterIndex).toBe(1);
+		expect(chapters[0]?.chapterIndex).toBe(0);
 		expect(chapters[0]?.hunkRefs).toEqual([{ filePath: "src/foo.ts", oldStart: 1 }]);
 
 		const keyChanges = db.select().from(keyChange).all();
@@ -189,6 +189,7 @@ describe("chapter import", () => {
 		const db = getDb({ dbPath });
 		const prologue = {
 			motivation: "Dashboards would break during deploys.",
+			rootCause: "Deploys evicted the cache before dashboards could re-render.",
 			outcome: "Dashboards stay up during deploys now.",
 			diagram: "graph LR;\n  Deploy-->Cache-->Dashboard",
 			keyChanges: [
@@ -221,6 +222,69 @@ describe("chapter import", () => {
 
 		const [row] = db.select().from(chapterRun).all();
 		expect(row?.prologue).toBeNull();
+	});
+
+	it("sorts chapters by order and assigns a dense 0-based chapterIndex", () => {
+		const db = getDb({ dbPath });
+		const chapterOver = (id: string, order: number) => ({
+			id,
+			order,
+			title: `Chapter ${id}`,
+			summary: `Summary for ${id}`,
+			hunkRefs: [],
+			keyChanges: [],
+		});
+		insertChaptersFile(
+			db,
+			makeFixture({
+				chapters: [chapterOver("chapter-b", 5), chapterOver("chapter-a", 2)],
+			}),
+			makeRepoContext(),
+		);
+
+		const rows = db.select().from(chapter).all();
+		expect(rows.map((r) => [r.title, r.chapterIndex])).toEqual([
+			["Chapter chapter-a", 0],
+			["Chapter chapter-b", 1],
+		]);
+	});
+
+	it("survives duplicate agent-supplied orders (unique runId+chapterIndex)", () => {
+		const db = getDb({ dbPath });
+		const chapterOver = (id: string) => ({
+			id,
+			order: 1,
+			title: `Chapter ${id}`,
+			summary: `Summary for ${id}`,
+			hunkRefs: [],
+			keyChanges: [],
+		});
+		insertChaptersFile(
+			db,
+			makeFixture({ chapters: [chapterOver("chapter-a"), chapterOver("chapter-b")] }),
+			makeRepoContext(),
+		);
+
+		const rows = db.select().from(chapter).all();
+		expect(rows.map((r) => r.chapterIndex).sort()).toEqual([0, 1]);
+	});
+
+	it("persists riskLevel and stores riskReasons null when empty", () => {
+		const db = getDb({ dbPath });
+		const fixture = makeFixture();
+		const first = fixture.chapters[0];
+		if (!first) throw new Error("fixture missing chapter");
+		first.riskLevel = "high";
+		first.riskReasons = ["Alters auth token handling"];
+		insertChaptersFile(db, fixture, makeRepoContext());
+
+		insertChaptersFile(db, makeFixture(), makeRepoContext());
+
+		const rows = db.select().from(chapter).all();
+		expect(rows[0]?.riskLevel).toBe("high");
+		expect(rows[0]?.riskReasons).toEqual(["Alters auth token handling"]);
+		expect(rows[1]?.riskLevel).toBeNull();
+		expect(rows[1]?.riskReasons).toBeNull();
 	});
 
 	it("uses isolated databases for distinct dbPaths", async () => {

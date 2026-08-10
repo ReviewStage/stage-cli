@@ -1,4 +1,11 @@
-import type { Chapter, ChapterRun, KeyChange } from "@stagereview/types/chapters";
+import type {
+	Chapter,
+	ChapterRun,
+	KeyChange,
+	LineRef,
+	RiskLevel,
+} from "@stagereview/types/chapters";
+import { isValidRiskLevel } from "@stagereview/types/chapters";
 import { asc, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
@@ -23,7 +30,32 @@ function mapKeyChange(kc: KeyChangeRow): KeyChange {
 	};
 }
 
+// Mirrors hosted's mapChapterRow: order keyChanges by the first file they
+// reference (per the chapter's hunkRef file order), then by min startLine
+// within that file, so What-to-Review reads top-to-bottom with the diff.
 function mapChapter(ch: ChapterRow, kcs: KeyChangeRow[]): Chapter {
+	const fileOrder = new Map<string, number>();
+	for (const ref of ch.hunkRefs) {
+		if (!fileOrder.has(ref.filePath)) {
+			fileOrder.set(ref.filePath, fileOrder.size);
+		}
+	}
+
+	const keyChanges = kcs.map(mapKeyChange).sort((a, b) => {
+		const aIndex = minFileIndex(a.lineRefs, fileOrder);
+		const bIndex = minFileIndex(b.lineRefs, fileOrder);
+		if (aIndex !== bIndex) {
+			if (aIndex === undefined) return 1;
+			if (bIndex === undefined) return -1;
+			return aIndex - bIndex;
+		}
+		if (aIndex === undefined) return 0;
+		const tiedFile = fileAtIndex(fileOrder, aIndex);
+		return minStartLineInFile(a.lineRefs, tiedFile) - minStartLineInFile(b.lineRefs, tiedFile);
+	});
+
+	const riskLevel = ch.riskLevel !== null && isValidRiskLevel(ch.riskLevel) ? ch.riskLevel : null;
+
 	return {
 		id: ch.id,
 		externalId: ch.externalId,
@@ -31,8 +63,44 @@ function mapChapter(ch: ChapterRow, kcs: KeyChangeRow[]): Chapter {
 		title: ch.title,
 		summary: ch.summary,
 		hunkRefs: ch.hunkRefs,
-		keyChanges: kcs.map(mapKeyChange),
+		keyChanges,
+		riskLevel,
+		riskReasons: riskReasonsForLevel(riskLevel, ch.riskReasons),
 	};
+}
+
+function riskReasonsForLevel(riskLevel: RiskLevel | null, riskReasons: string[] | null): string[] {
+	if (riskLevel === null) {
+		return [];
+	}
+	if (riskReasons === null) {
+		return [];
+	}
+	return riskReasons;
+}
+
+function minFileIndex(lineRefs: LineRef[], fileOrder: Map<string, number>): number | undefined {
+	let min: number | undefined;
+	for (const ref of lineRefs) {
+		const idx = fileOrder.get(ref.filePath);
+		if (idx !== undefined && (min === undefined || idx < min)) min = idx;
+	}
+	return min;
+}
+
+function fileAtIndex(fileOrder: Map<string, number>, index: number): string {
+	for (const [path, idx] of fileOrder) {
+		if (idx === index) return path;
+	}
+	throw new Error(`No file at index ${index}`);
+}
+
+function minStartLineInFile(lineRefs: LineRef[], filePath: string): number {
+	let min = Number.POSITIVE_INFINITY;
+	for (const ref of lineRefs) {
+		if (ref.filePath === filePath && ref.startLine < min) min = ref.startLine;
+	}
+	return min;
 }
 
 function mapRun(run: ChapterRunRow): ChapterRun {

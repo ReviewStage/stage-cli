@@ -5,9 +5,10 @@ import { buildOtherChangesChapter } from "./build-other-changes.js";
 import { closeDb, getDb } from "./db/client.js";
 import { parseGitDiff } from "./diff-parser.js";
 import { filterFilesForLlm, loadStageIgnore } from "./filter-files.js";
-import { readRepoContext, readRepoRoot } from "./git.js";
+import { getRawDiffForScope, readRepoContext, readRepoRoot } from "./git.js";
 import { commentRoutes } from "./routes/comments.js";
 import { diffRoutes } from "./routes/diff.js";
+import { imageProxyRoutes } from "./routes/image-proxy.js";
 import { pullRequestRoutes } from "./routes/pull-request.js";
 import { pullRequestMutationRoutes } from "./routes/pull-request-mutations.js";
 import { reviewRoutes } from "./routes/review.js";
@@ -22,10 +23,12 @@ import {
 	type ChaptersFile,
 	ChaptersFileSchema,
 	DIFF_SIDE,
+	HEADER_ONLY_OLD_START,
 	type Scope,
 } from "./schema.js";
 import { type DiffScopeOptions, pullRequestNumberFromRef, resolveDiffScope } from "./scope.js";
 import { LOOPBACK_HOST, startServer } from "./server.js";
+import { unescapeLiteralNewlines } from "./unescape.js";
 
 export async function show(jsonPath: string, options: DiffScopeOptions): Promise<void> {
 	const db = getDb();
@@ -43,6 +46,7 @@ export async function show(jsonPath: string, options: DiffScopeOptions): Promise
 			...diffRoutes(db),
 			...pullRequestRoutes(db),
 			...pullRequestMutationRoutes(db),
+			...imageProxyRoutes(),
 		],
 	});
 	const { port } = handle;
@@ -84,7 +88,7 @@ async function buildChaptersFile(
 	const fullResult = ChaptersFileSchema.safeParse(parsed);
 	if (fullResult.success) {
 		const prNumber = options.pr === undefined ? null : pullRequestNumberFromRef(options.pr);
-		return { chaptersFile: fullResult.data, prNumber };
+		return { chaptersFile: revalidateChaptersFile(fullResult.data), prNumber };
 	}
 
 	const agentResult = AgentOutputSchema.safeParse(parsed);
@@ -96,6 +100,20 @@ async function buildChaptersFile(
 	throw fullResult.error;
 }
 
+/**
+ * Pre-assembled chapters files don't skip validation: recompute the diff their
+ * scope describes and run the same hunk-coverage check and lineRef repair the
+ * agent-output path gets. Because these files already include the other-changes
+ * chapter, coverage is checked against every file in the diff — with the
+ * HEADER_ONLY_OLD_START sentinel expected for files that have no hunks.
+ */
+function revalidateChaptersFile(file: ChaptersFile): ChaptersFile {
+	const allFiles = parseGitDiff(getRawDiffForScope(file.scope));
+	validateHunkCoverage(expectedHunkStarts(allFiles, { includeHeaderOnly: true }), file.chapters);
+	const chapters = unescapeChapters(sanitizeLineRefs(file.chapters, allFiles));
+	return { ...file, chapters };
+}
+
 function assembleChaptersFile(
 	agentOutput: AgentOutput,
 	scope: Scope,
@@ -105,13 +123,17 @@ function assembleChaptersFile(
 	const stageIgnore = loadStageIgnore(readRepoRoot());
 	const { files: filteredFiles, excludedByPath } = filterFilesForLlm(allFiles, stageIgnore);
 
-	validateHunkCoverage(filteredFiles, agentOutput.chapters);
-	const sanitized = sanitizeLineRefs(agentOutput.chapters, filteredFiles);
+	validateHunkCoverage(
+		expectedHunkStarts(filteredFiles, { includeHeaderOnly: false }),
+		agentOutput.chapters,
+	);
+	const sanitized = unescapeChapters(sanitizeLineRefs(agentOutput.chapters, filteredFiles));
 
 	const chapters = [...sanitized];
 	const otherChanges = buildOtherChangesChapter(allFiles, excludedByPath);
 	if (otherChanges) {
-		chapters.push({ ...otherChanges, order: chapters.length + 1 });
+		const maxOrder = chapters.reduce((max, c) => Math.max(max, c.order), 0);
+		chapters.push({ ...otherChanges, order: maxOrder + 1 });
 	}
 
 	return {
@@ -122,21 +144,43 @@ function assembleChaptersFile(
 	};
 }
 
-function validateHunkCoverage(
-	filteredFiles: { path: string; hunks: { oldStart: number }[] }[],
-	chapters: Chapter[],
-): void {
+function unescapeChapters(chapters: Chapter[]): Chapter[] {
+	return chapters.map((chapter) => ({
+		...chapter,
+		summary: unescapeLiteralNewlines(chapter.summary),
+		keyChanges: chapter.keyChanges.map((kc) => ({
+			...kc,
+			content: unescapeLiteralNewlines(kc.content),
+		})),
+	}));
+}
+
+/**
+ * The set of hunkRefs a run's chapters must cover, keyed by file path. With
+ * `includeHeaderOnly`, files without hunks (pure renames/moves, binary files)
+ * expect the HEADER_ONLY_OLD_START sentinel their other-changes refs carry.
+ */
+function expectedHunkStarts(
+	files: { path: string; hunks: { oldStart: number }[] }[],
+	{ includeHeaderOnly }: { includeHeaderOnly: boolean },
+): Map<string, Set<number>> {
 	const expected = new Map<string, Set<number>>();
-	for (const file of filteredFiles) {
+	for (const file of files) {
 		const starts = new Set<number>();
 		for (const hunk of file.hunks) {
 			starts.add(hunk.oldStart);
+		}
+		if (starts.size === 0 && includeHeaderOnly) {
+			starts.add(HEADER_ONLY_OLD_START);
 		}
 		if (starts.size > 0) {
 			expected.set(file.path, starts);
 		}
 	}
+	return expected;
+}
 
+function validateHunkCoverage(expected: Map<string, Set<number>>, chapters: Chapter[]): void {
 	const actual = new Map<string, Map<number, number>>();
 	const duplicates: string[] = [];
 	for (const chapter of chapters) {

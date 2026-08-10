@@ -1,3 +1,4 @@
+import { HEADER_ONLY_OLD_START } from "@stagereview/types/chapters";
 import type { PullRequestFile } from "@stagereview/types/parsed-diff";
 import { describe, expect, it } from "vitest";
 import { buildOtherChangesChapter } from "../build-other-changes.js";
@@ -25,7 +26,7 @@ function createFile(overrides?: Partial<PullRequestFile>): PullRequestFile {
 }
 
 describe("buildOtherChangesChapter", () => {
-	it("returns null when nothing was excluded", () => {
+	it("returns null when no files are excluded and all files have hunks", () => {
 		const result = buildOtherChangesChapter([createFile()], []);
 		expect(result).toBeNull();
 	});
@@ -65,15 +66,28 @@ describe("buildOtherChangesChapter", () => {
 		]);
 	});
 
-	it("emits no hunkRefs for binary-only excluded files", () => {
+	it("emits sentinel hunkRef for excluded files without hunks", () => {
 		const binary = createFile({ path: "public/logo.png", hunks: [] });
 
 		const result = buildOtherChangesChapter([binary], ["public/logo.png"]);
 
-		expect(result?.hunkRefs).toEqual([]);
+		expect(result?.hunkRefs).toEqual([
+			{ filePath: "public/logo.png", oldStart: HEADER_ONLY_OLD_START },
+		]);
 	});
 
-	it("ignores files not in excludedByPath", () => {
+	it("emits sentinel hunkRef for non-excluded files without hunks", () => {
+		const moved = createFile({ path: "src/moved.ts", status: "moved", hunks: [] });
+
+		const result = buildOtherChangesChapter([moved], []);
+
+		expect(result).not.toBeNull();
+		expect(result?.hunkRefs).toEqual([
+			{ filePath: "src/moved.ts", oldStart: HEADER_ONLY_OLD_START },
+		]);
+	});
+
+	it("skips non-excluded files with hunks (handled by LLM)", () => {
 		const code = createFile({ path: "src/app.ts" });
 		const lockfile = createFile({ path: "pnpm-lock.yaml" });
 
@@ -86,6 +100,7 @@ describe("buildOtherChangesChapter", () => {
 		const lockfile = createFile({ path: "pnpm-lock.yaml" });
 		const image = createFile({ path: "public/logo.png" });
 
+		// excludedByPath has image first, but allFiles has lockfile first.
 		const result = buildOtherChangesChapter(
 			[lockfile, image],
 			["public/logo.png", "pnpm-lock.yaml"],
@@ -95,5 +110,21 @@ describe("buildOtherChangesChapter", () => {
 			"pnpm-lock.yaml",
 			"public/logo.png",
 		]);
+	});
+
+	it("includes both excluded and hunkless non-excluded files", () => {
+		const code = createFile({ path: "src/app.ts" });
+		const lockfile = createFile({ path: "pnpm-lock.yaml" });
+		const moved = createFile({ path: "src/moved.ts", status: "moved", hunks: [] });
+
+		const result = buildOtherChangesChapter([code, lockfile, moved], ["pnpm-lock.yaml"]);
+
+		expect(result?.hunkRefs.map((ref) => ref.filePath)).toEqual(["pnpm-lock.yaml", "src/moved.ts"]);
+	});
+
+	it("carries null riskLevel and empty riskReasons", () => {
+		const result = buildOtherChangesChapter([createFile({ path: "yarn.lock" })], ["yarn.lock"]);
+		expect(result?.riskLevel).toBeNull();
+		expect(result?.riskReasons).toEqual([]);
 	});
 });

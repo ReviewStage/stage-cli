@@ -27,6 +27,7 @@ interface DiffCommandOptions {
 	compare?: string;
 	ref?: string;
 	pr?: string;
+	instructions?: string;
 }
 
 /**
@@ -57,9 +58,16 @@ program
 	.option("--base <ref>", "Base ref to diff against (default: auto-detect main/master)")
 	.option("--compare <ref>", "Compare ref to diff against --base")
 	.option("--pr <ref>", "Review a GitHub pull request by number or URL")
+	.option(
+		"--instructions <text>",
+		"One-off instructions appended to the generation prompt (max 1000 characters)",
+	)
 	.addOption(refOption)
 	.action(async (refs: string[], opts: DiffCommandOptions) => {
-		const filePath = await runPrep(toDiffScopeOptions(refs, opts));
+		const filePath = await runPrep({
+			...toDiffScopeOptions(refs, opts),
+			instructions: opts.instructions,
+		});
 		process.stdout.write(filePath);
 	});
 

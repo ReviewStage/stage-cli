@@ -238,24 +238,80 @@ describe("ChaptersFileSchema", () => {
 		expectInvalidAt(makeFixture({ prologue: { motivation: "test" } }), "prologue.keyChanges");
 	});
 
-	it("rejects line references the UI cannot anchor safely", () => {
-		expectInvalidAt(
+	it("accepts inverted and empty line references (repaired by sanitizeLineRefs, matching hosted)", () => {
+		expect(() =>
+			ChaptersFileSchema.parse(
+				makeFixture({
+					chapters: [
+						makeChapter({
+							keyChanges: [
+								makeKeyChange({ lineRefs: [makeLineRef({ startLine: 100, endLine: 5 })] }),
+							],
+						}),
+					],
+				}),
+			),
+		).not.toThrow();
+		expect(() =>
+			ChaptersFileSchema.parse(
+				makeFixture({
+					chapters: [makeChapter({ keyChanges: [makeKeyChange({ lineRefs: [] })] })],
+				}),
+			),
+		).not.toThrow();
+	});
+
+	it("defaults riskLevel to null and riskReasons to [] when omitted", () => {
+		const result = ChaptersFileSchema.parse(makeFixture());
+		expect(result.chapters[0]?.riskLevel).toBeNull();
+		expect(result.chapters[0]?.riskReasons).toEqual([]);
+	});
+
+	it("accepts valid risk levels with reasons", () => {
+		const result = ChaptersFileSchema.parse(
 			makeFixture({
-				chapters: [
-					makeChapter({
-						keyChanges: [
-							makeKeyChange({ lineRefs: [makeLineRef({ startLine: 100, endLine: 5 })] }),
-						],
-					}),
-				],
+				chapters: [makeChapter({ riskLevel: "high", riskReasons: ["Alters auth token handling"] })],
 			}),
-			"chapters.0.keyChanges.0.lineRefs.0.endLine",
 		);
+		expect(result.chapters[0]?.riskLevel).toBe("high");
+		expect(result.chapters[0]?.riskReasons).toEqual(["Alters auth token handling"]);
+	});
+
+	it("rejects unknown risk levels", () => {
 		expectInvalidAt(
-			makeFixture({
-				chapters: [makeChapter({ keyChanges: [makeKeyChange({ lineRefs: [] })] })],
-			}),
-			"chapters.0.keyChanges.0.lineRefs",
+			makeFixture({ chapters: [makeChapter({ riskLevel: "catastrophic" })] }),
+			"chapters.0.riskLevel",
+		);
+	});
+
+	it("defaults the prologue rootCause to null when omitted", () => {
+		const prologue = {
+			motivation: "Sessions were dropped during password resets.",
+			outcome: "Password reset now preserves the session.",
+			keyChanges: [{ summary: "x", description: "y" }],
+			focusAreas: [
+				{ type: "security", severity: "high", title: "t", description: "d", locations: [] },
+			],
+			complexity: { level: "low", reasoning: "r" },
+		};
+		const result = ChaptersFileSchema.parse(makeFixture({ prologue }));
+		expect(result.prologue?.rootCause).toBeNull();
+	});
+
+	it("preserves the prologue rootCause when present", () => {
+		const prologue = {
+			motivation: "Sessions were dropped during password resets.",
+			rootCause: "The reset flow rotated the token before re-issuing the session cookie.",
+			outcome: "Password reset now preserves the session.",
+			keyChanges: [{ summary: "x", description: "y" }],
+			focusAreas: [
+				{ type: "security", severity: "high", title: "t", description: "d", locations: [] },
+			],
+			complexity: { level: "low", reasoning: "r" },
+		};
+		const result = ChaptersFileSchema.parse(makeFixture({ prologue }));
+		expect(result.prologue?.rootCause).toBe(
+			"The reset flow rotated the token before re-issuing the session cookie.",
 		);
 	});
 });

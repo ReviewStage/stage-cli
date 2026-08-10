@@ -48,18 +48,25 @@ export function insertChaptersFile(
 		// comment routes derive from a chapter_run row.
 		const scopeKey = deriveScopeKey(runValues);
 
+		// Mirrors hosted persistChaptersIdempotent: sort by the agent-supplied
+		// `order`, then assign a dense 0-based chapterIndex from array position so
+		// duplicate or sparse orders can't violate unique(runId, chapterIndex).
+		const sortedChapters = [...file.chapters].sort((a, b) => a.order - b.order);
+
 		let keyChangeCount = 0;
-		for (const c of file.chapters) {
+		for (const [chapterIndex, c] of sortedChapters.entries()) {
 			const [chapterRow] = tx
 				.insert(chapter)
 				.values({
 					runId,
 					externalId: deriveChapterExternalId(scopeKey, c.id),
-					chapterIndex: c.order,
+					chapterIndex,
 					title: c.title,
 					summary: c.summary,
 					hunkRefs: c.hunkRefs,
 					keyChanges: c.keyChanges.map((kc) => kc.content),
+					riskLevel: c.riskLevel,
+					riskReasons: c.riskReasons.length > 0 ? c.riskReasons : null,
 				})
 				.returning({ id: chapter.id })
 				.all();

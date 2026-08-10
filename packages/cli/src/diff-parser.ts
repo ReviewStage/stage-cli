@@ -87,6 +87,17 @@ function transformChange(change: ParseDiffChange): DiffLine {
 	return { type, content, oldLineNumber, newLineNumber };
 }
 
+/**
+ * parse-diff emits "\ No newline at end of file" as an extra change carrying the
+ * same type and line number as the preceding line. It is metadata about the
+ * previous line, not a diff line — keeping it would inflate line counts and
+ * corrupt content reconstructed from hunks. Within a hunk body, only these
+ * markers start with a backslash.
+ */
+function isNoNewlineMarker(change: ParseDiffChange): boolean {
+	return change.content.startsWith("\\");
+}
+
 function transformChunk(chunk: ParseDiffChunk): Hunk {
 	return {
 		header: chunk.content,
@@ -94,7 +105,7 @@ function transformChunk(chunk: ParseDiffChunk): Hunk {
 		newStart: chunk.newStart,
 		oldLines: chunk.oldLines,
 		newLines: chunk.newLines,
-		lines: chunk.changes.map(transformChange),
+		lines: chunk.changes.filter((change) => !isNoNewlineMarker(change)).map(transformChange),
 	};
 }
 
@@ -120,8 +131,8 @@ function extractSymlinkTargets(file: ParseDiffFile): {
 
 	for (const chunk of file.chunks) {
 		for (const change of chunk.changes) {
+			if (isNoNewlineMarker(change)) continue;
 			const content = change.content.replace(/^[+-]/, "").trim();
-			if (content === "\\ No newline at end of file") continue;
 			if (change.type === "add" && file.additions === 1) {
 				symlinkTarget = content;
 			} else if (change.type === "del" && file.deletions === 1) {

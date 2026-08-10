@@ -63,20 +63,24 @@ export function readGitUserName(repoRoot: string): string | null {
 	}
 }
 
+// View-time diffs must force the same a/ b/ prefixes generation-time getRawDiff
+// forces, so users with diff.noprefix=true get consistent patches.
+const DIFF_BASE_ARGS = ["diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/"] as const;
+
 export function buildDiffArgs(run: ChapterRunRow): string[] {
 	if (run.scopeKind === SCOPE_KIND.COMMITTED) {
-		return ["diff", "--no-color", `${run.baseSha}..${run.headSha}`];
+		return [...DIFF_BASE_ARGS, `${run.baseSha}..${run.headSha}`];
 	}
 	if (run.workingTreeRef === null) {
 		throw new Error("workingTree run is missing workingTreeRef");
 	}
 	switch (run.workingTreeRef) {
 		case WORKING_TREE_REF.UNSTAGED:
-			return ["diff", "--no-color"];
+			return [...DIFF_BASE_ARGS];
 		case WORKING_TREE_REF.STAGED:
-			return ["diff", "--no-color", "--cached"];
+			return [...DIFF_BASE_ARGS, "--cached"];
 		case WORKING_TREE_REF.WORK:
-			return ["diff", "--no-color", run.baseSha];
+			return [...DIFF_BASE_ARGS, run.baseSha];
 	}
 }
 
@@ -247,6 +251,17 @@ function workingTreeDiffArgs(ref: WorkingTreeRef, mergeBaseSha: string): string[
 
 function includesUntrackedFiles(ref: WorkingTreeRef): boolean {
 	return ref === WORKING_TREE_REF.WORK;
+}
+
+/**
+ * Recompute the raw diff a scope describes. Used to validate pre-assembled
+ * chapters files (which carry their own scope) against the actual diff.
+ */
+export function getRawDiffForScope(scope: Scope): string {
+	if (scope.kind === SCOPE_KIND.COMMITTED) {
+		return getRawDiff([`${scope.baseSha}..${scope.headSha}`]);
+	}
+	return buildWorkingTreeDiff(scope.ref, scope.mergeBaseSha);
 }
 
 function buildWorkingTreeDiff(ref: WorkingTreeRef, mergeBaseSha: string): string {

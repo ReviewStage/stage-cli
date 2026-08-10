@@ -109,15 +109,16 @@ describe("runs API", () => {
 		};
 		expect(body.run.id).toBe(runId);
 		expect(body.chapters).toHaveLength(2);
-		expect(body.chapters[0]?.order).toBe(1);
+		// chapterIndex is dense and 0-based, assigned from the sorted `order`.
+		expect(body.chapters[0]?.order).toBe(0);
 		expect(body.chapters[0]?.title).toBe("First");
 		expect(body.chapters[0]?.keyChanges).toHaveLength(1);
 		expect(body.chapters[0]?.keyChanges[0]).toMatchObject({ content: "Question?" });
-		expect(body.chapters[1]?.order).toBe(2);
+		expect(body.chapters[1]?.order).toBe(1);
 		expect(body.chapters[1]?.keyChanges).toHaveLength(0);
 	});
 
-	it("returns key_change rows in insertion order (matching hosted stage's natural query order)", async () => {
+	it("orders keyChanges by the chapter's hunkRef file order, then min startLine (hosted mapChapterRow)", async () => {
 		const db = getDb({ dbPath });
 		const fixture = makeFixture({
 			chapters: [
@@ -125,7 +126,57 @@ describe("runs API", () => {
 					id: "chapter-0",
 					order: 1,
 					title: "Multi-key-change",
-					summary: "Insertion-order check",
+					summary: "What-to-Review ordering check",
+					hunkRefs: [
+						{ filePath: "a.ts", oldStart: 1 },
+						{ filePath: "b.ts", oldStart: 1 },
+					],
+					keyChanges: [
+						{
+							content: "second file",
+							lineRefs: [{ filePath: "b.ts", side: "additions", startLine: 1, endLine: 1 }],
+						},
+						{
+							content: "unknown file",
+							lineRefs: [{ filePath: "zzz.ts", side: "additions", startLine: 1, endLine: 1 }],
+						},
+						{
+							content: "first file, later lines",
+							lineRefs: [{ filePath: "a.ts", side: "additions", startLine: 40, endLine: 45 }],
+						},
+						{
+							content: "first file, early lines",
+							lineRefs: [{ filePath: "a.ts", side: "additions", startLine: 2, endLine: 3 }],
+						},
+					],
+				},
+			],
+		});
+		const { runId } = insertChaptersFile(db, fixture, makeRepoContext());
+
+		const { port } = await startWithRoutes();
+		const res = await getJson(port, `/api/runs/${runId}/chapters`);
+
+		const body = res.body as {
+			chapters: Array<{ keyChanges: Array<{ content: string }> }>;
+		};
+		expect(body.chapters[0]?.keyChanges.map((k) => k.content)).toEqual([
+			"first file, early lines",
+			"first file, later lines",
+			"second file",
+			"unknown file",
+		]);
+	});
+
+	it("keeps insertion order when no keyChange references a hunkRef file", async () => {
+		const db = getDb({ dbPath });
+		const fixture = makeFixture({
+			chapters: [
+				{
+					id: "chapter-0",
+					order: 1,
+					title: "Multi-key-change",
+					summary: "Insertion-order fallback",
 					hunkRefs: [],
 					keyChanges: [
 						{
@@ -159,6 +210,44 @@ describe("runs API", () => {
 		]);
 	});
 
+	it("serves riskLevel and riskReasons on the wire, defaulting to null/[]", async () => {
+		const db = getDb({ dbPath });
+		const fixture = makeFixture({
+			chapters: [
+				{
+					id: "chapter-0",
+					order: 1,
+					title: "Risky",
+					summary: "Touches auth",
+					hunkRefs: [],
+					keyChanges: [],
+					riskLevel: "high",
+					riskReasons: ["Alters auth token handling"],
+				},
+				{
+					id: "chapter-1",
+					order: 2,
+					title: "Safe",
+					summary: "Docs only",
+					hunkRefs: [],
+					keyChanges: [],
+				},
+			],
+		});
+		const { runId } = insertChaptersFile(db, fixture, makeRepoContext());
+
+		const { port } = await startWithRoutes();
+		const res = await getJson(port, `/api/runs/${runId}/chapters`);
+
+		const body = res.body as {
+			chapters: Array<{ riskLevel: string | null; riskReasons: string[] }>;
+		};
+		expect(body.chapters[0]?.riskLevel).toBe("high");
+		expect(body.chapters[0]?.riskReasons).toEqual(["Alters auth token handling"]);
+		expect(body.chapters[1]?.riskLevel).toBeNull();
+		expect(body.chapters[1]?.riskReasons).toEqual([]);
+	});
+
 	it("omits the denormalized chapter.keyChanges content array from the response", async () => {
 		const db = getDb({ dbPath });
 		const { runId } = insertChaptersFile(db, makeFixture(), makeRepoContext());
@@ -186,6 +275,7 @@ describe("runs API", () => {
 		const db = getDb({ dbPath });
 		const prologue = {
 			motivation: "Slow page loads on large repos.",
+			rootCause: null,
 			outcome: "Pages load fast now.",
 			diagram: null,
 			keyChanges: [

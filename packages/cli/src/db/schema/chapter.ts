@@ -1,5 +1,6 @@
 import { integer, sqliteTable, text, unique } from "drizzle-orm/sqlite-core";
 import type { HunkReference } from "../../schema.js";
+import { RISK_LEVEL } from "../../schema.js";
 import { chapterRun } from "./chapter-run.js";
 import { baseColumns } from "./columns.js";
 
@@ -16,6 +17,8 @@ export const chapter = sqliteTable(
 		summary: text().notNull(),
 		hunkRefs: text({ mode: "json" }).$type<HunkReference[]>().notNull(),
 		keyChanges: text({ mode: "json" }).$type<string[]>().notNull().default([]),
+		riskLevel: text({ enum: [RISK_LEVEL.HIGH, RISK_LEVEL.MEDIUM, RISK_LEVEL.LOW] }),
+		riskReasons: text({ mode: "json" }).$type<string[]>(),
 	},
 	(table) => [unique("chapter_run_idx_unique").on(table.runId, table.chapterIndex)],
 );

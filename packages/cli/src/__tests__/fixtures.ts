@@ -1,5 +1,6 @@
+import type { z } from "zod";
 import type { RepoContext } from "../git.js";
-import type { ChaptersFile } from "../schema.js";
+import { type ChaptersFile, ChaptersFileSchema } from "../schema.js";
 
 const SHA = {
 	base: "1111111111111111111111111111111111111111",
@@ -11,8 +12,10 @@ export function makeRepoContext(over: Partial<RepoContext> = {}): RepoContext {
 	return { root: "/repo", originUrl: null, ...over };
 }
 
-export function makeFixture(over: Partial<ChaptersFile> = {}): ChaptersFile {
-	return {
+type ChaptersFileInput = z.input<typeof ChaptersFileSchema>;
+
+export function makeFixture(over: Partial<ChaptersFileInput> = {}): ChaptersFile {
+	return ChaptersFileSchema.parse({
 		scope: {
 			kind: "committed",
 			baseSha: SHA.base,
@@ -36,5 +39,5 @@ export function makeFixture(over: Partial<ChaptersFile> = {}): ChaptersFile {
 		],
 		generatedAt: "2026-04-26T12:00:00.000Z",
 		...over,
-	};
+	});
 }
