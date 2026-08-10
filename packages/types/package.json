@@ -9,6 +9,7 @@
     "./chapters": "./src/chapters.ts",
     "./comments": "./src/comments.ts",
     "./diff": "./src/diff.ts",
+    "./image": "./src/image.ts",
     "./parsed-diff": "./src/parsed-diff.ts",
     "./prologue": "./src/prologue.ts",
     "./pull-request": "./src/pull-request.ts",

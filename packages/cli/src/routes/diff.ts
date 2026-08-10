@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { DiffResponse, FileContentsMap } from "@stagereview/types/diff";
+import { isImageFile } from "@stagereview/types/image";
 import { eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import type { ChapterRunRow } from "../db/schema/chapter-run.js";
@@ -120,28 +121,9 @@ const PLUS_RE = /^\+\+\+ (?:b\/)?(.+)$/m;
 const BINARY_RE = /^Binary files|^GIT binary patch/m;
 const RENAME_FROM_RE = /^(?:rename|copy) from (.+)$/m;
 const RENAME_TO_RE = /^(?:rename|copy) to (.+)$/m;
-
-/**
- * Browser-displayable image formats. Binary files are normally skipped when
- * building file contents, but images are shipped base64-encoded so the web
- * UI's image diff viewer can render them.
- */
-const IMAGE_EXTENSIONS = new Set([
-	"png",
-	"jpg",
-	"jpeg",
-	"gif",
-	"svg",
-	"webp",
-	"bmp",
-	"ico",
-	"avif",
-]);
-
-function isImagePath(filePath: string): boolean {
-	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
-	return IMAGE_EXTENSIONS.has(ext);
-}
+// `diff --git "a/x y" "b/x y"` — git quotes paths containing spaces or specials.
+const DIFF_GIT_QUOTED_RE = /^diff --git "a\/((?:[^"\\]|\\.)+)" "b\/((?:[^"\\]|\\.)+)"$/m;
+const DIFF_GIT_RE = /^diff --git a\/(.+) b\/(.+)$/m;
 
 interface ParsedFilePaths {
 	oldPath: string | null;
@@ -176,10 +158,25 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 			newPath = text.match(RENAME_TO_RE)?.[1] ?? null;
 		}
 
+		// Modified binaries emit only `diff --git` + `Binary files ... differ`
+		// (no ---/+++, no rename lines); parse the header itself so images can
+		// still reach the image diff viewer.
+		if (oldPath === null && newPath === null) {
+			const header = text.match(DIFF_GIT_QUOTED_RE) ?? text.match(DIFF_GIT_RE);
+			oldPath = unquoteGitPath(header?.[1]);
+			newPath = unquoteGitPath(header?.[2]);
+		}
+
 		results.push({ oldPath, newPath, isBinary });
 	}
 
 	return results;
+}
+
+/** Strip the backslash escapes git adds inside quoted diff header paths. */
+function unquoteGitPath(headerPath: string | undefined): string | null {
+	if (headerPath === undefined) return null;
+	return headerPath.replace(/\\([\\"])/g, "$1");
 }
 
 async function getGitFileContent(
@@ -216,10 +213,25 @@ async function getGitFileContentBase64(
 	}
 }
 
-async function readFileContent(repoRoot: string, filePath: string): Promise<string | null> {
+/**
+ * Resolve a working-tree path for reading, or null when it escapes the repo or
+ * exceeds MAX_FILE_BYTES — mirroring the maxBuffer cap on committed-side reads.
+ */
+async function resolveReadablePath(repoRoot: string, filePath: string): Promise<string | null> {
 	const resolved = path.resolve(repoRoot, filePath);
 	const rel = path.relative(repoRoot, resolved);
 	if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
+	try {
+		const { size } = await fs.stat(resolved);
+		return size > MAX_FILE_BYTES ? null : resolved;
+	} catch {
+		return null;
+	}
+}
+
+async function readFileContent(repoRoot: string, filePath: string): Promise<string | null> {
+	const resolved = await resolveReadablePath(repoRoot, filePath);
+	if (resolved === null) return null;
 	try {
 		return await fs.readFile(resolved, "utf8");
 	} catch {
@@ -228,9 +240,8 @@ async function readFileContent(repoRoot: string, filePath: string): Promise<stri
 }
 
 async function readFileContentBase64(repoRoot: string, filePath: string): Promise<string | null> {
-	const resolved = path.resolve(repoRoot, filePath);
-	const rel = path.relative(repoRoot, resolved);
-	if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
+	const resolved = await resolveReadablePath(repoRoot, filePath);
+	if (resolved === null) return null;
 	try {
 		const buffer = await fs.readFile(resolved);
 		return buffer.toString("base64");
@@ -273,6 +284,19 @@ function fetchContentBase64(
 	return getGitFileContentBase64(repoRoot, ref, filePath);
 }
 
+/** Git's binary heuristic: a NUL byte within the first 8000 bytes. */
+const BINARY_SNIFF_BYTES = 8000;
+
+/**
+ * Null out content that is actually binary. Pure renames of binary non-image
+ * files (pdf/zip/wasm) carry no `Binary files` marker in the patch, so they
+ * reach the text path — serving their bytes as UTF-8 would render mojibake.
+ */
+function dropBinaryContent(content: string | null): string | null {
+	if (content?.slice(0, BINARY_SNIFF_BYTES).includes("\0")) return null;
+	return content;
+}
+
 async function buildFileContents(
 	run: ChapterRunRow,
 	repoRoot: string,
@@ -289,7 +313,7 @@ async function buildFileContents(
 			// Images ship base64-encoded (whether or not git marked the diff as
 			// binary — pure renames carry no marker) so the image diff viewer
 			// can render them; other binary files carry no usable content.
-			if (isImagePath(key)) {
+			if (isImageFile(key)) {
 				const [oldContent, newContent] = await Promise.all([
 					oldPath ? fetchContentBase64(repoRoot, oldRef, oldPath) : Promise.resolve(null),
 					newPath ? fetchContentBase64(repoRoot, newRef, newPath) : Promise.resolve(null),
@@ -303,7 +327,10 @@ async function buildFileContents(
 				newPath ? fetchContent(repoRoot, newRef, newPath) : Promise.resolve(null),
 			]);
 
-			return [key, { oldContent, newContent }] as const;
+			return [
+				key,
+				{ oldContent: dropBinaryContent(oldContent), newContent: dropBinaryContent(newContent) },
+			] as const;
 		}),
 	);
 

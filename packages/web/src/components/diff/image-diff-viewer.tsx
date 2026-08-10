@@ -1,6 +1,6 @@
+import { getImageMimeType } from "@stagereview/types/image";
 import { useMemo } from "react";
 import { FILE_STATUS, type PullRequestFile } from "@/lib/diff-types";
-import { getImageMimeType } from "@/lib/image";
 
 /**
  * Vendored from the hosted app's `components/diff/image-diff-viewer.tsx`.

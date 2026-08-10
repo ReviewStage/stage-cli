@@ -2,6 +2,7 @@ export * from "./chapters.ts";
 export * from "./comments.ts";
 export * from "./diff.ts";
 export * from "./github-timeline.ts";
+export * from "./image.ts";
 export * from "./parsed-diff.ts";
 export * from "./prologue.ts";
 export * from "./pull-request.ts";

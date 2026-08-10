@@ -1,5 +1,6 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { FileContent, FileContentsMap } from "@stagereview/types/diff";
+import { isImageFile } from "@stagereview/types/image";
 import { FileCode } from "lucide-react";
 import {
 	forwardRef,
@@ -20,7 +21,6 @@ import { findRenderedDiffLine } from "@/components/chapter/rendered-line-target"
 import { ImageDiffViewer } from "@/components/diff/image-diff-viewer";
 import type { AnnotatedLineRef, DiffSide, LineRef } from "@/lib/diff-types";
 import { buildFullFilePreviewDiff, isFullFilePreview } from "@/lib/full-file-preview";
-import { isImageFile } from "@/lib/image";
 import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import type { FileDiffEntry } from "@/lib/parse-diff";
 import { useDiffSettings } from "@/lib/use-diff-settings";
@@ -83,6 +83,21 @@ const FILE_MOUNT_TIMEOUT_MS = 3000;
 function getContentTop(element: HTMLElement | null): number {
 	if (!element) return 0;
 	return parseFloat(getComputedStyle(element).getPropertyValue("--content-top") || "0");
+}
+
+/**
+ * Nearest scrollable ancestor, or `null` when the page itself scrolls. The
+ * Files tab and chapter detail page scroll the window; the continuous chapter
+ * stream renders inside the pull-request layout's contained scroll area.
+ */
+export function findScrollParent(element: HTMLElement | null): HTMLElement | null {
+	let node = element?.parentElement ?? null;
+	while (node) {
+		const { overflowY } = getComputedStyle(node);
+		if (overflowY === "auto" || overflowY === "scroll") return node;
+		node = node.parentElement;
+	}
+	return null;
 }
 
 export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(function FileDiffList(
@@ -297,9 +312,7 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 					<div style={{ paddingTop: index === 0 ? 0 : FILE_DIFF_SECTION_GAP_PX }}>
 						<FileDiffSection
 							entry={entry}
-							content={
-								fileContents?.[entry.file.path] ?? fileContentForOldPath(fileContents, entry)
-							}
+							content={resolveFileContent(fileContents, entry)}
 							isViewed={viewedPathSet?.has(entry.file.path) ?? false}
 							isFocused={entry.file.path === focusedFilePath}
 							onToggleViewed={onToggleViewed}
@@ -334,10 +347,16 @@ function getFullFileTexts(diff: FileDiffMetadata): { oldText?: string; newText?:
 	};
 }
 
-function fileContentForOldPath(
+/**
+ * Raw contents for an entry, falling back to the pre-rename path so moved and
+ * renamed files still resolve their old side.
+ */
+export function resolveFileContent(
 	fileContents: FileContentsMap | undefined,
 	entry: FileDiffEntry,
 ): FileContent | undefined {
+	const content = fileContents?.[entry.file.path];
+	if (content) return content;
 	const oldPath = entry.file.oldPath;
 	return oldPath ? fileContents?.[oldPath] : undefined;
 }
@@ -345,6 +364,8 @@ function fileContentForOldPath(
 interface FileDiffSectionProps {
 	entry: FileDiffEntry;
 	content?: FileContent;
+	/** Container element id; defaults to the Files tab's `file-${path}` convention. */
+	containerId?: string;
 	isViewed: boolean;
 	isFocused: boolean;
 	onToggleViewed?: (path: string) => void;
@@ -352,9 +373,10 @@ interface FileDiffSectionProps {
 	chapterOverlay?: ChapterOverlayProps;
 }
 
-const FileDiffSection = memo(function FileDiffSection({
+export const FileDiffSection = memo(function FileDiffSection({
 	entry,
 	content,
+	containerId,
 	isViewed,
 	isFocused,
 	onToggleViewed,
@@ -420,18 +442,22 @@ const FileDiffSection = memo(function FileDiffSection({
 		const container = containerRef.current;
 		if (!container) return;
 
-		const relativeTop = container.getBoundingClientRect().top;
+		const scrollParent = findScrollParent(container);
+		const relativeTop =
+			container.getBoundingClientRect().top -
+			(scrollParent ? scrollParent.getBoundingClientRect().top : 0);
 		const stickyOffset = getContentTop(container);
 
 		if (relativeTop < stickyOffset) {
-			window.scrollBy(0, relativeTop - stickyOffset);
+			if (scrollParent) scrollParent.scrollTop += relativeTop - stickyOffset;
+			else window.scrollBy(0, relativeTop - stickyOffset);
 		}
 	}, [isCollapsed]);
 
 	return (
 		<div
 			ref={containerRef}
-			id={`file-${file.path}`}
+			id={containerId ?? `file-${file.path}`}
 			data-focused-file={isFocused ? "true" : undefined}
 			className={cn("rounded-lg", isFocused && "outline-2 outline-primary/70")}
 		>
@@ -460,7 +486,11 @@ const FileDiffSection = memo(function FileDiffSection({
 						<PierreDiffViewer
 							fileDiff={previewDiff ?? diff}
 							filePath={file.path}
-							expandUnchanged={isExpanded}
+							// Full-file previews promise the complete file, but Pierre still
+							// collapses their single context-only hunk past its unchanged-line
+							// threshold — and moved files hide the expand control. Render them
+							// permanently expanded instead.
+							expandUnchanged={isExpanded || isPreviewOnlyFile}
 							allLineRefsByFile={chapterOverlay?.allLineRefsByFile}
 							focusedLineRefsByFile={chapterOverlay?.focusedLineRefsByFile}
 							focusedKeyChangeId={chapterOverlay?.focusedKeyChangeId ?? null}

@@ -1,7 +1,8 @@
 /**
  * Browser-displayable image formats, vendored from the hosted app's
- * `@stage/utils` image helpers. Used to route image files to the image diff
- * viewer instead of the text diff renderer.
+ * `@stage/utils` image helpers. Shared between the CLI server (which decides
+ * which diff files ship base64-encoded) and the web UI (which routes image
+ * files to the image diff viewer and builds their data URLs).
  */
 const BROWSER_IMAGE_MIME_TYPES: Record<string, string> = {
 	png: "image/png",
