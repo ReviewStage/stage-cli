@@ -260,8 +260,15 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 	// Activity tab is (or has been) active — react-query then keeps the count
 	// warm across tab switches and dedupes with the Activity page itself.
 	const isActivityActive = activeTab === PR_TAB.ACTIVITY;
-	const [activityVisited, setActivityVisited] = useState(isActivityActive);
-	if (isActivityActive && !activityVisited) setActivityVisited(true);
+	// Scoped by run: stack navigation keeps this layout mounted, and a visit
+	// on one run must not eagerly fetch every sibling's timeline.
+	const [activityVisit, setActivityVisit] = useState({ runId, visited: isActivityActive });
+	if (activityVisit.runId !== runId) {
+		setActivityVisit({ runId, visited: isActivityActive });
+	} else if (isActivityActive && !activityVisit.visited) {
+		setActivityVisit({ runId, visited: true });
+	}
+	const activityVisited = activityVisit.visited;
 	const { data: timelineData } = useTimeline(
 		runId,
 		activityVisited ? (pullRequest?.number ?? null) : null,

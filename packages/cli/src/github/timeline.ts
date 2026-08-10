@@ -155,9 +155,16 @@ export async function getReviewComments(
 		repoRoot,
 		`repos/${repo.owner}/${repo.repo}/pulls/${number}/comments`,
 	);
-	return data.flatMap((raw) => {
+	return data.map((raw, index) => {
 		const comment = TimelineReviewCommentSchema.safeParse(raw);
-		return comment.success ? [comment.data] : [];
+		if (!comment.success) {
+			// Silently dropping a comment would remove a thread root or reply
+			// with no diagnostic; fail the boundary so the route surfaces it.
+			throw new Error(
+				`Unexpected review comment shape at index ${index}: ${comment.error.message}`,
+			);
+		}
+		return comment.data;
 	});
 }
 

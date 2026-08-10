@@ -191,6 +191,25 @@ export async function getPullRequestNodeId(
 	return pullRequest.id;
 }
 
+const MutationEnvelopeSchema = z.object({
+	data: z.object({
+		markFileAsViewed: z.object({ clientMutationId: z.string().nullable() }).nullable().optional(),
+		unmarkFileAsViewed: z.object({ clientMutationId: z.string().nullable() }).nullable().optional(),
+	}),
+});
+
+/**
+ * A successful gh exit with a null/malformed mutation payload means GitHub did
+ * not perform the mutation; reject so callers log the divergence instead of
+ * assuming the sync happened.
+ */
+function assertMutationPerformed(stdout: string, field: "markFileAsViewed" | "unmarkFileAsViewed") {
+	const parsed = MutationEnvelopeSchema.safeParse(JSON.parse(stdout));
+	if (!parsed.success || !parsed.data.data[field]) {
+		throw new Error(`GitHub returned no ${field} confirmation`);
+	}
+}
+
 /**
  * Marks a file as viewed in a pull request on GitHub. Viewed state is per-user,
  * so this acts as the `gh`-authenticated viewer.
@@ -200,7 +219,7 @@ export async function markFileAsViewed(
 	pullRequestNodeId: string,
 	path: string,
 ): Promise<void> {
-	await ghWriteOrThrow(
+	const stdout = await ghWriteOrThrow(
 		[
 			"api",
 			"graphql",
@@ -213,6 +232,7 @@ export async function markFileAsViewed(
 		],
 		repoRoot,
 	);
+	assertMutationPerformed(stdout, "markFileAsViewed");
 }
 
 /** Unmarks a file as viewed in a pull request on GitHub. */
@@ -221,7 +241,7 @@ export async function unmarkFileAsViewed(
 	pullRequestNodeId: string,
 	path: string,
 ): Promise<void> {
-	await ghWriteOrThrow(
+	const stdout = await ghWriteOrThrow(
 		[
 			"api",
 			"graphql",
@@ -234,4 +254,5 @@ export async function unmarkFileAsViewed(
 		],
 		repoRoot,
 	);
+	assertMutationPerformed(stdout, "unmarkFileAsViewed");
 }

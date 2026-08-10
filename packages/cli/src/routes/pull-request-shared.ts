@@ -103,6 +103,19 @@ export function enforceSameOrigin(req: Req, res: Res): boolean {
 		writeJson(res, 403, { error: "Cross-origin request rejected" });
 		return false;
 	}
+	// Cross-site subresource loads (e.g. an <img> on a malicious page pointed
+	// at this loopback port) carry no Origin but do carry Sec-Fetch-Site in
+	// every modern browser; same-origin SPA requests send "same-origin" and
+	// non-browser clients omit the header entirely.
+	const secFetchSite = req.headers["sec-fetch-site"];
+	if (
+		typeof secFetchSite === "string" &&
+		secFetchSite !== "same-origin" &&
+		secFetchSite !== "none"
+	) {
+		writeJson(res, 403, { error: "Cross-origin request rejected" });
+		return false;
+	}
 	const origin = req.headers.origin;
 	if (origin === undefined) return true;
 	try {

@@ -18,6 +18,14 @@ export function usePullRequestStatusActions({ runId, pullRequest }: Options) {
 	const invalidate = useInvalidatePullRequest(runId);
 	const [showCloseDialog, setShowCloseDialog] = useState(false);
 
+	// Stack navigation swaps PRs while the header stays mounted; an open
+	// confirmation must not close the sibling it was never about.
+	const [dialogOwner, setDialogOwner] = useState(pullRequest.number);
+	if (dialogOwner !== pullRequest.number) {
+		setDialogOwner(pullRequest.number);
+		setShowCloseDialog(false);
+	}
+
 	const draftMutation = useMutation({
 		...draftMutationOptions(runId),
 		onSuccess: async () => {
