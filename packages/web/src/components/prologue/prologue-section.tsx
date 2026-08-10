@@ -23,7 +23,7 @@ function PrologueDisplay({ prologue }: { prologue: Prologue }) {
 
 	return (
 		<div className="space-y-4 rounded-lg border bg-card p-4">
-			{(prologue.motivation || prologue.outcome) && (
+			{(prologue.motivation || prologue.rootCause || prologue.outcome) && (
 				<section className="space-y-3">
 					{prologue.motivation && (
 						<div>
@@ -31,6 +31,14 @@ function PrologueDisplay({ prologue }: { prologue: Prologue }) {
 								Why this change?
 							</h3>
 							<p className="text-sm text-foreground">{prologue.motivation}</p>
+						</div>
+					)}
+					{prologue.rootCause && (
+						<div>
+							<h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+								Root cause
+							</h3>
+							<p className="text-sm text-foreground">{prologue.rootCause}</p>
 						</div>
 					)}
 					{prologue.outcome && (

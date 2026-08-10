@@ -17,6 +17,7 @@ export function formatPrologueAsMarkdown(prologue: Prologue): string {
 	const sections: string[] = ["# Prologue"];
 
 	if (prologue.motivation) sections.push(`## Why this change?\n${prologue.motivation}`);
+	if (prologue.rootCause) sections.push(`## Root cause\n${prologue.rootCause}`);
 	if (prologue.outcome) sections.push(`## What it does\n${prologue.outcome}`);
 	if (prologue.diagram) {
 		const fence = codeFence(prologue.diagram);
