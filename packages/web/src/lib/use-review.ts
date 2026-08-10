@@ -94,12 +94,11 @@ export function useReview(runId: string): UseReviewResult {
 		queryClient.invalidateQueries({ queryKey: origin.queryKey });
 	// GitHub-affecting actions (submit/resolve/reply/promote) change PR-level state —
 	// reviewer decisions, the merge button — that lives behind separate, infinitely-
-	// stale query keys. Refresh those too so the PR header doesn't go stale until reload.
+	// stale query keys. Refresh those in the background; only the review refetch
+	// gates the mutation, so a slow checks/deployments read can't hold a composer open.
 	const invalidateGitHub = async (origin: ReviewMutationOrigin) => {
-		await Promise.all([
-			invalidateReview(origin),
-			invalidatePullRequestQueries(queryClient, origin.runId),
-		]);
+		void invalidatePullRequestQueries(queryClient, origin.runId);
+		await invalidateReview(origin);
 	};
 
 	const runPath = (suffix: string) => `/api/runs/${encodeURIComponent(runId)}${suffix}`;
