@@ -89,10 +89,10 @@ If `prep` exits non-zero, relay its stderr to the user and stop.
 
 Read `$PREP_FILE` via the Read tool (or equivalent). For large diffs, use the Read tool's `offset` and `limit` parameters to read in chunks.
 
-`prep` writes a single combined file with sections separated by `=== ... ===` headers. Not every section is always present:
+`prep` writes a single combined file with sections separated by `=== ... ===` headers, in this order. Not every section is always present:
 
 - **`=== PULL REQUEST ===`** — the PR title and description (present only when reviewing a GitHub PR, e.g. with `--pr`). These are the author's own words about what this change does and why. Use this context to understand the author's intent — it is often the most reliable signal for motivation and grouping — and to ground your narrative in the author's stated intent rather than reverse-engineering motivation from code alone. When this section is absent, the commit messages are the fallback signal for intent.
-- **`=== ADDITIONAL INSTRUCTIONS ===`** — optional user-provided instructions. When present, you **must** follow them; they apply to both the chapters (Step 3) and the prologue (Step 4).
+- **`=== STATS ===`** — a `Stats:` line with the file count, +added/−deleted line totals, and file types — quick context for the prologue's complexity rating.
 - **`=== COMMIT MESSAGES ===`** — `git log --oneline` output for prologue context.
 - **`=== HUNKS ===`** — formatted diff hunks with line numbers. Each hunk looks like:
 
@@ -108,7 +108,7 @@ Read `$PREP_FILE` via the Read tool (or equivalent). For large diffs, use the Re
 
 The two number columns are the **old line number** (left) and **new line number** (right). A blank column means the line doesn't exist on that side — additions have no old line number, deletions have no new line number. These numbers are used directly for `lineRefs` in key changes (see Step 3d).
 
-The file also includes a `Stats:` line (file count, +added/−deleted line totals, file types) — quick context for the prologue's complexity rating.
+- **`=== ADDITIONAL INSTRUCTIONS ===`** — optional user-provided instructions, appended after the hunks. When present, you **must** follow them; they apply to both the chapters (Step 3) and the prologue (Step 4).
 
 ## Step 3 — Cluster + narrate
 

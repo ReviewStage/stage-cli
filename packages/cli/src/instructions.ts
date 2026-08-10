@@ -31,13 +31,15 @@ export function combineInstructions(
 }
 
 /**
- * Render the additional-instructions block appended to an agent prompt. Returns
- * an empty string when there are no instructions so callers can interpolate it
- * inline without conditional logic.
+ * Render the additional-instructions section appended to the prep file. Emitted
+ * as a `=== ... ===` header so it matches the section contract the generation
+ * skill parses (hosted's inline prompts use a bare `ADDITIONAL INSTRUCTIONS:`
+ * label instead). Returns an empty string when there are no instructions so
+ * callers can interpolate it inline without conditional logic.
  */
 export function formatInstructionsBlock(instructions: string | null | undefined): string {
 	const trimmed = instructions?.trim();
-	return trimmed ? `\n\nADDITIONAL INSTRUCTIONS:\n${trimmed}` : "";
+	return trimmed ? `\n\n=== ADDITIONAL INSTRUCTIONS ===\n${trimmed}` : "";
 }
 
 /**
