@@ -57,13 +57,6 @@
       "when": 1786332453144,
       "tag": "0007_mysterious_clea",
       "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1786345989310,
-      "tag": "0008_renormalize_chapter_index",
-      "breakpoints": true
     }
   ]
 }

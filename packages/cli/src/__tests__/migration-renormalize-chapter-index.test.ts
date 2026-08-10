@@ -8,7 +8,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-const RENORMALIZE_TAG = "0008_renormalize_chapter_index";
+const RENORMALIZE_TAG = "0007_mysterious_clea";
 const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../drizzle");
 
 interface JournalEntry {
@@ -77,7 +77,7 @@ function indexesByRun(runId: string): Array<{ title: string; chapterIndex: numbe
 		.all(runId) as Array<{ title: string; chapterIndex: number }>;
 }
 
-describe("migration 0008 — renormalize chapterIndex", () => {
+describe("migration 0007 — risk columns + renormalize chapterIndex", () => {
 	it("rewrites legacy 1-based indexes to a dense 0-based rank per run", async () => {
 		const db = drizzle(sqlite);
 		migrate(db, { migrationsFolder: await migrationsFolderBefore(RENORMALIZE_TAG) });
