@@ -251,6 +251,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "headRef": {
+          "name": "headRef",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "scopeKind": {
           "name": "scopeKind",
           "type": "text",

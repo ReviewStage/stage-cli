@@ -108,20 +108,25 @@ async function fetchRestPullRequest(
 }
 
 /**
+ * Which pull request `gh pr view` loads: a PR by number, the PR whose head is
+ * a given branch (independent of what's checked out), or — with null — the PR
+ * of the branch currently checked out in `repoRoot`.
+ */
+export type PullRequestSelector = number | { branch: string } | null;
+
+/**
  * Resolve the GitHub PR for a run, mapped onto the REST-shaped
- * `GitHubPullRequest` the UI consumes. When `prNumber` is set (a `--pr` run) it
- * loads that PR; otherwise it detects the PR for the branch currently checked
- * out in `repoRoot`. Returns null whenever resolution isn't possible —
- * non-GitHub remote, `gh` missing or unauthenticated, no PR found, or
- * unparseable output — so PR context never breaks the review UI.
+ * `GitHubPullRequest` the UI consumes. Returns null whenever resolution isn't
+ * possible — non-GitHub remote, `gh` missing or unauthenticated, no PR found,
+ * or unparseable output — so PR context never breaks the review UI.
  */
 export async function getPullRequest(
 	repoRoot: string,
 	originUrl: string | null,
-	prNumber: number | null = null,
+	selector: PullRequestSelector = null,
 ): Promise<GitHubPullRequest | null> {
 	try {
-		return await getPullRequestOrThrow(repoRoot, originUrl, prNumber);
+		return await getPullRequestOrThrow(repoRoot, originUrl, selector);
 	} catch {
 		return null;
 	}
@@ -135,15 +140,22 @@ export async function getPullRequest(
 export async function getPullRequestOrThrow(
 	repoRoot: string,
 	originUrl: string | null,
-	prNumber: number | null = null,
+	selector: PullRequestSelector = null,
 ): Promise<GitHubPullRequest | null> {
 	const repo = parseGitHubRepo(originUrl);
 	if (!repo) return null;
 	const repository = `${repo.owner}/${repo.repo}`;
-	const viewArgs =
-		prNumber === null
-			? ["pr", "view", "--json", PR_FIELDS.join(","), "--repo", repository]
-			: ["pr", "view", String(prNumber), "--json", PR_FIELDS.join(","), "--repo", repository];
+	const positional =
+		selector === null ? [] : [typeof selector === "number" ? String(selector) : selector.branch];
+	const viewArgs = [
+		"pr",
+		"view",
+		...positional,
+		"--json",
+		PR_FIELDS.join(","),
+		"--repo",
+		repository,
+	];
 	let stdout: string;
 	try {
 		stdout = await ghReadOrThrow(viewArgs, repoRoot);

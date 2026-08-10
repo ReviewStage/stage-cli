@@ -523,21 +523,26 @@ interface PullRequestRunTarget {
 
 /**
  * A run's GitHub PR context. `--pr` runs carry their number; branch runs
- * resolve the PR of whatever branch the run's clone has checked out, via
- * `gh pr view` in the run's repoRoot (the same discovery the review routes
- * use). Returns null when there is genuinely no PR — no GitHub remote, or a
- * branch with no PR — and throws when gh itself fails, so callers can tell
- * "no PR" from "couldn't ask GitHub".
+ * resolve the PR of the branch recorded at import time (`headRef`), so the
+ * sync keeps targeting the PR the user actually reviewed even after the
+ * checkout moves to a different branch — including one whose PR shares the
+ * same head SHA, which the headSha freshness gate alone can't distinguish.
+ * Returns null when there is genuinely no PR — no GitHub remote, an import
+ * from a detached HEAD (no recorded branch), or a branch with no PR — and
+ * throws when gh itself fails, so callers can tell "no PR" from "couldn't
+ * ask GitHub".
  */
 async function pullRequestRunTarget(run: {
 	repoRoot: string;
 	originUrl: string | null;
 	prNumber: number | null;
+	headRef: string | null;
 }): Promise<PullRequestRunTarget | null> {
 	const repo = parseGitHubRepo(run.originUrl);
 	if (!repo) return null;
 	if (run.prNumber !== null) return { repoRoot: run.repoRoot, repo, prNumber: run.prNumber };
-	const pr = await getPullRequestOrThrow(run.repoRoot, run.originUrl, null);
+	if (run.headRef === null) return null;
+	const pr = await getPullRequestOrThrow(run.repoRoot, run.originUrl, { branch: run.headRef });
 	if (!pr) return null;
 	return { repoRoot: run.repoRoot, repo, prNumber: pr.number };
 }
@@ -551,6 +556,7 @@ interface PullRequestRunContext {
 	repoRoot: string;
 	originUrl: string | null;
 	prNumber: number | null;
+	headRef: string | null;
 	scopeKind: ScopeKind;
 	headSha: string;
 }
@@ -725,6 +731,7 @@ class GitHubViewSync {
 				repoRoot: chapterRun.repoRoot,
 				originUrl: chapterRun.originUrl,
 				prNumber: chapterRun.prNumber,
+				headRef: chapterRun.headRef,
 				scopeKind: chapterRun.scopeKind,
 				headSha: chapterRun.headSha,
 			})

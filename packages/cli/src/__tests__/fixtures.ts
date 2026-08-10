@@ -9,7 +9,7 @@ export const SHA = {
 } as const;
 
 export function makeRepoContext(over: Partial<RepoContext> = {}): RepoContext {
-	return { root: "/repo", originUrl: null, ...over };
+	return { root: "/repo", originUrl: null, headRef: null, ...over };
 }
 
 type ChaptersFileInput = z.input<typeof ChaptersFileSchema>;

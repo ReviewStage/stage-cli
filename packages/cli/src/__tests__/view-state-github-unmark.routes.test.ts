@@ -2,7 +2,11 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { chapterFileView, chapterView, fileView } from "../db/schema/index.js";
 import { makeFixture } from "./fixtures.js";
-import { PR_NODE_ID, ViewStateGitHubHarness } from "./view-state-github-harness.js";
+import {
+	BRANCH_HEAD_REF,
+	PR_NODE_ID,
+	ViewStateGitHubHarness,
+} from "./view-state-github-harness.js";
 
 const harness = new ViewStateGitHubHarness();
 
@@ -91,9 +95,9 @@ describe("GitHub unmark sync", () => {
 		);
 	});
 
-	it("resolves the checked-out branch's PR and unmarks on it for runs without a PR number", async () => {
+	it("resolves the run's stored branch's PR and unmarks on it for runs without a PR number", async () => {
 		await harness.writeGhShim();
-		const { runId } = harness.seedRun(undefined, { prNumber: null });
+		const { runId } = harness.seedRun(undefined, { prNumber: null, headRef: BRANCH_HEAD_REF });
 		const port = await harness.start();
 		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "src/foo.ts" });
 
@@ -102,9 +106,32 @@ describe("GitHub unmark sync", () => {
 		});
 
 		expect(res.status).toBe(200);
+		const prViewCalls = (await harness.rawCalls()).filter(
+			(args) => args[0] === "pr" && args[1] === "view",
+		);
+		// One resolution per mutation, each pinned to the stored branch.
+		expect(prViewCalls.map((args) => args[2])).toEqual([BRANCH_HEAD_REF, BRANCH_HEAD_REF]);
 		const calls = await unmarkCalls();
 		expect(calls).toHaveLength(1);
 		expect(calls[0]?.fields).toEqual({ pullRequestId: PR_NODE_ID, path: "src/foo.ts" });
+	});
+
+	it("skips the GitHub unmark for a branch run with no recorded headRef (detached import)", async () => {
+		await harness.writeGhShim();
+		const { runId } = harness.seedRun(undefined, { prNumber: null, headRef: null });
+		const port = await harness.start();
+		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "src/foo.ts" });
+
+		const res = await harness.request(port, "DELETE", `/api/runs/${runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+
+		// Local state still clears while GitHub is never consulted.
+		expect(res.status).toBe(200);
+		expect(await harness.rawCalls()).toEqual([]);
+		expect(harness.db.select().from(fileView).where(eq(fileView.runId, runId)).all()).toHaveLength(
+			0,
+		);
 	});
 
 	it("skips the GitHub unmark when the run's head is no longer the PR's head", async () => {

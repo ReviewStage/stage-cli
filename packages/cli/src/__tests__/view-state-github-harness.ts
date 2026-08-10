@@ -15,6 +15,8 @@ import { makeFixture, makeRepoContext, SHA } from "./fixtures.js";
 export const GITHUB_ORIGIN = "git@github.com:owner/repo.git";
 export const PR_NUMBER = 7;
 export const PR_NODE_ID = "PR_node1";
+/** Branch recorded on seeded runs; the shim's `gh pr view` reports its PR as PR_NUMBER. */
+export const BRANCH_HEAD_REF = "feature";
 
 interface ViewedFileNode {
 	path: string;
@@ -60,6 +62,8 @@ export interface GhShimOptions {
 interface SeedRunOptions {
 	prNumber?: number | null;
 	originUrl?: string | null;
+	/** Import-time branch stored on the run; null models an import from a detached HEAD. */
+	headRef?: string | null;
 }
 
 export class ViewStateGitHubHarness {
@@ -198,10 +202,11 @@ if (args[0] === "pr" && args[1] === "view") {
 	): { runId: string; chapters: Array<typeof chapter.$inferSelect> } {
 		const originUrl = options.originUrl === undefined ? GITHUB_ORIGIN : options.originUrl;
 		const prNumber = options.prNumber === undefined ? PR_NUMBER : options.prNumber;
+		const headRef = options.headRef === undefined ? BRANCH_HEAD_REF : options.headRef;
 		const { runId } = insertChaptersFile(
 			this.db,
 			fixture,
-			makeRepoContext({ root: this.repoRoot, originUrl }),
+			makeRepoContext({ root: this.repoRoot, originUrl, headRef }),
 			prNumber,
 		);
 		const chapters = this.db.select().from(chapter).where(eq(chapter.runId, runId)).all();

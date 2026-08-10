@@ -5,6 +5,7 @@ import { FILE_VIEWED_STATE } from "../github/index.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 import { makeFixture, SHA } from "./fixtures.js";
 import {
+	BRANCH_HEAD_REF,
 	makeViewedFilesPage,
 	PR_NUMBER,
 	ViewStateGitHubHarness,
@@ -101,11 +102,11 @@ describe("GET /api/runs/:runId/view-state GitHub merge", () => {
 		expect(filePaths(res.body)).toEqual(["local.ts"]);
 	});
 
-	it("resolves the checked-out branch's PR and merges its viewed paths for runs without a PR number", async () => {
+	it("resolves the run's stored branch's PR and merges its viewed paths for runs without a PR number", async () => {
 		await harness.writeGhShim([
 			makeViewedFilesPage([{ path: "gh-viewed.ts", viewerViewedState: FILE_VIEWED_STATE.VIEWED }]),
 		]);
-		const { runId } = harness.seedRun(undefined, { prNumber: null });
+		const { runId } = harness.seedRun(undefined, { prNumber: null, headRef: BRANCH_HEAD_REF });
 		const port = await harness.start();
 		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "local.ts" });
 
@@ -113,15 +114,21 @@ describe("GET /api/runs/:runId/view-state GitHub merge", () => {
 
 		expect(res.status).toBe(200);
 		expect(filePaths(res.body).sort()).toEqual(["gh-viewed.ts", "local.ts"]);
+		// The stored branch is passed positionally so gh resolves that branch's PR
+		// regardless of what the checkout has since moved to.
+		const prViewCalls = (await harness.rawCalls()).filter(
+			(args) => args[0] === "pr" && args[1] === "view",
+		);
+		expect(prViewCalls.map((args) => args[2])).toEqual([BRANCH_HEAD_REF, BRANCH_HEAD_REF]);
 		const viewedFilesCalls = (await harness.graphqlCalls()).filter(
 			(c) => c.name === "GetPullRequestViewedFiles",
 		);
 		expect(viewedFilesCalls[0]?.fields.number).toBe(String(PR_NUMBER));
 	});
 
-	it("degrades to local paths when the checked-out branch has no PR", async () => {
+	it("degrades to local paths when the run's stored branch has no PR", async () => {
 		await harness.writeGhShim(undefined, { branchPrNumber: null });
-		const { runId } = harness.seedRun(undefined, { prNumber: null });
+		const { runId } = harness.seedRun(undefined, { prNumber: null, headRef: BRANCH_HEAD_REF });
 		const port = await harness.start();
 		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "local.ts" });
 
@@ -130,6 +137,23 @@ describe("GET /api/runs/:runId/view-state GitHub merge", () => {
 		expect(res.status).toBe(200);
 		expect(filePaths(res.body)).toEqual(["local.ts"]);
 		expect(await harness.graphqlCalls()).toEqual([]);
+	});
+
+	it("degrades to local paths without calling gh for a branch run with no recorded headRef", async () => {
+		await harness.writeGhShim([
+			makeViewedFilesPage([{ path: "gh-viewed.ts", viewerViewedState: FILE_VIEWED_STATE.VIEWED }]),
+		]);
+		const { runId } = harness.seedRun(undefined, { prNumber: null, headRef: null });
+		const port = await harness.start();
+		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "local.ts" });
+
+		const res = await harness.request(port, "GET", `/api/runs/${runId}/view-state`);
+
+		// A detached-HEAD import recorded no branch identity, so the run has no PR
+		// to read from — gh is never consulted and reads stay local.
+		expect(res.status).toBe(200);
+		expect(filePaths(res.body)).toEqual(["local.ts"]);
+		expect(await harness.rawCalls()).toEqual([]);
 	});
 
 	it("skips the GitHub merge when the run's head is no longer the PR's head", async () => {

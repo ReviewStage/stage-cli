@@ -22,6 +22,7 @@ export {
 	getPullRequest,
 	getPullRequestOrThrow,
 	getReviews,
+	type PullRequestSelector,
 } from "./pull-request.js";
 export {
 	type PullRequestRefs,

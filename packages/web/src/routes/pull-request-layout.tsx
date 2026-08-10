@@ -363,7 +363,10 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 	if (error) return <ErrorState error={error} />;
 
 	return (
-		<ChapterViewStateProvider>
+		// Keyed by run so stack navigation resets the continuous reader's active
+		// chapter — a stale number would misroute the paged-mode toggle on a
+		// sibling run with fewer chapters.
+		<ChapterViewStateProvider key={runId}>
 			<CollapseActionsProvider>
 				<div
 					className={cn(

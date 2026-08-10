@@ -136,6 +136,16 @@ describe("chapter import", () => {
 		expect(chapters[0]?.externalId).not.toBe(chapters[1]?.externalId);
 	});
 
+	it("stores the import-time headRef on chapter_run and null when the import was detached", () => {
+		const db = getDb({ dbPath });
+
+		insertChaptersFile(db, makeFixture(), makeRepoContext({ headRef: "feature" }));
+		insertChaptersFile(db, makeFixture(), makeRepoContext({ headRef: null }));
+
+		const rows = db.select().from(chapterRun).all();
+		expect(rows.map((r) => r.headRef)).toEqual(["feature", null]);
+	});
+
 	it("preserves the workingTree scope discriminator", () => {
 		const db = getDb({ dbPath });
 		insertChaptersFile(

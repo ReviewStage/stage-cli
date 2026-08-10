@@ -20,11 +20,13 @@ export interface RepoContext {
 	root: string;
 	/** `origin` remote URL, or null when no `origin` is configured. */
 	originUrl: string | null;
+	/** Checked-out branch (`git rev-parse --abbrev-ref HEAD`), or null when detached. */
+	headRef: string | null;
 }
 
 export function readRepoContext(): RepoContext {
 	const root = readRepoRoot();
-	return { root, originUrl: readOriginUrl(root) };
+	return { root, originUrl: readOriginUrl(root), headRef: readHeadRef(root) };
 }
 
 export function readRepoRoot(): string {
@@ -45,6 +47,21 @@ function readOriginUrl(repoRoot: string): string | null {
 			stdio: ["ignore", "pipe", "ignore"],
 		}).trim();
 		return out || null;
+	} catch {
+		return null;
+	}
+}
+
+/** `--abbrev-ref HEAD` prints the literal string "HEAD" for a detached checkout. */
+const DETACHED_HEAD = "HEAD";
+
+function readHeadRef(repoRoot: string): string | null {
+	try {
+		const out = execFileSync("git", ["-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD"], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+		return out === "" || out === DETACHED_HEAD ? null : out;
 	} catch {
 		return null;
 	}

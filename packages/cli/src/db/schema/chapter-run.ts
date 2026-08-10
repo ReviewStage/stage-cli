@@ -11,6 +11,12 @@ export const chapterRun = sqliteTable(
 		originUrl: text(),
 		/** GitHub PR number when the run reviews a specific PR (`--pr`), else null. */
 		prNumber: integer(),
+		/**
+		 * Branch checked out when the run was imported, or null when it couldn't
+		 * be read (detached HEAD). Anchors branch-derived PR resolution to the
+		 * branch the user actually reviewed, not whatever is checked out later.
+		 */
+		headRef: text(),
 		scopeKind: text({ enum: [SCOPE_KIND.COMMITTED, SCOPE_KIND.WORKING_TREE] }).notNull(),
 		workingTreeRef: text({
 			enum: [WORKING_TREE_REF.WORK, WORKING_TREE_REF.STAGED, WORKING_TREE_REF.UNSTAGED],

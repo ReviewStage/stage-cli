@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { chapterView, fileView } from "../db/schema/index.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 import { makeFixture, SHA } from "./fixtures.js";
-import { PR_NODE_ID, PR_NUMBER, ViewStateGitHubHarness } from "./view-state-github-harness.js";
+import {
+	BRANCH_HEAD_REF,
+	PR_NODE_ID,
+	PR_NUMBER,
+	ViewStateGitHubHarness,
+} from "./view-state-github-harness.js";
 
 const harness = new ViewStateGitHubHarness();
 
@@ -104,9 +109,9 @@ describe("GitHub mark sync", () => {
 		expect((await markCalls()).map((c) => c.fields.path).sort()).toEqual(["x.ts", "y.ts"]);
 	});
 
-	it("resolves the checked-out branch's PR via gh pr view for runs without a PR number", async () => {
+	it("resolves the run's stored branch via gh pr view <headRef> for runs without a PR number", async () => {
 		await harness.writeGhShim();
-		const { runId } = harness.seedRun(undefined, { prNumber: null });
+		const { runId } = harness.seedRun(undefined, { prNumber: null, headRef: BRANCH_HEAD_REF });
 		const port = await harness.start();
 
 		const res = await harness.request(port, "POST", `/api/runs/${runId}/file-views`, {
@@ -118,15 +123,18 @@ describe("GitHub mark sync", () => {
 			(args) => args[0] === "pr" && args[1] === "view",
 		);
 		expect(prViewCalls).toHaveLength(1);
+		// The stored branch is passed positionally so gh resolves that branch's PR
+		// regardless of what the checkout has since moved to.
+		expect(prViewCalls[0]?.[2]).toBe(BRANCH_HEAD_REF);
 		const calls = await harness.graphqlCalls();
 		expect(calls.map((c) => c.name)).toEqual(["GetPullRequestIdentity", "MarkFileAsViewed"]);
 		expect(calls[0]?.fields.number).toBe(String(PR_NUMBER));
 		expect(calls[1]?.fields).toEqual({ pullRequestId: PR_NODE_ID, path: "src/foo.ts" });
 	});
 
-	it("skips GitHub when the checked-out branch has no PR but keeps the local mark", async () => {
+	it("skips GitHub when the run's stored branch has no PR but keeps the local mark", async () => {
 		await harness.writeGhShim(undefined, { branchPrNumber: null });
-		const { runId } = harness.seedRun(undefined, { prNumber: null });
+		const { runId } = harness.seedRun(undefined, { prNumber: null, headRef: BRANCH_HEAD_REF });
 		const port = await harness.start();
 
 		const res = await harness.request(port, "POST", `/api/runs/${runId}/file-views`, {
@@ -135,6 +143,23 @@ describe("GitHub mark sync", () => {
 
 		expect(res.status).toBe(200);
 		expect(await harness.graphqlCalls()).toEqual([]);
+		const rows = harness.db.select().from(fileView).where(eq(fileView.runId, runId)).all();
+		expect(rows.map((r) => r.filePath)).toEqual(["src/foo.ts"]);
+	});
+
+	it("skips GitHub entirely for a branch run with no recorded headRef (detached import)", async () => {
+		await harness.writeGhShim();
+		const { runId } = harness.seedRun(undefined, { prNumber: null, headRef: null });
+		const port = await harness.start();
+
+		const res = await harness.request(port, "POST", `/api/runs/${runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+
+		// No branch identity was recorded at import time, so there is no PR to
+		// target — the run is local-only and gh is never consulted.
+		expect(res.status).toBe(200);
+		expect(await harness.rawCalls()).toEqual([]);
 		const rows = harness.db.select().from(fileView).where(eq(fileView.runId, runId)).all();
 		expect(rows.map((r) => r.filePath)).toEqual(["src/foo.ts"]);
 	});

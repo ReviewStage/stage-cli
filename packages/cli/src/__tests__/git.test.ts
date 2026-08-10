@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { isMaxBufferError, parseRepoName, resolveScope } from "../git.js";
+import { isMaxBufferError, parseRepoName, readRepoContext, resolveScope } from "../git.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 
 let tmpDir: string;
@@ -125,6 +125,22 @@ describe("parseRepoName", () => {
 	it("falls back to the worktree basename for an empty/garbage URL", () => {
 		expect(parseRepoName("", FALLBACK_ROOT)).toBe("monterrey-v3");
 		expect(parseRepoName(".git", FALLBACK_ROOT)).toBe("monterrey-v3");
+	});
+});
+
+describe("readRepoContext", () => {
+	it("captures the checked-out branch as headRef", async () => {
+		await initDivergedRepo();
+		git("checkout", "feature");
+
+		expect(readRepoContext().headRef).toBe("feature");
+	});
+
+	it("records a null headRef for a detached HEAD", async () => {
+		const { commonSha } = await initDivergedRepo();
+		git("checkout", "--detach", commonSha);
+
+		expect(readRepoContext().headRef).toBeNull();
 	});
 });
 

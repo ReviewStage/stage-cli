@@ -1,5 +1,6 @@
 ALTER TABLE `chapter` ADD `riskLevel` text;--> statement-breakpoint
 ALTER TABLE `chapter` ADD `riskReasons` text;--> statement-breakpoint
+ALTER TABLE `chapter_run` ADD `headRef` text;--> statement-breakpoint
 -- Releases before dense 0-based chapter indexing persisted the agent's 1-based
 -- `order` directly as chapterIndex. Renormalize every run to a dense 0-based
 -- rank ordered by the existing chapterIndex so old runs don't render as
