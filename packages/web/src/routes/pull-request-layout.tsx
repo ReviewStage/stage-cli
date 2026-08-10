@@ -300,9 +300,10 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 
 	// The hunk index is built once from the stable diff so viewed toggles only
 	// pay for the subtraction, letting the badge update in the same render as
-	// the optimistic viewed-state cache writes.
+	// the optimistic viewed-state cache writes. It indexes the parsed Pierre
+	// hunks — the `PullRequestFile`s themselves carry no hunks in the CLI.
 	const files = useMemo(() => fileEntries.map((entry) => entry.file), [fileEntries]);
-	const hunkIndex = useMemo<HunkIndex>(() => buildHunkIndex(files), [files]);
+	const hunkIndex = useMemo<HunkIndex>(() => buildHunkIndex(fileEntries), [fileEntries]);
 
 	const viewedChapterHunkRefs = useMemo(
 		() => (chapters ? collectViewedChapterHunkRefs(chapters, chapterIdSet, filePathSet) : []),

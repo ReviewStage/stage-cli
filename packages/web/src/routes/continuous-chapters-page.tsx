@@ -4,7 +4,6 @@ import { Link, Navigate } from "@tanstack/react-router";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type ListRange, Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import { FileHeader, PierreDiffViewer } from "@/components/chapter";
 import { ContinuousChapterPanel } from "@/components/chapter/continuous-chapter-panel";
 import {
 	alignElementTopToContentTop,
@@ -12,6 +11,11 @@ import {
 	scrollToRenderedLine,
 } from "@/components/chapter/continuous-scroll-into-view";
 import type { ChapterOverlayProps, CollapseState } from "@/components/files";
+import {
+	FileDiffSection,
+	findScrollParent,
+	resolveFileContent,
+} from "@/components/files/file-diff-list";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChapterContext } from "@/lib/chapter-context";
@@ -32,6 +36,7 @@ import {
 import { PANEL_POSITION, type PanelPosition, useChapterSettings } from "@/lib/use-chapter-settings";
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
+import { useDiffSettings } from "@/lib/use-diff-settings";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
 import { type UseViewStateResult, useViewState } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
@@ -101,6 +106,8 @@ interface SectionSharedProps {
 	totalChapters: number;
 	position: PanelPosition;
 	scrollContainer: HTMLElement;
+	/** Raw per-file contents for image diffs and full-file rename previews. */
+	fileContents: FileContentsMap;
 	view: UseViewStateResult;
 	focusedKeyChangeId: string | null;
 	focusedKeyChangeChapterId: string | null;
@@ -373,6 +380,14 @@ function ContinuousChaptersContent({
 		[handleToggleChapterViewed, activeChapter],
 	);
 
+	// One binding for the whole stream — FileDiffList, the usual page-level
+	// registrar of this shortcut, is not mounted in continuous mode.
+	const { toggleInlineCommentsMinimized } = useDiffSettings();
+	useHotkeys(KEYBOARD_SHORTCUTS.TOGGLE_INLINE_COMMENTS.hotkey, toggleInlineCommentsMinimized, {
+		preventDefault: true,
+		enableOnFormTags: false,
+	});
+
 	const handleToggleFileViewed = useCallback(
 		(model: ChapterDiffModel, filePath: string) => {
 			if (view.filePathSet.has(filePath)) {
@@ -442,6 +457,7 @@ function ContinuousChaptersContent({
 			totalChapters,
 			position: panelPosition,
 			scrollContainer,
+			fileContents,
 			view,
 			focusedKeyChangeId: focus?.keyChangeId ?? null,
 			focusedKeyChangeChapterId: focusOwner?.chapter.id ?? null,
@@ -459,6 +475,7 @@ function ContinuousChaptersContent({
 		totalChapters,
 		panelPosition,
 		scrollContainer,
+		fileContents,
 		view,
 		focus,
 		focusOwner,
@@ -699,10 +716,14 @@ const ContinuousChapterSection = memo(function ContinuousChapterSection({
 			</div>
 		) : (
 			<div>
+				{/* The shared FileDiffSection with an explicit, chapter-scoped container
+				    id — FileDiffList's default `file-${path}` ids would collide when the
+				    same file appears in multiple chapters of the continuous stream. */}
 				{entries.map((entry) => (
 					<div key={entry.file.path} style={{ paddingTop: 16 }}>
-						<ContinuousFileSection
+						<FileDiffSection
 							entry={entry}
+							content={resolveFileContent(shared.fileContents, entry)}
 							containerId={getFileContainerId(chapter.id, entry.file.path)}
 							isViewed={view.filePathSet.has(entry.file.path)}
 							isFocused={entry.file.path === focusedFilePath}
@@ -767,95 +788,8 @@ function ActiveCollapseRegistration({
 	return null;
 }
 
-interface ContinuousFileSectionProps {
-	entry: FileDiffEntry;
-	containerId: string;
-	isViewed: boolean;
-	isFocused: boolean;
-	onToggleViewed: (path: string) => void;
-	collapseState: CollapseState;
-	chapterOverlay: ChapterOverlayProps;
-}
-
-/**
- * Single file diff section with an explicit, chapter-scoped container id.
- * The shared FileDiffList hard-codes `file-${path}` ids, which collide when
- * the same file appears in multiple chapters of the continuous stream — so
- * this composes the same FileHeader + PierreDiffViewer pair directly.
- */
-function ContinuousFileSection({
-	entry,
-	containerId,
-	isViewed,
-	isFocused,
-	onToggleViewed,
-	collapseState,
-	chapterOverlay,
-}: ContinuousFileSectionProps) {
-	const { file, diff } = entry;
-	const isCollapsed = collapseState.collapsedFiles.has(file.path);
-	const [isExpanded, setIsExpanded] = useState(false);
-
-	const handleToggle = useCallback(
-		() => collapseState.toggleFileCollapsed(file.path),
-		[collapseState, file.path],
-	);
-	const handleToggleAll = useCallback(
-		() => (isCollapsed ? collapseState.expandAllFiles() : collapseState.collapseAllFiles()),
-		[isCollapsed, collapseState],
-	);
-	const handleToggleExpand = useCallback(() => setIsExpanded((v) => !v), []);
-	const handleToggleViewed = useCallback(
-		() => onToggleViewed(file.path),
-		[onToggleViewed, file.path],
-	);
-
-	return (
-		<div
-			id={containerId}
-			data-focused-file={isFocused ? "true" : undefined}
-			className={cn("rounded-lg", isFocused && "outline-2 outline-primary/70")}
-		>
-			<FileHeader
-				file={file}
-				isCollapsed={isCollapsed}
-				isExpanded={isExpanded}
-				isViewed={isViewed}
-				onToggle={handleToggle}
-				onToggleAll={handleToggleAll}
-				onToggleExpand={handleToggleExpand}
-				onToggleViewed={handleToggleViewed}
-			/>
-			{!isCollapsed && (
-				<PierreDiffViewer
-					fileDiff={diff}
-					filePath={file.path}
-					expandUnchanged={isExpanded}
-					allLineRefsByFile={chapterOverlay.allLineRefsByFile}
-					focusedLineRefsByFile={chapterOverlay.focusedLineRefsByFile}
-					focusedKeyChangeId={chapterOverlay.focusedKeyChangeId}
-					isKeyChangeChecked={chapterOverlay.isKeyChangeChecked}
-					onMarkKeyChangeChecked={chapterOverlay.onMarkKeyChangeChecked}
-					onUnmarkKeyChangeChecked={chapterOverlay.onUnmarkKeyChangeChecked}
-					onFocusKeyChange={chapterOverlay.onFocusKeyChange}
-				/>
-			)}
-		</div>
-	);
-}
-
 function getFileContainerId(chapterId: string, filePath: string): string {
 	return `continuous-chapter-${chapterId}-file-${filePath}`;
-}
-
-function findScrollParent(element: HTMLElement | null): HTMLElement | null {
-	let node = element?.parentElement ?? null;
-	while (node) {
-		const { overflowY } = getComputedStyle(node);
-		if (overflowY === "auto" || overflowY === "scroll") return node;
-		node = node.parentElement;
-	}
-	return null;
 }
 
 function LoadingState() {

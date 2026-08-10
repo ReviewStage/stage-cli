@@ -1,25 +1,36 @@
 import type { HunkReference } from "@stagereview/types/chapters";
-import type { HunkRecord, PullRequestFile } from "@/lib/diff-types";
+import type { PullRequestFile } from "@/lib/diff-types";
+import type { FileDiffEntry } from "@/lib/parse-diff";
 
 export interface LineCounts {
 	linesAdded: number;
 	linesDeleted: number;
 }
 
-/** Maps filePath → oldStart → hunk for O(1) hunk resolution. */
-export type HunkIndex = Map<string, Map<number, HunkRecord>>;
+/** Maps filePath → oldStart → the hunk's line counts for O(1) hunk resolution. */
+export type HunkIndex = Map<string, Map<number, LineCounts>>;
 
 export interface ResolvedHunk {
-	hunk: HunkRecord;
+	counts: LineCounts;
 	filePath: string;
 }
 
-export function buildHunkIndex(files: PullRequestFile[]): HunkIndex {
+/**
+ * Indexes each file's hunks by old-side start line. The CLI keeps hunks on the
+ * parsed Pierre diff — `PullRequestFile.hunks` is always empty (unlike the
+ * hosted app's wire format) — so the index is built from `FileDiffEntry.diff`:
+ * `deletionStart` is the hunk's old start, matching `HunkReference.oldStart`,
+ * and `additionLines`/`deletionLines` are its changed-line counts.
+ */
+export function buildHunkIndex(entries: readonly FileDiffEntry[]): HunkIndex {
 	const index: HunkIndex = new Map();
-	for (const file of files) {
-		const byOldStart = new Map<number, HunkRecord>();
-		for (const hunk of file.hunks) {
-			byOldStart.set(hunk.oldStart, hunk);
+	for (const { file, diff } of entries) {
+		const byOldStart = new Map<number, LineCounts>();
+		for (const hunk of diff.hunks) {
+			byOldStart.set(hunk.deletionStart, {
+				linesAdded: hunk.additionLines,
+				linesDeleted: hunk.deletionLines,
+			});
 		}
 		index.set(file.path, byOldStart);
 	}
@@ -39,9 +50,9 @@ export function resolveChapterHunks(hunkRefs: HunkReference[], index: HunkIndex)
 		}
 		const fileHunks = index.get(ref.filePath);
 		if (!fileHunks) continue;
-		const hunk = fileHunks.get(ref.oldStart);
-		if (!hunk) continue;
-		result.push({ hunk, filePath: ref.filePath });
+		const counts = fileHunks.get(ref.oldStart);
+		if (!counts) continue;
+		result.push({ counts, filePath: ref.filePath });
 	}
 	return result;
 }
@@ -50,11 +61,9 @@ export function sumHunkLineCounts(hunks: ResolvedHunk[]): LineCounts {
 	let linesAdded = 0;
 	let linesDeleted = 0;
 
-	for (const { hunk } of hunks) {
-		for (const line of hunk.lines) {
-			if (line.type === "addition") linesAdded++;
-			if (line.type === "deletion") linesDeleted++;
-		}
+	for (const { counts } of hunks) {
+		linesAdded += counts.linesAdded;
+		linesDeleted += counts.linesDeleted;
 	}
 
 	return { linesAdded, linesDeleted };

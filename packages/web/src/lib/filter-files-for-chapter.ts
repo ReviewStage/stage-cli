@@ -154,6 +154,17 @@ export function filterFilesForChapter(
 		if (!segment) continue;
 
 		const allHunks = parseHunksFromSegment(segment.text);
+		if (allHunks.length === 0) {
+			// Header-only files (binary contents, pure renames) have no hunks to
+			// filter; include them whole — matched via the HEADER_ONLY_OLD_START
+			// sentinel ref — so chapter views can render them through the
+			// image/full-preview branches. Mirrors hosted's filterFilesForChapter,
+			// which passes zero-hunk files straight through.
+			const diff = getSingularPatch(segment.text);
+			result.push({ file: fileDiffToPullRequestFile(diff), diff });
+			continue;
+		}
+
 		const chapterHunks = allHunks.filter((h) => chapterOldStarts.has(h.oldStart));
 		if (chapterHunks.length === 0) continue;
 

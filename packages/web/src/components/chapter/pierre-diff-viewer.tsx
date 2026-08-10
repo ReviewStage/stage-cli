@@ -247,9 +247,13 @@ const GUTTER_BUTTON_STYLE: CSSProperties = {
 	cursor: "pointer",
 };
 
-function annotationLineKey(side: DiffSide, lineNumber: number): string {
-	return `${side}:${lineNumber}`;
-}
+/** Line numbers the user force-shown while minimized, tracked per diff side. */
+type ForceShownLines = Record<DiffSide, ReadonlySet<number>>;
+
+const NO_FORCE_SHOWN_LINES: ForceShownLines = {
+	[DIFF_SIDE.ADDITIONS]: new Set(),
+	[DIFF_SIDE.DELETIONS]: new Set(),
+};
 
 /**
  * A row is collapsed when inline annotations are minimized and the user hasn't
@@ -261,12 +265,12 @@ function isAnnotationRowCollapsed(
 	annotation: DiffLineAnnotation<CommentThread[]>,
 	hasDraft: boolean,
 	inlineCommentsMinimized: boolean,
-	forceShownLines: Set<string>,
+	forceShownLines: ForceShownLines,
 ): boolean {
 	const threads = annotation.metadata ?? [];
 	if (!inlineCommentsMinimized || threads.length === 0) return false;
 	if (hasDraft) return false;
-	return !forceShownLines.has(annotationLineKey(annotation.side, annotation.lineNumber));
+	return !forceShownLines[annotation.side].has(annotation.lineNumber);
 }
 
 export function PierreDiffViewer({
@@ -350,24 +354,24 @@ export function PierreDiffViewer({
 	const { selectionInfo, clearSelection } = useTextSelection(diffContainerRef);
 
 	// Rows the user expanded while inline comments are minimized ('i' toggle).
-	const [forceShownLines, setForceShownLines] = useState<Set<string>>(new Set());
+	const [forceShownLines, setForceShownLines] = useState<ForceShownLines>(NO_FORCE_SHOWN_LINES);
 
 	// Clear per-line overrides when the global toggle is turned off
 	useEffect(() => {
 		if (!inlineCommentsMinimized) {
-			setForceShownLines(new Set());
+			setForceShownLines(NO_FORCE_SHOWN_LINES);
 		}
 	}, [inlineCommentsMinimized]);
 
-	const toggleLineVisibility = useCallback((key: string) => {
+	const toggleLineVisibility = useCallback((side: DiffSide, lineNumber: number) => {
 		setForceShownLines((prev) => {
-			const next = new Set(prev);
-			if (next.has(key)) {
-				next.delete(key);
+			const next = new Set(prev[side]);
+			if (next.has(lineNumber)) {
+				next.delete(lineNumber);
 			} else {
-				next.add(key);
+				next.add(lineNumber);
 			}
-			return next;
+			return { ...prev, [side]: next };
 		});
 	}, []);
 
@@ -452,7 +456,7 @@ export function PierreDiffViewer({
 			const threads = annotation.metadata ?? [];
 			const draft = findDraftAt(drafts, annotation.side, annotation.lineNumber);
 			if (threads.length === 0 && !draft) return null;
-			const lineKey = annotationLineKey(annotation.side, annotation.lineNumber);
+			const toggleVisibility = () => toggleLineVisibility(annotation.side, annotation.lineNumber);
 
 			// Minimized rows collapse every thread on the line into a single merged
 			// indicator chip. An open comment composer always forces the row open.
@@ -467,10 +471,7 @@ export function PierreDiffViewer({
 				return (
 					<div className="relative z-20 h-0 font-sans">
 						<div className="absolute right-1.5 bottom-0">
-							<MinimizedAnnotationIndicator
-								threads={threads}
-								onClick={() => toggleLineVisibility(lineKey)}
-							/>
+							<MinimizedAnnotationIndicator threads={threads} onClick={toggleVisibility} />
 						</div>
 					</div>
 				);
@@ -494,7 +495,7 @@ export function PierreDiffViewer({
 							<div className="absolute right-1.5 bottom-0">
 								<MinimizedAnnotationIndicator
 									threads={threads}
-									onClick={() => toggleLineVisibility(lineKey)}
+									onClick={toggleVisibility}
 									isExpanded
 								/>
 							</div>

@@ -34,7 +34,10 @@ function ChaptersLayout() {
 		select: (state) => state.matches.some((match) => match.routeId === CHAPTER_DETAIL_ROUTE_ID),
 	});
 
-	const parsed = Number(params.chapterNumber);
+	// Same integer semantics as the chapter detail route, so paged and
+	// continuous deep links agree on what `/chapters/1e2` or `/chapters/1.5` mean.
+	const parsed =
+		params.chapterNumber === undefined ? Number.NaN : Number.parseInt(params.chapterNumber, 10);
 	const deepLinkedChapterNumber = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 	const [initialChapterNumber, setInitialChapterNumber] = useState(deepLinkedChapterNumber);
 	// Render-time state sync ("adjusting state during render"): remember the
