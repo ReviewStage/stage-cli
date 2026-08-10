@@ -120,6 +120,8 @@ export function imageProxyRoutes(): Route[] {
 
 				if (!upstream.ok) {
 					await upstream.body?.cancel();
+					// Status only — never the body or token.
+					console.error(`Image proxy upstream responded ${upstream.status} ${upstream.statusText}`);
 					writeJson(res, 502, { error: "Upstream fetch failed" });
 					return;
 				}

@@ -35,8 +35,17 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 
 	// Sequential like git.ts's getUntrackedDiff: one child process per file at
 	// a time, so thousands of untracked files can't exhaust processes/memory.
+	// The aggregate is capped too — per-file buffers bound each child, but the
+	// accumulated response could otherwise still exhaust the heap.
 	const patches: string[] = [];
+	let totalBytes = 0;
 	for (const file of files) {
+		if (totalBytes > MAX_DIFF_BYTES) {
+			console.error(
+				`Untracked diff output exceeded ${MAX_DIFF_BYTES} bytes; omitting remaining untracked files from the response`,
+			);
+			break;
+		}
 		try {
 			await execFileAsync(
 				"git",
@@ -55,7 +64,10 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 				{ cwd, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES },
 			);
 		} catch (err: unknown) {
-			if (hasStringStdout(err)) patches.push(err.stdout);
+			if (hasStringStdout(err)) {
+				patches.push(err.stdout);
+				totalBytes += err.stdout.length;
+			}
 		}
 	}
 	return patches.filter(Boolean).join("\n");
