@@ -350,6 +350,31 @@ describe("diff API", () => {
 		expect(data.fileContents["logo.png"]?.newContent).toBeNull();
 	});
 
+	it("refuses to serve working-tree content through a symlink escaping the repo", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		const outside = path.join(path.dirname(repoRoot), "outside-secret.png");
+		await fs.writeFile(outside, Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]));
+		await fs.writeFile(path.join(repoRoot, "keep.txt"), "keep\n");
+		git("add", "keep.txt");
+		git("commit", "-m", "initial");
+
+		await fs.symlink(outside, path.join(repoRoot, "leak.png"));
+		const runId = insertWorkingTreeRun(WORKING_TREE_REF.WORK);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		const entry = data.fileContents["leak.png"];
+		if (entry !== undefined) {
+			expect(entry.newContent).toBeNull();
+		}
+		await fs.rm(outside, { force: true });
+	});
+
 	it("returns 404 for unknown runId", async () => {
 		const { port } = await startWithRoutes();
 		const res = await rawRequest(port, "/api/runs/00000000-0000-0000-0000-000000000000/diff.patch");
