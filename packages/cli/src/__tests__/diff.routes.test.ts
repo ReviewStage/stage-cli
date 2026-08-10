@@ -423,6 +423,32 @@ describe("diff API", () => {
 		expect(entry?.oldContent).toBe(png.toString("base64"));
 	});
 
+	it("serves an image-named symlink's target path as text, not base64", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		await fs.writeFile(path.join(repoRoot, "real.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+		git("add", "-A");
+		git("commit", "-m", "initial");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		await fs.symlink("real.png", path.join(repoRoot, "logo.png"));
+		git("add", "-A");
+		git("commit", "-m", "add symlink");
+		const headSha = git("rev-parse", "HEAD").trim();
+		const runId = insertCommittedRun(baseSha, headSha);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		const entry = data.fileContents["logo.png"];
+		expect(entry).toBeDefined();
+		expect(entry?.encoding).toBeUndefined();
+		expect(entry?.newContent?.trim()).toBe("real.png");
+	});
+
 	it("refuses to serve working-tree content through a symlink escaping the repo", async () => {
 		git("init", "--initial-branch=main");
 		git("config", "user.email", "test@example.com");
@@ -441,12 +467,13 @@ describe("diff API", () => {
 		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
 		expect(res.status).toBe(200);
 		const data = parseDiffResponse(res.body);
-		// The untracked symlink appears in the patch, so its entry must exist —
-		// with null content rather than the out-of-repo target bytes. Guarding
-		// on presence would let a silent inclusion regression skip the check.
+		// Git's content for a symlink is its target path (already visible in the
+		// patch itself) — served via readlink, which never opens the target. The
+		// out-of-repo file's bytes must not appear anywhere in the response.
 		const entry = data.fileContents["leak.png"];
 		expect(entry).toBeDefined();
-		expect(entry?.newContent).toBeNull();
+		expect(entry?.encoding).toBeUndefined();
+		expect(entry?.newContent).toBe(outside);
 		const outsideBase64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]).toString("base64");
 		expect(res.body).not.toContain(outsideBase64);
 		await fs.rm(outside, { force: true });

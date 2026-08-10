@@ -271,7 +271,13 @@ export function filterFilesForChapter(
 		if (chapterHunks.length === 0) continue;
 
 		const contents = fileContents?.[segment.name ?? filePath];
-		if (contents?.oldContent != null && contents?.newContent != null) {
+		// base64 entries are image bytes; applying text hunks to them would
+		// corrupt the reconstruction, so enrichment only uses UTF-8 entries.
+		if (
+			contents?.encoding !== "base64" &&
+			contents?.oldContent != null &&
+			contents?.newContent != null
+		) {
 			const nonChapterHunks = allHunks.filter((h) => !chapterOldStarts.has(h.oldStart));
 			const intermediateContent = applyHunksToContent(contents.oldContent, nonChapterHunks);
 			const oldPath = segment.prevName ?? segment.name ?? filePath;

@@ -123,6 +123,10 @@ export function diffRoutes(db: StageDb): Route[] {
 const MINUS_RE = /^--- (.+)$/m;
 const PLUS_RE = /^\+\+\+ (.+)$/m;
 const BINARY_RE = /^Binary files|^GIT binary patch/m;
+// Mode 120000 in the pre-hunk header marks a symlink (same detection as the
+// CLI diff parser's isSymlinkPatch).
+const SYMLINK_MODE_RE =
+	/(?:new file mode|deleted file mode|old mode|new mode|index [0-9a-f]+\.\.[0-9a-f]+) 120000\b/m;
 const RENAME_FROM_RE = /^(?:rename|copy) from (.+)$/m;
 const RENAME_TO_RE = /^(?:rename|copy) to (.+)$/m;
 // `diff --git "a/x y" "b/x y"` — git quotes paths containing spaces or specials.
@@ -133,6 +137,7 @@ interface ParsedFilePaths {
 	oldPath: string | null;
 	newPath: string | null;
 	isBinary: boolean;
+	isSymlink: boolean;
 }
 
 function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
@@ -148,6 +153,8 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 		if (!text.startsWith("diff --git ")) continue;
 
 		const isBinary = BINARY_RE.test(text);
+		const headerEnd = text.indexOf("@@");
+		const isSymlink = SYMLINK_MODE_RE.test(headerEnd === -1 ? text : text.slice(0, headerEnd));
 
 		let oldPath = decodeHeaderPath(text.match(MINUS_RE)?.[1], "a/");
 		let newPath = decodeHeaderPath(text.match(PLUS_RE)?.[1], "b/");
@@ -180,7 +187,7 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 			}
 		}
 
-		results.push({ oldPath, newPath, isBinary });
+		results.push({ oldPath, newPath, isBinary, isSymlink });
 	}
 
 	return results;
@@ -362,6 +369,26 @@ function fetchContent(
 	return getGitFileContent(repoRoot, ref, filePath);
 }
 
+/**
+ * A symlink's git content is its target path: `git show` prints it for
+ * committed refs; on disk the link itself must be read, not followed.
+ */
+async function fetchSymlinkTarget(
+	repoRoot: string,
+	ref: string | "DISK",
+	filePath: string,
+): Promise<string | null> {
+	if (ref !== "DISK") return getGitFileContent(repoRoot, ref, filePath);
+	const resolved = path.resolve(repoRoot, filePath);
+	const rel = path.relative(repoRoot, resolved);
+	if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+	try {
+		return await fs.readlink(resolved);
+	} catch {
+		return null;
+	}
+}
+
 function fetchContentBase64(
 	repoRoot: string,
 	ref: string | "DISK",
@@ -393,9 +420,20 @@ async function buildFileContents(
 	const { oldRef, newRef } = getContentRefs(run);
 
 	const entries = await Promise.all(
-		files.map(async ({ oldPath, newPath, isBinary }) => {
+		files.map(async ({ oldPath, newPath, isBinary, isSymlink }) => {
 			const key = newPath ?? oldPath;
 			if (!key) return null;
+
+			// A symlink's content is its target path (git blob semantics) — text,
+			// even when the link is named like an image. The web routes mode
+			// 120000 to the text diff, so base64 here would corrupt it.
+			if (isSymlink) {
+				const [oldContent, newContent] = await Promise.all([
+					oldPath ? fetchSymlinkTarget(repoRoot, oldRef, oldPath) : Promise.resolve(null),
+					newPath ? fetchSymlinkTarget(repoRoot, newRef, newPath) : Promise.resolve(null),
+				]);
+				return [key, { oldContent, newContent }] as const;
+			}
 
 			// Images ship base64-encoded (whether or not git marked the diff as
 			// binary — pure renames carry no marker) so the image diff viewer
