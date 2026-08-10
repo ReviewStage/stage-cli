@@ -270,16 +270,16 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 						</TooltipTrigger>
 						<TooltipContent>{isOpen ? "Collapse thread" : "Expand thread"}</TooltipContent>
 					</Tooltip>
-					<ResolveButton
-						isResolved={thread.isResolved}
-						onToggle={handleResolveToggle}
-						disabled={!canToggleThreadResolution(thread, canWriteToGitHub)}
-					/>
 					<Byline comment={root} />
 					<StateBadge state={root.state} />
-					{idle && (
-						<div className="flex shrink-0 items-center gap-0.5">
-							{canAddLocalThreadToReview(
+					<div className="flex shrink-0 items-center gap-0.5">
+						<ResolveButton
+							isResolved={thread.isResolved}
+							onToggle={handleResolveToggle}
+							disabled={!canToggleThreadResolution(thread, canWriteToGitHub)}
+						/>
+						{idle &&
+							canAddLocalThreadToReview(
 								thread,
 								githubAvailable,
 								canWriteToGitHub,
@@ -300,39 +300,38 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 									<TooltipContent>Add to GitHub review (pending)</TooltipContent>
 								</Tooltip>
 							)}
-							{(!isGitHub || githubAvailable) && canReply && (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<Button
-											variant="ghost"
-											size="icon-xs"
-											aria-label="Reply"
-											className="rounded-md text-muted-foreground"
-											onClick={() => {
-												setIsOpen(true);
-												setError(null);
-												setIsReplying(true);
-											}}
-										>
-											<MessageSquare className="size-3.5" />
-										</Button>
-									</TooltipTrigger>
-									<TooltipContent>Reply</TooltipContent>
-								</Tooltip>
-							)}
-							{canEditReviewComment(root, canWriteToGitHub) && (
-								<CommentActions
-									onEdit={() => {
-										setIsOpen(true);
-										setError(null);
-										setEditingId(root.id);
-									}}
-									onDelete={() => setDeleteTarget(root)}
-									deleteLabel={rootDeleteRemovesReplies ? "Delete thread" : "Delete"}
-								/>
-							)}
-						</div>
-					)}
+						{idle && (!isGitHub || githubAvailable) && canReply && (
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										aria-label="Reply"
+										className="rounded-md text-muted-foreground"
+										onClick={() => {
+											setIsOpen(true);
+											setError(null);
+											setIsReplying(true);
+										}}
+									>
+										<MessageSquare className="size-3.5" />
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent>Reply</TooltipContent>
+							</Tooltip>
+						)}
+						{idle && canEditReviewComment(root, canWriteToGitHub) && (
+							<CommentActions
+								onEdit={() => {
+									setIsOpen(true);
+									setError(null);
+									setEditingId(root.id);
+								}}
+								onDelete={() => setDeleteTarget(root)}
+								deleteLabel={rootDeleteRemovesReplies ? "Delete thread" : "Delete"}
+							/>
+						)}
+					</div>
 				</div>
 
 				<CollapsibleContent className="space-y-3 px-3 pb-3">

@@ -9,6 +9,7 @@ import { formatPrologueAsMarkdown } from "../format-prologue-markdown";
 
 const basePrologue: Prologue = {
 	motivation: "Reviews were hard to follow.",
+	rootCause: null,
 	outcome: "Reviews read like a story now.",
 	diagram: null,
 	keyChanges: [

@@ -2,6 +2,7 @@ import {
 	type DiffLineAnnotation,
 	type FileDiffMetadata,
 	type GetHoveredLineResult,
+	getLineAnnotationName,
 	getSingularPatch,
 	type Hunk,
 	type SelectedLineRange,
@@ -111,6 +112,78 @@ export function getVisibleLineRange(
 		first: firstHunk.additionStart,
 		last: lastHunk.additionStart + lastHunk.additionCount - 1,
 	};
+}
+
+/**
+ * Builds CSS for annotation rows on change (addition/deletion) lines so the
+ * comment row mirrors the styling of the diff line above: two-tone background
+ * (number column darker, content lighter) plus the same indicator bar Pierre
+ * draws on `[data-column-number]::before` when `indicators="bars"`.
+ */
+export function buildChangeAnnotationCSS(additionSlots: string[], deletionSlots: string[]): string {
+	function buildSide(slots: string[], side: "addition" | "deletion"): string {
+		if (slots.length === 0) return "";
+
+		// `:not([data-selected-line])` lets Pierre's hover/selection blue take over,
+		// since our :has() selector has the same specificity as Pierre's selection rules.
+		// `[data-background]` mirrors Pierre's own gating: when the user disables the
+		// Backgrounds setting, Pierre removes that attribute and stops tinting change
+		// lines, so we must do the same for the annotation row.
+		const rowSel = slots
+			.map(
+				(slot) =>
+					`[data-background] [data-line-annotation]:has(slot[name="${slot}"]):not([data-selected-line])`,
+			)
+			.join(", ");
+		const contentSel = slots
+			.map(
+				(slot) =>
+					`[data-background] [data-line-annotation]:has(slot[name="${slot}"]):not([data-selected-line]) [data-annotation-content]`,
+			)
+			.join(", ");
+		const barSel = slots
+			.map(
+				(slot) =>
+					`[data-indicators="bars"] [data-line-annotation]:has(slot[name="${slot}"]):not([data-selected-line])::after`,
+			)
+			.join(", ");
+
+		// Match Pierre exactly: addition bar is solid, deletion bar is a striped gradient.
+		const barFill =
+			side === "addition"
+				? "background-color: var(--diffs-addition-base);"
+				: `background-image: linear-gradient(0deg, var(--diffs-bg-deletion) 50%, var(--diffs-deletion-base) 50%);
+				   background-repeat: repeat;
+				   background-size: 2px 2px;`;
+
+		return `
+			${rowSel} {
+				background-color: var(--diffs-bg-${side}-number);
+			}
+			${contentSel} {
+				background-color: var(--diffs-bg-${side});
+				/* 1px column separator, positioned just outside the left edge so it
+				   aligns with Pierre's [data-column-number] border-right above. */
+				box-shadow: -1px 0 0 0 var(--diffs-bg);
+			}
+			${barSel} {
+				content: '';
+				display: block;
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 4px;
+				height: 100%;
+				pointer-events: none;
+				z-index: 4;
+				${barFill}
+			}
+		`;
+	}
+
+	return [buildSide(additionSlots, "addition"), buildSide(deletionSlots, "deletion")]
+		.filter(Boolean)
+		.join("\n");
 }
 
 type PierreDiffViewerProps = {
@@ -229,6 +302,26 @@ export function PierreDiffViewer({
 		() => buildCommentAnnotations(fileThreads, drafts),
 		[fileThreads, drafts],
 	);
+
+	// Tint comment annotation rows on change lines so each comment visually
+	// attaches to the diff line it's reviewing (mirrors the hosted app's
+	// buildChangeAnnotationCSS pipeline).
+	const annotationRowUnsafeCSS = useMemo(() => {
+		const additionSlots: string[] = [];
+		const deletionSlots: string[] = [];
+
+		for (const annotation of lineAnnotations) {
+			if (!isChangeLine(diffHunks, annotation.lineNumber, annotation.side)) continue;
+			const slotName = getLineAnnotationName(annotation);
+			if (annotation.side === DIFF_SIDE.ADDITIONS) {
+				additionSlots.push(slotName);
+			} else {
+				deletionSlots.push(slotName);
+			}
+		}
+
+		return buildChangeAnnotationCSS(additionSlots, deletionSlots);
+	}, [lineAnnotations, diffHunks]);
 
 	// Open a composer at an anchor. A row holds at most one composer, so re-opening the
 	// same (side, endLine) adopts the new range's startLine rather than duplicating it.
@@ -436,6 +529,7 @@ export function PierreDiffViewer({
 			enableLineSelection: true,
 			enableGutterUtility: true,
 			onLineSelected: handleLineSelected,
+			unsafeCSS: annotationRowUnsafeCSS,
 		}),
 		[
 			appTheme,
@@ -448,6 +542,7 @@ export function PierreDiffViewer({
 			deferredLineNumbers,
 			deferredExpandUnchanged,
 			handleLineSelected,
+			annotationRowUnsafeCSS,
 		],
 	);
 
@@ -546,6 +641,32 @@ export function findContainingHunk(
 		const count = side === DIFF_SIDE.ADDITIONS ? hunk.additionCount : hunk.deletionCount;
 		return line >= start && line < start + count;
 	});
+}
+
+/**
+ * Returns true when the given line is an addition (RIGHT side) or deletion (LEFT side),
+ * not a context line. Used to decide whether to tint the inline comment annotation row.
+ */
+export function isChangeLine(hunks: Hunk[], line: number, side: DiffSide): boolean {
+	const hunk = findContainingHunk(hunks, line, side);
+	if (!hunk) return false;
+
+	const isAdditionsSide = side === DIFF_SIDE.ADDITIONS;
+	let currentLine = isAdditionsSide ? hunk.additionStart : hunk.deletionStart;
+
+	for (const content of hunk.hunkContent) {
+		// This Pierre version exposes block sizes as line counts, not line arrays.
+		const blockSize =
+			content.type === "context"
+				? content.lines
+				: isAdditionsSide
+					? content.additions
+					: content.deletions;
+		if (blockSize === 0) continue;
+		if (line < currentLine + blockSize) return content.type === "change";
+		currentLine += blockSize;
+	}
+	return false;
 }
 
 /** GitHub line comments must start and end inside the same hunk in the PR diff. */

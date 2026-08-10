@@ -37,7 +37,7 @@ export function ChapterDetailPage({ runId, chapterNumber }: ChapterDetailPagePro
 	const { data: diffData, isLoading: patchLoading, error: patchError } = useDiffPatch(runId);
 
 	const chapter =
-		chapterNumber === null ? undefined : chapters.find((c) => c.order === chapterNumber);
+		chapterNumber === null ? undefined : chapters.find((c) => c.order === chapterNumber - 1);
 	const chapterIndex = chapter ? chapters.indexOf(chapter) : -1;
 
 	const isLoading = chaptersLoading || patchLoading;
@@ -131,7 +131,7 @@ function ChapterDetailContent({
 		if (next) {
 			void navigate({
 				to: "/runs/$runId/chapters/$chapterNumber",
-				params: { runId, chapterNumber: String(next.order) },
+				params: { runId, chapterNumber: String(next.order + 1) },
 				// Preserve scroll position when moving between chapters on the detail
 				// page (matches the hosted app); resetting would jump to the top.
 				resetScroll: false,
@@ -259,7 +259,7 @@ function ChapterDetailContent({
 			if (!target) return;
 			void navigate({
 				to: "/runs/$runId/chapters/$chapterNumber",
-				params: { runId, chapterNumber: String(target.order) },
+				params: { runId, chapterNumber: String(target.order + 1) },
 				// Keep scroll position when stepping chapters via the keyboard
 				// (matches the hosted app); the default would jump to the top.
 				resetScroll: false,

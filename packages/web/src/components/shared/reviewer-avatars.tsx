@@ -56,7 +56,7 @@ export function ReviewerAvatars({
 		avatarUrl: reviewer.user.avatar_url,
 		alt: reviewer.user.login,
 		tooltip: `${reviewer.user.login} — ${REVIEWER_STATUS_LABELS[reviewer.status]}`,
-		badge: reviewer.user.type !== "Bot" ? getStatusIndicator(reviewer.status) : undefined,
+		badge: getStatusIndicator(reviewer.status),
 	}));
 
 	return <AvatarStack items={items} size={size} hoverSpread={hoverSpread} className={className} />;

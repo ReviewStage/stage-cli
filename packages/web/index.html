@@ -13,7 +13,7 @@
       (function () {
         try {
           var stored = localStorage.getItem("ui-theme");
-          var theme = stored && ["light", "dark", "system"].indexOf(stored) !== -1 ? stored : "system";
+          var theme = stored && ["light", "dark", "system"].indexOf(stored) !== -1 ? stored : "dark";
           var resolved =
             theme === "system"
               ? window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -22,8 +22,7 @@
               : theme;
           document.documentElement.classList.add(resolved);
         } catch (e) {
-          var fallback = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-          document.documentElement.classList.add(fallback);
+          document.documentElement.classList.add("dark");
         }
       })();
     </script>

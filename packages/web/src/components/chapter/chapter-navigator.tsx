@@ -72,7 +72,7 @@ export function ChapterNavigator({
 					<ShortcutTooltip shortcutKey={SHORTCUT_KEY.PREV_CHAPTER} label="Previous chapter">
 						<Link
 							to="/runs/$runId/chapters/$chapterNumber"
-							params={{ runId, chapterNumber: String(prevChapter.order) }}
+							params={{ runId, chapterNumber: String(prevChapter.order + 1) }}
 							resetScroll={false}
 							className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 						>
@@ -89,7 +89,7 @@ export function ChapterNavigator({
 							variant="ghost"
 							className="h-7 min-w-0 flex-1 cursor-pointer gap-1 px-2 font-medium text-sm"
 						>
-							<span className="truncate">Chapter {chapter.order}</span>
+							<span className="truncate">Chapter {chapter.order + 1}</span>
 							<ChevronDown className="size-3.5 shrink-0 opacity-50" />
 						</Button>
 					</DropdownMenuTrigger>
@@ -105,7 +105,7 @@ export function ChapterNavigator({
 								<DropdownMenuItem key={ch.id} asChild className="gap-3 px-3 py-2.5">
 									<Link
 										to="/runs/$runId/chapters/$chapterNumber"
-										params={{ runId, chapterNumber: String(ch.order) }}
+										params={{ runId, chapterNumber: String(ch.order + 1) }}
 										resetScroll={false}
 										className={cn("cursor-pointer", isActive && "bg-accent")}
 									>
@@ -125,7 +125,7 @@ export function ChapterNavigator({
 														: "bg-muted text-muted-foreground",
 												)}
 											>
-												{ch.order}
+												{ch.order + 1}
 											</div>
 										</StatusBadge>
 										<span className="min-w-0 flex-1 truncate text-sm">{ch.title}</span>
@@ -147,7 +147,7 @@ export function ChapterNavigator({
 					<ShortcutTooltip shortcutKey={SHORTCUT_KEY.NEXT_CHAPTER} label="Next chapter">
 						<Link
 							to="/runs/$runId/chapters/$chapterNumber"
-							params={{ runId, chapterNumber: String(nextChapter.order) }}
+							params={{ runId, chapterNumber: String(nextChapter.order + 1) }}
 							resetScroll={false}
 							className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 						>

@@ -256,7 +256,10 @@ export function CIChecks({ state, items }: CIChecksProps) {
 					/>
 				</button>
 			</PopoverTrigger>
-			<PopoverContent align="start" className="w-96 p-0">
+			<PopoverContent
+				align="start"
+				className="max-h-(--radix-popover-content-available-height) w-96 overflow-y-auto scrollbar-thin p-0"
+			>
 				<ChecksList items={sorted} />
 			</PopoverContent>
 		</Popover>

@@ -1,6 +1,8 @@
 import { type ViewState, ViewStateSchema } from "@stagereview/types/view-state";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { deriveViewedChapterIds } from "@/lib/derive-viewed-chapter-ids";
+import { useChapters } from "@/lib/use-chapters";
 
 export type { ViewState };
 
@@ -91,7 +93,12 @@ const deleteFileView = (runId: string, path: string) =>
 	);
 
 export interface UseViewStateDataResult {
-	/** Stable reference; mutates only when the underlying query data changes. */
+	/**
+	 * Stable reference; mutates only when the underlying query data changes.
+	 * Derived: a chapter is viewed via an explicit mark OR when every file its
+	 * hunk refs cover is in `filePathSet` (mirrors the hosted app's
+	 * `deriveViewedChapterIds`).
+	 */
 	chapterIdSet: ReadonlySet<string>;
 	/** Stable reference; mutates only when the underlying query data changes. */
 	keyChangeIdSet: ReadonlySet<string>;
@@ -132,9 +139,18 @@ export function useViewStateData(runId: string): UseViewStateDataResult {
 		enabled: runId !== "",
 	});
 
-	const chapterIdSet = useMemo(() => new Set(data?.chapterIds ?? []), [data?.chapterIds]);
+	// Chapters feed the derived viewed set: a chapter also reads as viewed when
+	// all of its files are viewed, without storing any extra state.
+	const { data: chaptersData } = useChapters(runId === "" ? null : runId);
+
+	const explicitChapterIdSet = useMemo(() => new Set(data?.chapterIds ?? []), [data?.chapterIds]);
 	const keyChangeIdSet = useMemo(() => new Set(data?.keyChangeIds ?? []), [data?.keyChangeIds]);
 	const filePathSet = useMemo(() => new Set(data?.filePaths ?? []), [data?.filePaths]);
+
+	const chapterIdSet = useMemo(
+		() => deriveViewedChapterIds(chaptersData?.chapters ?? [], explicitChapterIdSet, filePathSet),
+		[chaptersData?.chapters, explicitChapterIdSet, filePathSet],
+	);
 
 	return useMemo(
 		() => ({

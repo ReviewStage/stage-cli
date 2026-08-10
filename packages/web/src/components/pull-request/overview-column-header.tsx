@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
  */
 export function OverviewColumnHeader({ children }: { children: ReactNode }) {
 	return (
-		<div className="sticky top-0 z-10 bg-background pb-3">
+		<div className="sticky top-0 z-20 bg-background pb-3">
 			<div className="flex h-7 items-center justify-between">{children}</div>
 		</div>
 	);
