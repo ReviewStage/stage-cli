@@ -1,7 +1,7 @@
 import { gh } from "../github/exec.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
-import { query } from "./pull-request-shared.js";
+import { enforceSameOrigin, query } from "./pull-request-shared.js";
 
 const MAX_IMAGE_SIZE = 25 * 1024 * 1024; // 25 MB
 const GH_TOKEN_TIMEOUT_MS = 10_000;
@@ -102,6 +102,11 @@ export function imageProxyRoutes(): Route[] {
 			method: "GET",
 			pattern: "/api/image-proxy",
 			handler: async (req, res) => {
+				// This read proxies with the local `gh` token, so it gets the same
+				// anti-CSRF/DNS-rebinding guard as the gh-backed mutations. The SPA
+				// loads these through same-origin <img> tags, which carry a loopback
+				// `Host` and no `Origin` header — the guard admits them.
+				if (!enforceSameOrigin(req, res)) return;
 				const imageUrl = query(req, "url");
 				if (!imageUrl) {
 					writeJson(res, 400, { error: "Missing url parameter" });
@@ -122,12 +127,14 @@ export function imageProxyRoutes(): Route[] {
 				});
 
 				if (!upstream.ok) {
+					await upstream.body?.cancel();
 					writeJson(res, 502, { error: "Upstream fetch failed" });
 					return;
 				}
 
 				const contentLength = upstream.headers.get("content-length");
 				if (contentLength && Number.parseInt(contentLength, 10) > MAX_IMAGE_SIZE) {
+					await upstream.body?.cancel();
 					writeJson(res, 413, { error: "Image too large" });
 					return;
 				}
