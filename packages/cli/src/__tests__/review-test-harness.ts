@@ -159,6 +159,10 @@ export function makeOwnPullRequestReview(): unknown {
 	});
 }
 
+export function makeResolvedThreadReview(): unknown {
+	return makeReview([{ ...submittedThread, isResolved: true }], null);
+}
+
 export function makeUnresolvableReview(): unknown {
 	return makeReview(
 		[

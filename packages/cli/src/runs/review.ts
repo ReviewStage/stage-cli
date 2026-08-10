@@ -568,6 +568,9 @@ export async function resolveGitHubThread(
 	await withLockedReviewTarget(run, async ({ review }) => {
 		assertGitHubWritable(run, review);
 		const thread = requireReviewThread(review, threadNodeId);
+		// Already in the requested state (resolved elsewhere, or a retried request):
+		// succeed as a no-op instead of failing the now-inapplicable transition.
+		if (thread.isResolved === resolved) return;
 		const canChangeResolution = resolved ? thread.viewerCanResolve : thread.viewerCanUnresolve;
 		if (!canChangeResolution) {
 			throw new ReviewError(

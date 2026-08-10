@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { commentThread } from "../db/schema/index.js";
 import {
 	EMPTY_REVIEW,
+	makeResolvedThreadReview,
 	makeUnreplyableReview,
 	makeUnresolvableReview,
 	REVIEW_QUERY_RESULT,
@@ -98,6 +99,21 @@ describe("review API — GitHub mutations", () => {
 
 		expect(res.status).toBe(200);
 		expect(await harness.logLines()).toContain("resolve-thread");
+	});
+
+	it("treats resolving an already-resolved thread as success", async () => {
+		await harness.writeGhShim(makeResolvedThreadReview());
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/resolve`,
+			{ threadNodeId: "THREAD_sub", resolved: true },
+		);
+
+		expect(res.status).toBe(200);
+		expect(await harness.logLines()).not.toContain("resolve-thread");
 	});
 
 	it("rejects resolving a thread when GitHub denies permission", async () => {
