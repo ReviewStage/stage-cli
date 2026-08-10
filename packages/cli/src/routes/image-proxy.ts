@@ -133,11 +133,20 @@ export function imageProxyRoutes(): Route[] {
 				// Hosted's serverless runtime enforces an execution deadline for it;
 				// this long-lived local server needs its own so a stalled upstream
 				// can't accumulate stuck requests.
-				const upstream = await fetch(imageUrl, {
-					redirect: "follow",
-					headers: token ? { authorization: `Bearer ${token}` } : undefined,
-					signal: AbortSignal.timeout(UPSTREAM_FETCH_TIMEOUT_MS),
-				});
+				let upstream: Response;
+				try {
+					upstream = await fetch(imageUrl, {
+						redirect: "follow",
+						headers: token ? { authorization: `Bearer ${token}` } : undefined,
+						signal: AbortSignal.timeout(UPSTREAM_FETCH_TIMEOUT_MS),
+					});
+				} catch (error) {
+					if (error instanceof DOMException && error.name === "TimeoutError") {
+						writeJson(res, 502, { error: "Upstream image fetch timed out" });
+						return;
+					}
+					throw error;
+				}
 
 				if (!upstream.ok) {
 					await upstream.body?.cancel();

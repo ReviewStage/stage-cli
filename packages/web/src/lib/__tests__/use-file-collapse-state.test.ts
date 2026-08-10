@@ -207,4 +207,22 @@ describe("useFileCollapseState — advanced behaviors", () => {
 			expect(result.current.collapsedFiles.size).toBe(0);
 		});
 	});
+
+	it("resets overrides when an array reset-key element changes, not on fresh identical arrays", () => {
+		const allPaths = ["a.ts", "b.ts"];
+		const { result, rerender } = renderHook(
+			({ resetKey }) => useFileCollapseState(EMPTY_DEFAULTS, allPaths, resetKey),
+			{ initialProps: { resetKey: ["run-1", "chapter-1"] } },
+		);
+		act(() => result.current.toggleFileCollapsed("a.ts"));
+		expect(result.current.collapsedFiles.has("a.ts")).toBe(true);
+
+		// A fresh array literal with the same parts (recreated each render by
+		// the caller) must not reset.
+		rerender({ resetKey: ["run-1", "chapter-1"] });
+		expect(result.current.collapsedFiles.has("a.ts")).toBe(true);
+
+		rerender({ resetKey: ["run-1", "chapter-2"] });
+		expect(result.current.collapsedFiles.has("a.ts")).toBe(false);
+	});
 });

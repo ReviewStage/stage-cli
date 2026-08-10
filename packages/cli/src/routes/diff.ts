@@ -301,13 +301,14 @@ async function getGitFileContentBase64(
 async function resolveReadablePath(repoRoot: string, filePath: string): Promise<string | null> {
 	const resolved = path.resolve(repoRoot, filePath);
 	const rel = path.relative(repoRoot, resolved);
-	if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
+	if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
 	try {
 		// fs reads follow symlinks, so a checked-out branch could commit a link
 		// pointing outside the repo; re-check containment on the real path.
 		const [real, realRoot] = await Promise.all([fs.realpath(resolved), fs.realpath(repoRoot)]);
 		const realRel = path.relative(realRoot, real);
-		if (realRel.startsWith("..") || path.isAbsolute(realRel)) return null;
+		if (realRel === ".." || realRel.startsWith(`..${path.sep}`) || path.isAbsolute(realRel))
+			return null;
 		const { size } = await fs.stat(real);
 		return size > MAX_FILE_BYTES ? null : real;
 	} catch {

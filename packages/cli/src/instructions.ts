@@ -55,7 +55,7 @@ export function loadStageInstructions(repoRoot: string): string | null {
 	// stay inside the repository.
 	const real = realpathSync(instructionsPath);
 	const rel = path.relative(realpathSync(repoRoot), real);
-	if (rel.startsWith("..") || path.isAbsolute(rel)) {
+	if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
 		console.error(".stageinstructions resolves outside the repository; ignoring it");
 		return null;
 	}
