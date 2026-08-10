@@ -159,7 +159,8 @@ function toListItem(pull: z.infer<typeof RestListedPullSchema>): GitHubPullReque
  * The stack of open PRs connected to `currentNumber`, derived on read from the
  * repo's open PR list. Only open PRs can form a stack, so the closed ones
  * hosted's cached list carries are simply never fetched. Returns [] on any gh
- * failure or unexpected shape so the header degrades to no stack.
+ * failure or unexpected shape so the header degrades to no stack; the failure
+ * is reported on stderr.
  */
 export async function getPullRequestStack(
 	repoRoot: string,
@@ -177,9 +178,14 @@ export async function getPullRequestStack(
 			repoRoot,
 		);
 		const parsed = PaginatedPullPagesSchema.safeParse(JSON.parse(stdout));
-		if (!parsed.success) return [];
+		if (!parsed.success) {
+			console.error(`Failed to load the pull request stack: ${parsed.error.message}`);
+			return [];
+		}
 		return buildPullRequestStack(parsed.data.flat().map(toListItem), currentNumber);
-	} catch {
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(`Failed to load the pull request stack: ${message}`);
 		return [];
 	}
 }
