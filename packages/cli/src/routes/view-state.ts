@@ -1,4 +1,4 @@
-import { FileViewBodySchema } from "@stagereview/types/view-state";
+import { ChapterViewBodySchema, FileViewBodySchema } from "@stagereview/types/view-state";
 import { and, eq, inArray } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { LOCAL_USER_ID } from "../db/local-user.js";
@@ -35,9 +35,16 @@ export function viewStateRoutes(db: StageDb): Route[] {
 			pattern: "/api/chapter-view/:chapterId",
 			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
-				const { rows, initiatingRunId } = resolveChapterRows(db, params.chapterId);
+				const body = await parseJsonBody(req, res, ChapterViewBodySchema);
+				if (!body) return;
+				const rows = resolveChapterRows(db, params.chapterId);
 				if (rows.length === 0) {
 					writeJson(res, 404, { error: `Chapter ${params.chapterId} not found` });
+					return;
+				}
+				const pin = pinInitiatingRun(rows, body.runId);
+				if (!pin.ok) {
+					writeJson(res, 400, { error: pin.error });
 					return;
 				}
 				// External-id fan-out: re-imports of the same diff produce multiple chapter
@@ -61,7 +68,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 				// containing it is viewed — exactly the promotion condition above.
 				// Sibling rows updated by the fan-out stay local-only: GitHub sync is
 				// scoped to the run the user acted in (see initiatingRunPaths).
-				await new GitHubViewSync(db).mark(initiatingRunPaths(promoted, initiatingRunId));
+				await new GitHubViewSync(db).mark(initiatingRunPaths(promoted, pin.runId));
 				writeJson(res, 200, {});
 			},
 		},
@@ -70,11 +77,18 @@ export function viewStateRoutes(db: StageDb): Route[] {
 			pattern: "/api/chapter-view/:chapterId",
 			handler: async (req, res, params) => {
 				if (!enforceSameOrigin(req, res)) return;
-				const { rows, initiatingRunId } = resolveChapterRows(db, params.chapterId);
+				const body = await parseJsonBody(req, res, ChapterViewBodySchema);
+				if (!body) return;
+				const rows = resolveChapterRows(db, params.chapterId);
 				if (rows.length === 0) {
 					// Idempotent: if the chapter doesn't exist there's nothing to delete. The SPA
 					// shouldn't have to distinguish "row was gone" from "chapter was gone".
 					writeJson(res, 200, {});
+					return;
+				}
+				const pin = pinInitiatingRun(rows, body.runId);
+				if (!pin.ok) {
+					writeJson(res, 400, { error: pin.error });
 					return;
 				}
 				const touched = touchedRunPaths(rows);
@@ -118,7 +132,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 				// Hosted's unmark rule: any chapter-file unview unmarks the path on
 				// GitHub unconditionally, mirroring the file_view clear above — but
 				// only on the initiating run's own PR (see initiatingRunPaths).
-				await new GitHubViewSync(db).unmark(initiatingRunPaths(touched, initiatingRunId));
+				await new GitHubViewSync(db).unmark(initiatingRunPaths(touched, pin.runId));
 				writeJson(res, 200, {});
 			},
 		},
@@ -299,31 +313,41 @@ interface ResolvedChapterRow {
 	hunkRefs: typeof chapter.$inferSelect.hunkRefs;
 }
 
-interface ResolvedChapters {
-	rows: ResolvedChapterRow[];
-	/**
-	 * The run the request was made in: the matched row's run for a uuid lookup,
-	 * or the single run every externalId match lives in. Null when the
-	 * externalId spans multiple runs — the request alone can't tell which
-	 * sibling the user was viewing. GitHub sync is scoped to this run; local
-	 * writes always apply to every resolved row.
-	 */
-	initiatingRunId: string | null;
-}
-
 // Looks up by uuid first, falling back to externalId so re-imports of the same
 // scope (which share an externalId across chapter rows) all get the cascade.
-function resolveChapterRows(db: StageDb, idOrExternalId: string | undefined): ResolvedChapters {
-	if (!idOrExternalId) return { rows: [], initiatingRunId: null };
+function resolveChapterRows(db: StageDb, idOrExternalId: string | undefined): ResolvedChapterRow[] {
+	if (!idOrExternalId) return [];
 	const cols = { id: chapter.id, runId: chapter.runId, hunkRefs: chapter.hunkRefs };
 	const byPk = db.select(cols).from(chapter).where(eq(chapter.id, idOrExternalId)).all();
-	const rows =
-		byPk.length > 0
-			? byPk
-			: db.select(cols).from(chapter).where(eq(chapter.externalId, idOrExternalId)).all();
+	if (byPk.length > 0) return byPk;
+	return db.select(cols).from(chapter).where(eq(chapter.externalId, idOrExternalId)).all();
+}
+
+type InitiatingRunPin = { ok: true; runId: string | null } | { ok: false; error: string };
+
+/**
+ * Determines the run the chapter-view request was made in — the run whose PR
+ * GitHub sync may touch. The SPA always toggles chapters by externalId (so
+ * local view-state survives regeneration) and pins the run it was viewing via
+ * the request body's `runId`; that run must own one of the resolved rows, or
+ * the request is a client bug and is rejected. Callers that address a chapter
+ * row by uuid omit `runId`: a uuid identifies its run, and an externalId that
+ * happens to live in a single run is equally unambiguous. Only a body-less
+ * request naming a multi-run externalId resolves to null — the request alone
+ * can't tell which sibling the user was viewing, so GitHub is left untouched
+ * (see initiatingRunPaths). Local writes always apply to every resolved row.
+ */
+function pinInitiatingRun(
+	rows: ResolvedChapterRow[],
+	requestedRunId: string | undefined,
+): InitiatingRunPin {
+	if (requestedRunId !== undefined) {
+		if (rows.some((r) => r.runId === requestedRunId)) return { ok: true, runId: requestedRunId };
+		return { ok: false, error: `Run ${requestedRunId} does not contain the requested chapter` };
+	}
 	const runIds = new Set(rows.map((r) => r.runId));
 	const [first] = rows;
-	return { rows, initiatingRunId: first !== undefined && runIds.size === 1 ? first.runId : null };
+	return { ok: true, runId: first !== undefined && runIds.size === 1 ? first.runId : null };
 }
 
 /**
@@ -331,14 +355,15 @@ function resolveChapterRows(db: StageDb, idOrExternalId: string | undefined): Re
  * view-state deliberately fans out across every run sharing a chapter's
  * externalId, but only the run the user was actually reviewing may touch its
  * pull request — sibling runs (re-imports, clones, forks) reviewed the same
- * diff in sessions the user wasn't in. When the initiating run is unknown (an
- * externalId matching rows in several runs), GitHub is left untouched.
+ * diff in sessions the user wasn't in. When the initiating run is unknown (a
+ * body-less request naming an externalId that matches rows in several runs),
+ * GitHub is left untouched.
  */
 function initiatingRunPaths(paths: RunPath[], initiatingRunId: string | null): RunPath[] {
 	if (initiatingRunId !== null) return paths.filter((p) => p.runId === initiatingRunId);
 	if (paths.length > 0) {
 		console.error(
-			"Skipping GitHub view sync: the chapter id matches rows in multiple runs, so the initiating run is unknown",
+			"Skipping GitHub view sync: the chapter id matches rows in multiple runs and the request did not pin an initiating run",
 		);
 	}
 	return [];

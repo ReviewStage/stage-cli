@@ -206,7 +206,7 @@ describe("GitHub mark sync", () => {
 		expect(rows.map((r) => r.filePath)).toEqual(["src/foo.ts"]);
 	});
 
-	it("never mutates GitHub when the marked externalId spans multiple runs", async () => {
+	it("never mutates GitHub when a body-less mark names an externalId spanning multiple runs", async () => {
 		await harness.writeGhShim();
 		// Identical fixtures share a scope key, so the two runs' chapter rows
 		// share an externalId: a local-only run plus a fresh PR run.
@@ -218,10 +218,10 @@ describe("GitHub mark sync", () => {
 		expect(prChapter.externalId).toBe(localChapter.externalId);
 		const port = await harness.start();
 
-		// The request names only the shared externalId, so the initiating run —
-		// the one the user was actually reviewing — is unknown. The fresh PR run
-		// must not be picked as the target: the user may have been reviewing the
-		// local-only sibling.
+		// The request names only the shared externalId and carries no runId, so
+		// the initiating run — the one the user was actually reviewing — is
+		// unknown. The fresh PR run must not be picked as the target: the user
+		// may have been reviewing the local-only sibling.
 		const res = await harness.request(port, "POST", `/api/chapter-view/${localChapter.externalId}`);
 
 		expect(res.status).toBe(200);
@@ -241,6 +241,90 @@ describe("GitHub mark sync", () => {
 			.map((r) => r.runId)
 			.sort();
 		expect(viewedRunIds).toEqual([local.runId, pr.runId].sort());
+	});
+
+	it("syncs the run pinned by the body's runId when the externalId spans multiple runs", async () => {
+		await harness.writeGhShim();
+		// The SPA's common regeneration case: a stale sibling and a fresh PR run
+		// share the chapter's externalId, and the mark names the externalId (so
+		// local state survives regeneration) plus the viewed run's runId.
+		const local = harness.seedRun(undefined, { originUrl: null, prNumber: null });
+		const pr = harness.seedRun();
+		const [localChapter] = local.chapters;
+		const [prChapter] = pr.chapters;
+		if (!localChapter || !prChapter) throw new Error("seed: missing chapters");
+		const port = await harness.start();
+
+		const res = await harness.request(port, "POST", `/api/chapter-view/${prChapter.externalId}`, {
+			runId: pr.runId,
+		});
+
+		expect(res.status).toBe(200);
+		expect((await markCalls()).map((c) => c.fields.path)).toEqual(["src/foo.ts"]);
+		// The GitHub sync scoping never narrows the local fan-out: both runs' rows update.
+		const viewedChapterIds = harness.db
+			.select()
+			.from(chapterView)
+			.all()
+			.map((r) => r.chapterId)
+			.sort();
+		expect(viewedChapterIds).toEqual([localChapter.id, prChapter.id].sort());
+		const viewedRunIds = harness.db
+			.select()
+			.from(fileView)
+			.all()
+			.map((r) => r.runId)
+			.sort();
+		expect(viewedRunIds).toEqual([local.runId, pr.runId].sort());
+	});
+
+	it("leaves GitHub untouched when the pinned run is the no-PR sibling", async () => {
+		await harness.writeGhShim();
+		const local = harness.seedRun(undefined, { originUrl: null, prNumber: null });
+		const pr = harness.seedRun();
+		const [localChapter] = local.chapters;
+		if (!localChapter) throw new Error("seed: missing chapter");
+		const port = await harness.start();
+
+		// The user was reviewing the local-only run, so the fresh sibling's PR
+		// must not be mutated even though the fan-out marks its rows locally.
+		const res = await harness.request(
+			port,
+			"POST",
+			`/api/chapter-view/${localChapter.externalId}`,
+			{
+				runId: local.runId,
+			},
+		);
+
+		expect(res.status).toBe(200);
+		expect(await harness.rawCalls()).toEqual([]);
+		const viewedRunIds = harness.db
+			.select()
+			.from(fileView)
+			.all()
+			.map((r) => r.runId)
+			.sort();
+		expect(viewedRunIds).toEqual([local.runId, pr.runId].sort());
+	});
+
+	it("rejects a mark whose runId owns none of the matched chapter rows", async () => {
+		await harness.writeGhShim();
+		const { chapters } = harness.seedRun();
+		const [chapterRow] = chapters;
+		if (!chapterRow) throw new Error("seed: missing chapter");
+		const port = await harness.start();
+
+		const res = await harness.request(port, "POST", `/api/chapter-view/${chapterRow.externalId}`, {
+			runId: "not-a-run",
+		});
+
+		// A runId that owns no matched row is a client bug: reject loudly and
+		// leave both local state and GitHub untouched.
+		expect(res.status).toBe(400);
+		expect(await harness.rawCalls()).toEqual([]);
+		expect(harness.db.select().from(chapterView).all()).toHaveLength(0);
+		expect(harness.db.select().from(fileView).all()).toHaveLength(0);
 	});
 
 	it("syncs the initiating fresh run's PR even when a no-PR sibling shares the externalId", async () => {

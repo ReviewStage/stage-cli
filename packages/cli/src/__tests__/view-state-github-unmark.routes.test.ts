@@ -154,7 +154,7 @@ describe("GitHub unmark sync", () => {
 		expect(names).toEqual(["GetPullRequestIdentity", "GetPullRequestIdentity"]);
 	});
 
-	it("never mutates GitHub when the unmarked externalId spans multiple runs", async () => {
+	it("never mutates GitHub when a body-less unmark names an externalId spanning multiple runs", async () => {
 		await harness.writeGhShim();
 		// A local-only sibling shares the externalId with a fresh PR run.
 		harness.seedRun(undefined, { originUrl: null, prNumber: null });
@@ -174,6 +174,102 @@ describe("GitHub unmark sync", () => {
 		expect(await unmarkCalls()).toEqual([]);
 		expect(harness.db.select().from(chapterView).all()).toHaveLength(0);
 		expect(harness.db.select().from(fileView).all()).toHaveLength(0);
+	});
+
+	it("unmarks the run pinned by the body's runId when the externalId spans multiple runs", async () => {
+		await harness.writeGhShim();
+		// The SPA's regeneration case: a stale sibling shares the externalId, and
+		// the unmark names the externalId plus the viewed run's runId.
+		harness.seedRun(undefined, { originUrl: null, prNumber: null });
+		const pr = harness.seedRun();
+		const [prChapter] = pr.chapters;
+		if (!prChapter) throw new Error("seed: missing chapter");
+		const port = await harness.start();
+		await harness.request(port, "POST", `/api/chapter-view/${prChapter.externalId}`, {
+			runId: pr.runId,
+		});
+
+		const res = await harness.request(port, "DELETE", `/api/chapter-view/${prChapter.externalId}`, {
+			runId: pr.runId,
+		});
+
+		expect(res.status).toBe(200);
+		expect((await unmarkCalls()).map((c) => c.fields.path)).toEqual(["src/foo.ts"]);
+		// Local state still clears across the whole fan-out.
+		expect(harness.db.select().from(chapterView).all()).toHaveLength(0);
+		expect(harness.db.select().from(fileView).all()).toHaveLength(0);
+		// Only the pinned run's PR was mutated (one mark, one unmark).
+		expect((await harness.graphqlCalls()).map((c) => c.name)).toEqual([
+			"GetPullRequestIdentity",
+			"MarkFileAsViewed",
+			"GetPullRequestIdentity",
+			"UnmarkFileAsViewed",
+		]);
+	});
+
+	it("leaves GitHub untouched when the pinned run is the no-PR sibling", async () => {
+		await harness.writeGhShim();
+		const local = harness.seedRun(undefined, { originUrl: null, prNumber: null });
+		harness.seedRun();
+		const [localChapter] = local.chapters;
+		if (!localChapter) throw new Error("seed: missing chapter");
+		const port = await harness.start();
+		// Body-less multi-run mark: local rows update, GitHub is never touched.
+		await harness.request(port, "POST", `/api/chapter-view/${localChapter.externalId}`);
+
+		const res = await harness.request(
+			port,
+			"DELETE",
+			`/api/chapter-view/${localChapter.externalId}`,
+			{ runId: local.runId },
+		);
+
+		// The user was reviewing the local-only run; the sibling's fresh PR must
+		// not be unmarked even though its rows clear locally.
+		expect(res.status).toBe(200);
+		expect(await harness.rawCalls()).toEqual([]);
+		expect(harness.db.select().from(chapterView).all()).toHaveLength(0);
+		expect(harness.db.select().from(fileView).all()).toHaveLength(0);
+	});
+
+	it("rejects an unmark whose runId owns none of the matched chapter rows", async () => {
+		await harness.writeGhShim();
+		const { chapters } = harness.seedRun();
+		const [chapterRow] = chapters;
+		if (!chapterRow) throw new Error("seed: missing chapter");
+		const port = await harness.start();
+		await harness.request(port, "POST", `/api/chapter-view/${chapterRow.id}`);
+
+		const res = await harness.request(
+			port,
+			"DELETE",
+			`/api/chapter-view/${chapterRow.externalId}`,
+			{
+				runId: "not-a-run",
+			},
+		);
+
+		// A runId that owns no matched row is a client bug: reject loudly and
+		// leave both local state and GitHub's viewed state as they were.
+		expect(res.status).toBe(400);
+		expect(harness.db.select().from(chapterView).all()).toHaveLength(1);
+		expect(harness.db.select().from(fileView).all()).toHaveLength(1);
+		expect(await unmarkCalls()).toEqual([]);
+	});
+
+	it("stays idempotent for an unknown chapter even when the body pins a runId", async () => {
+		await harness.writeGhShim();
+		harness.seedRun();
+		const port = await harness.start();
+
+		// Nothing matched, so there is no row for the runId to disagree with —
+		// the delete is a no-op, mirroring the body-less idempotency contract.
+		const res = await harness.request(port, "DELETE", "/api/chapter-view/gone", {
+			runId: "whatever",
+		});
+
+		expect(res.status).toBe(200);
+		expect(await harness.rawCalls()).toEqual([]);
 	});
 
 	it("unmarks the initiating fresh run's PR even when a no-PR sibling shares the externalId", async () => {
