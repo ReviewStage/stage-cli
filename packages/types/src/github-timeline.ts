@@ -133,11 +133,13 @@ const LabelRefSchema = z.object({ name: z.string(), color: z.string() });
 export const LabeledEventSchema = ActorEventBaseSchema.extend({ label: LabelRefSchema });
 export type LabeledEvent = z.infer<typeof LabeledEventSchema>;
 
-export const AssignedEventSchema = ActorEventBaseSchema.extend({ assignee: TimelineUserSchema });
+export const AssignedEventSchema = ActorEventBaseSchema.extend({
+	assignee: NullableTimelineUserSchema,
+});
 export type AssignedEvent = z.infer<typeof AssignedEventSchema>;
 
 export const ReviewRequestEventSchema = ActorEventBaseSchema.extend({
-	requested_reviewer: TimelineUserSchema.optional(),
+	requested_reviewer: NullableTimelineUserSchema.optional(),
 	requested_team: z.object({ name: z.string() }).optional(),
 });
 export type ReviewRequestEvent = z.infer<typeof ReviewRequestEventSchema>;
