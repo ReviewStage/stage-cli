@@ -64,6 +64,13 @@ export const KEYBOARD_SHORTCUTS = {
 		mac: { label: "←", ariaKeyshortcuts: "ArrowLeft" },
 		nonMac: { label: "←", ariaKeyshortcuts: "ArrowLeft" },
 	},
+	TOGGLE_INLINE_COMMENTS: {
+		hotkey: "i",
+		description: "Toggle inline comments",
+		group: "Review",
+		mac: { label: "i", ariaKeyshortcuts: "I" },
+		nonMac: { label: "i", ariaKeyshortcuts: "I" },
+	},
 	MARK_FILE_AS_VIEWED: {
 		hotkey: "v",
 		description: "Toggle mark file as viewed",

@@ -1,6 +1,7 @@
 import type { Chapter } from "@stagereview/types/chapters";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Markdown } from "@/components/ui/markdown";
+import { useChapterSettings } from "@/lib/use-chapter-settings";
 import { cn } from "@/lib/utils";
 import { KeyChangeReferenceTooltip } from "./key-change-reference-tooltip";
 
@@ -19,13 +20,17 @@ export function ChapterSummary({
 	onToggleKeyChangeChecked,
 	onFocusKeyChange,
 }: ChapterSummaryProps) {
+	const { showWhatToReview } = useChapterSettings();
+
+	const shouldShowKeyChanges = showWhatToReview && chapter.keyChanges.length > 0;
+
 	return (
 		<div className="space-y-4 py-3 pl-6 pr-4 lg:pl-8">
 			{chapter.summary && (
 				<Markdown content={chapter.summary} className="text-muted-foreground text-sm" />
 			)}
 
-			{chapter.keyChanges.length > 0 && (
+			{shouldShowKeyChanges && (
 				<div>
 					<h2 className="mb-1.5 font-medium text-[11px] text-muted-foreground uppercase tracking-wider">
 						What to Review
