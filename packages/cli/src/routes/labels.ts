@@ -84,7 +84,9 @@ export function labelRoutes(db: StageDb): Route[] {
 				try {
 					writeJson(res, 200, { labels: await listRepositoryLabels(run.repoRoot, repo) });
 				} catch (err) {
-					writeJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+					const message = err instanceof Error ? err.message : String(err);
+					console.error(`Failed to load repository labels: ${message}`);
+					writeJson(res, 500, { error: message });
 				}
 			},
 		},

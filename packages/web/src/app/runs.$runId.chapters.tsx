@@ -47,6 +47,13 @@ function ChaptersLayout() {
 	if (isOnChapterDetailRoute && deepLinkedChapterNumber !== initialChapterNumber) {
 		setInitialChapterNumber(deepLinkedChapterNumber);
 	}
+	// Stack navigation swaps runs while this layout stays mounted; a remembered
+	// deep link from the previous run must not scroll the sibling's reader.
+	const [stateOwner, setStateOwner] = useState(runId);
+	if (stateOwner !== runId) {
+		setStateOwner(runId);
+		setInitialChapterNumber(isOnChapterDetailRoute ? deepLinkedChapterNumber : undefined);
+	}
 
 	if (chapterViewMode === CHAPTER_VIEW_MODE.CONTINUOUS) {
 		if (isOnChapterDetailRoute) {

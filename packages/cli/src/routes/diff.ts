@@ -70,6 +70,14 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 				}
 				patches.push(err.stdout);
 				totalBytes += nextBytes;
+				// Exact-boundary stop: no point launching another child once the
+				// cap is fully consumed.
+				if (totalBytes >= MAX_DIFF_BYTES) {
+					console.error(
+						`Untracked diff output reached ${MAX_DIFF_BYTES} bytes; omitting remaining untracked files from the response`,
+					);
+					break;
+				}
 			}
 		}
 	}
