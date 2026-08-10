@@ -545,13 +545,35 @@ class GitHubViewSync {
 		mutate: (repoRoot: string, pullRequestNodeId: string, path: string) => Promise<void>,
 		verb: "viewed" | "unviewed",
 	): Promise<void> {
+		// External-id fan-out can match runs from clones or forks that share a
+		// commit range but belong to different PRs. Syncing all of them would
+		// mark files on foreign repositories' PRs, so a path only syncs when
+		// every run it fanned out to resolves to one PR (node id); same-PR
+		// re-imports dedupe to a single mutation.
+		const targetsByPath = new Map<string, Map<string, { repoRoot: string; nodeId: string }>>();
 		for (const { runId, filePath } of paths) {
 			const target = await this.resolveTarget(runId);
 			if (!target) continue;
-			try {
-				await mutate(target.repoRoot, target.nodeId, filePath);
-			} catch (err) {
-				console.error(`Failed to sync file ${verb} state to GitHub: ${errorMessage(err)}`);
+			let byNode = targetsByPath.get(filePath);
+			if (!byNode) {
+				byNode = new Map();
+				targetsByPath.set(filePath, byNode);
+			}
+			byNode.set(target.nodeId, target);
+		}
+		for (const [filePath, byNode] of targetsByPath) {
+			if (byNode.size > 1) {
+				console.error(
+					`Skipping GitHub ${verb} sync for ${filePath}: matched runs resolve to ${byNode.size} distinct pull requests`,
+				);
+				continue;
+			}
+			for (const target of byNode.values()) {
+				try {
+					await mutate(target.repoRoot, target.nodeId, filePath);
+				} catch (err) {
+					console.error(`Failed to sync file ${verb} state to GitHub: ${errorMessage(err)}`);
+				}
 			}
 		}
 	}

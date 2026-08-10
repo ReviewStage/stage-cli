@@ -11,7 +11,10 @@ import { EventItem } from "./event-item";
 
 function eventKey(event: ActivityEvent): string | number {
 	if ("id" in event.data && typeof event.data.id === "number") return event.data.id;
-	return `${event.type}-${event.data.created_at}`;
+	// Cross-referenced events carry no id; the source issue URL (already on the
+	// wire) disambiguates two references landing in the same second.
+	const sourceUrl = "source" in event.data ? (event.data.source.issue?.html_url ?? "") : "";
+	return `${event.type}-${event.data.created_at}-${sourceUrl}`;
 }
 
 type NonDiscussionEvent = Exclude<

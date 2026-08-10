@@ -255,9 +255,17 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		return String(totalFileCount);
 	})();
 
-	// Comment count for the Activity tab (issue comments + reviews), suppressed
-	// until the timeline loads. React-query dedupes this with the Activity page.
-	const { data: timelineData } = useTimeline(runId, pullRequest?.number ?? null);
+	// Comment count for the Activity tab (issue comments + reviews). The
+	// timeline assembly is three GitHub calls, so it only fetches once the
+	// Activity tab is (or has been) active — react-query then keeps the count
+	// warm across tab switches and dedupes with the Activity page itself.
+	const isActivityActive = activeTab === PR_TAB.ACTIVITY;
+	const [activityVisited, setActivityVisited] = useState(isActivityActive);
+	if (isActivityActive && !activityVisited) setActivityVisited(true);
+	const { data: timelineData } = useTimeline(
+		runId,
+		activityVisited ? (pullRequest?.number ?? null) : null,
+	);
 	const activityCountLabel = (() => {
 		const timeline = timelineData?.timeline;
 		if (timeline === undefined) return undefined;
