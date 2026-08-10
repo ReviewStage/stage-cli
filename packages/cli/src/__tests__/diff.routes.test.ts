@@ -395,6 +395,34 @@ describe("diff API", () => {
 		expect(data.fileContents["unt ol\u00e9.txt"]?.newContent).toBe("untracked contents\n");
 	});
 
+	it("parses binary paths containing ' b/' from ambiguous unquoted headers", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		const dir = path.join(repoRoot, "docs b", "assets");
+		await fs.mkdir(dir, { recursive: true });
+		const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+		await fs.writeFile(path.join(dir, "logo.png"), png);
+		git("add", "-A");
+		git("commit", "-m", "add image");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		await fs.writeFile(path.join(dir, "logo.png"), Buffer.concat([png, Buffer.from([2, 3])]));
+		git("commit", "-am", "modify image");
+		const headSha = git("rev-parse", "HEAD").trim();
+		const runId = insertCommittedRun(baseSha, headSha);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		const entry = data.fileContents["docs b/assets/logo.png"];
+		expect(entry).toBeDefined();
+		expect(entry?.encoding).toBe("base64");
+		expect(entry?.oldContent).toBe(png.toString("base64"));
+	});
+
 	it("refuses to serve working-tree content through a symlink escaping the repo", async () => {
 		git("init", "--initial-branch=main");
 		git("config", "user.email", "test@example.com");

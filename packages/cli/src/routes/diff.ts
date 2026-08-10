@@ -163,15 +163,45 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 		// (no ---/+++, no rename lines); parse the header itself so images can
 		// still reach the image diff viewer.
 		if (oldPath === null && newPath === null) {
-			const header = text.match(DIFF_GIT_QUOTED_RE) ?? text.match(DIFF_GIT_RE);
-			oldPath = unquoteGitPath(header?.[1]);
-			newPath = unquoteGitPath(header?.[2]);
+			const quoted = text.match(DIFF_GIT_QUOTED_RE);
+			if (quoted) {
+				oldPath = unquoteGitPath(quoted[1]);
+				newPath = unquoteGitPath(quoted[2]);
+			} else {
+				const firstLine = text.slice(0, text.indexOf("\n") === -1 ? undefined : text.indexOf("\n"));
+				const halves = splitEqualGitHeader(firstLine);
+				if (halves) {
+					[oldPath, newPath] = halves;
+				} else {
+					const header = text.match(DIFF_GIT_RE);
+					oldPath = header?.[1] ?? null;
+					newPath = header?.[2] ?? null;
+				}
+			}
 		}
 
 		results.push({ oldPath, newPath, isBinary });
 	}
 
 	return results;
+}
+
+/**
+ * Resolve the ambiguity in unquoted `diff --git a/P b/P` headers when P itself
+ * contains " b/": for non-renames both paths are identical, so try the split
+ * where the two halves match before falling back to the greedy regex.
+ */
+function splitEqualGitHeader(firstLine: string): [string, string] | null {
+	if (!firstLine.startsWith("diff --git a/")) return null;
+	const rest = firstLine.slice("diff --git a/".length);
+	// P + " b/" + P → total length 2*|P|+3
+	if ((rest.length - 3) % 2 !== 0) return null;
+	const half = (rest.length - 3) / 2;
+	const candidate = rest.slice(0, half);
+	if (rest.slice(half, half + 3) === " b/" && rest.slice(half + 3) === candidate) {
+		return [candidate, candidate];
+	}
+	return null;
 }
 
 /**

@@ -59,7 +59,10 @@ export function labelRoutes(db: StageDb): Route[] {
 				let labels: GitHubLabel[] | null;
 				try {
 					labels = await listPullRequestLabels(run.repoRoot, repo, number);
-				} catch {
+				} catch (err) {
+					console.error(
+						`Failed to load pull request labels: ${err instanceof Error ? err.message : String(err)}`,
+					);
 					labels = null;
 				}
 				writeJson(res, 200, { labels });

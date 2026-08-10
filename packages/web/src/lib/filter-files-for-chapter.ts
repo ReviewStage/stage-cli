@@ -85,13 +85,36 @@ function decodeHeaderName(raw: string | undefined, prefix: "a/" | "b/"): string 
 	return decoded;
 }
 
+function splitEqualGitHeader(firstLine: string): [string, string] | null {
+	if (!firstLine.startsWith("diff --git a/")) return null;
+	const rest = firstLine.slice("diff --git a/".length);
+	if ((rest.length - 3) % 2 !== 0) return null;
+	const half = (rest.length - 3) / 2;
+	const candidate = rest.slice(0, half);
+	if (rest.slice(half, half + 3) === " b/" && rest.slice(half + 3) === candidate) {
+		return [candidate, candidate];
+	}
+	return null;
+}
+
 function parseFileNames(segment: string): { prevName?: string; name?: string } {
 	const plusName = decodeHeaderName(segment.match(PLUS_NAME_RE)?.[1], "b/");
 	const minusName = decodeHeaderName(segment.match(MINUS_NAME_RE)?.[1], "a/");
 	const quotedGit = segment.match(DIFF_GIT_QUOTED_NAMES_RE);
+	// Unquoted headers are ambiguous when the path contains " b/"; for
+	// non-renames both halves are identical, so prefer the equal split.
+	const firstLine = segment.slice(
+		0,
+		segment.indexOf("\n") === -1 ? undefined : segment.indexOf("\n"),
+	);
+	const equalHalves = quotedGit ? null : splitEqualGitHeader(firstLine);
 	const gitMatch = quotedGit ?? segment.match(DIFF_GIT_NAMES_RE);
-	const gitOld = quotedGit ? decodeQuotedPath(gitMatch?.[1] ?? "") : gitMatch?.[1];
-	const gitNew = quotedGit ? decodeQuotedPath(gitMatch?.[2] ?? "") : gitMatch?.[2];
+	const gitOld = quotedGit
+		? decodeQuotedPath(gitMatch?.[1] ?? "")
+		: (equalHalves?.[0] ?? gitMatch?.[1]);
+	const gitNew = quotedGit
+		? decodeQuotedPath(gitMatch?.[2] ?? "")
+		: (equalHalves?.[1] ?? gitMatch?.[2]);
 	const name = plusName ?? gitNew ?? undefined;
 	const prevName = minusName ?? gitOld ?? undefined;
 	return { prevName, name };
