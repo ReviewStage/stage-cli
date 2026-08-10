@@ -1,8 +1,12 @@
-import { type ComponentPropsWithoutRef, memo } from "react";
+import { type ComponentPropsWithoutRef, isValidElement, memo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+import { MermaidDiagram } from "@/components/shared/mermaid-diagram";
+import { CodeBlock } from "@/components/ui/code-block";
+import { pre as SharedPre } from "@/components/ui/markdown-components";
+import { proxyGitHubImageSrcset, proxyGitHubImageUrl } from "@/lib/github-image-proxy";
 import { cn } from "@/lib/utils";
 
 interface MarkdownProps {
@@ -33,25 +37,42 @@ const htmlSchema = {
 	},
 };
 
-const code = ({ className, ...props }: ComponentPropsWithoutRef<"code">) => (
-	<code
-		className={cn(
-			"rounded-sm bg-muted/60 px-1 py-0.5 font-medium text-xs [:where(pre)>&]:rounded-none [:where(pre)>&]:bg-transparent [:where(pre)>&]:p-0 [:where(pre)>&]:font-normal",
-			className,
-		)}
-		{...props}
-	/>
-);
+// Fenced ```mermaid blocks render as diagrams; fenced ```lang blocks render through
+// the shiki-backed CodeBlock. `pre` unwraps mermaid so the diagram isn't nested in a
+// code frame, and `code` keeps its inline styling for everything else.
+const code = ({ className, children, ...props }: ComponentPropsWithoutRef<"code">) => {
+	if (className?.includes("language-mermaid")) {
+		return <MermaidDiagram chart={String(children).replace(/\n$/, "")} />;
+	}
+	return (
+		<code
+			className={cn(
+				"rounded-sm bg-muted/60 px-1 py-0.5 font-medium text-xs [:where(pre)>&]:rounded-none [:where(pre)>&]:bg-transparent [:where(pre)>&]:p-0 [:where(pre)>&]:font-normal",
+				className,
+			)}
+			{...props}
+		>
+			{children}
+		</code>
+	);
+};
 
-const pre = ({ className, ...props }: ComponentPropsWithoutRef<"pre">) => (
-	<pre
-		className={cn(
-			"my-2 overflow-x-auto rounded-md border border-border/50 bg-zinc-900 p-3 text-xs text-zinc-100 dark:bg-zinc-950",
-			className,
-		)}
-		{...props}
-	/>
-);
+const pre = ({ children, ...rest }: ComponentPropsWithoutRef<"pre">) => {
+	if (
+		isValidElement<{ className?: string; children?: ReactNode }>(children) &&
+		typeof children.props.className === "string"
+	) {
+		if (children.props.className.includes("language-mermaid")) {
+			return children;
+		}
+		const language = children.props.className.match(/language-([\w+#.-]+)/)?.[1];
+		if (language) {
+			const codeText = String(children.props.children).replace(/\n$/, "");
+			return <CodeBlock code={codeText} language={language} />;
+		}
+	}
+	return <SharedPre {...rest}>{children}</SharedPre>;
+};
 
 const a = ({ className, ...props }: ComponentPropsWithoutRef<"a">) => (
 	<a
@@ -91,11 +112,22 @@ const blockquote = ({ className, ...props }: ComponentPropsWithoutRef<"blockquot
 	/>
 );
 
-const img = ({ className, alt, ...props }: ComponentPropsWithoutRef<"img">) => (
-	<img className={cn("inline-block max-w-full rounded", className)} alt={alt ?? ""} {...props} />
+// GitHub-hosted attachment images are rewritten through the local image proxy so
+// private attachments load; everything else passes through untouched.
+const img = ({ className, alt, src, ...props }: ComponentPropsWithoutRef<"img">) => (
+	<img
+		className={cn("inline-block max-w-full rounded", className)}
+		alt={alt ?? ""}
+		src={typeof src === "string" ? proxyGitHubImageUrl(src) : src}
+		{...props}
+	/>
 );
 
-const components = { code, pre, a, p, ul, ol, li, blockquote, img };
+const source = ({ srcSet, ...props }: ComponentPropsWithoutRef<"source">) => (
+	<source srcSet={srcSet === undefined ? srcSet : proxyGitHubImageSrcset(srcSet)} {...props} />
+);
+
+const components = { code, pre, a, p, ul, ol, li, blockquote, img, source };
 
 function MarkdownImpl({ content, className, inheritSize, allowHtml }: MarkdownProps) {
 	return (
