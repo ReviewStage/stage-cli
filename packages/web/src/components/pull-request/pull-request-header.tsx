@@ -13,6 +13,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { CIChecks } from "@/components/pull-request/ci-checks";
 import { Labels } from "@/components/pull-request/labels";
 import { MergeStatus } from "@/components/pull-request/merge-status";
+import { PullRequestStackNav } from "@/components/pull-request/pull-request-stack-nav";
 import { PullRequestStatus } from "@/components/pull-request/pull-request-status";
 import { Reviewers } from "@/components/pull-request/reviewers";
 import { DeploymentLinkList } from "@/components/shared/deployment-link-list";
@@ -268,6 +269,9 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 
 				{/* Row 2: Metadata */}
 				<div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-muted-foreground text-sm">
+					{/* Stacks are an open-PR concept; hide the nav once this PR is
+					    closed or merged so it can't render a stale, pre-close stack. */}
+					{isOpenOrDraft && <PullRequestStackNav />}
 					{pullRequest.user && authorProfileUrl && (
 						<>
 							<a

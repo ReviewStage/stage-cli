@@ -5,6 +5,7 @@ export * from "./github-timeline.ts";
 export * from "./parsed-diff.ts";
 export * from "./prologue.ts";
 export * from "./pull-request.ts";
+export * from "./pull-request-stack.ts";
 export * from "./review.ts";
 export * from "./view-state.ts";
 export * from "./viewer.ts";
