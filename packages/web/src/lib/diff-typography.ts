@@ -26,8 +26,9 @@ const FALLBACK_STACK = `'Geist Mono', ${GITHUB_MONO_STACK}`;
 const GITHUB_FONT = "GitHub";
 
 /**
- * Preset diff fonts. All render only if available on the user's machine (the CLI
- * loads no webfonts) except GitHub, which is a system-font stack. Sorted by label.
+ * Preset diff fonts. index.html loads these from Google Fonts (matching hosted);
+ * offline they degrade through FALLBACK_STACK to whatever is installed locally.
+ * GitHub is a system-font stack and needs no webfont. Sorted by label.
  * `value` is stored in localStorage.
  */
 export const DIFF_FONT_OPTIONS: { value: string; label: string }[] = [

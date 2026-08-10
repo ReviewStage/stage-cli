@@ -183,7 +183,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 
 			{/* Ligatures */}
 			<SettingRow label="Ligatures" compact={compact}>
-				<Switch checked={diffLigatures} onCheckedChange={setDiffLigatures} />
+				<Switch aria-label="Ligatures" checked={diffLigatures} onCheckedChange={setDiffLigatures} />
 			</SettingRow>
 
 			{/* View mode */}
@@ -220,17 +220,17 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 
 			{/* Backgrounds */}
 			<SettingRow label="Backgrounds" compact={compact}>
-				<Switch checked={backgrounds} onCheckedChange={setBackgrounds} />
+				<Switch aria-label="Backgrounds" checked={backgrounds} onCheckedChange={setBackgrounds} />
 			</SettingRow>
 
 			{/* Line wrapping */}
 			<SettingRow label="Wrapping" compact={compact}>
-				<Switch checked={wrap} onCheckedChange={setWrap} />
+				<Switch aria-label="Wrapping" checked={wrap} onCheckedChange={setWrap} />
 			</SettingRow>
 
 			{/* Line numbers */}
 			<SettingRow label="Line numbers" compact={compact}>
-				<Switch checked={lineNumbers} onCheckedChange={setLineNumbers} />
+				<Switch aria-label="Line numbers" checked={lineNumbers} onCheckedChange={setLineNumbers} />
 			</SettingRow>
 
 			{/* Minimize inline comments */}
@@ -243,6 +243,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 				compact={compact}
 			>
 				<Switch
+					aria-label="Minimize inlines"
 					checked={inlineCommentsMinimized}
 					onCheckedChange={() => toggleInlineCommentsMinimized()}
 				/>

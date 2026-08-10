@@ -1,5 +1,5 @@
 import type { Chapter } from "@stagereview/types/chapters";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import {
 	Check,
 	ChevronDown,
@@ -43,6 +43,16 @@ export function ChapterNavigator({
 	onCopyChapter,
 }: ChapterNavigatorProps) {
 	const { runId, chapters: allChapters, chapterLineCountsMap } = useChapterContext();
+	const navigate = useNavigate();
+	// Like hosted, dropdown items navigate via onClick — rendering a Link here
+	// would nest the Markdown title's anchors inside another anchor.
+	const navigateToChapter = (chapterNumber: number) => {
+		void navigate({
+			to: "/runs/$runId/chapters/$chapterNumber",
+			params: { runId, chapterNumber: String(chapterNumber) },
+			resetScroll: false,
+		});
+	};
 	const isViewed = viewedChapterIds.has(chapter.externalId);
 	const canPrev = chapterIndex > 0;
 	const canNext = chapterIndex < allChapters.length - 1;
@@ -106,59 +116,56 @@ export function ChapterNavigator({
 							const counts = chapterLineCountsMap.get(ch.id);
 							const commentCount = chapterCommentCounts.get(ch.id) ?? 0;
 							return (
-								<DropdownMenuItem key={ch.id} asChild className="gap-3 px-3 py-2.5">
-									<Link
-										to="/runs/$runId/chapters/$chapterNumber"
-										params={{ runId, chapterNumber: String(ch.order + 1) }}
-										resetScroll={false}
-										className={cn("cursor-pointer", isActive && "bg-accent")}
+								<DropdownMenuItem
+									key={ch.id}
+									onClick={() => navigateToChapter(ch.order + 1)}
+									className={cn("cursor-pointer gap-3 px-3 py-2.5", isActive && "bg-accent")}
+								>
+									<StatusBadge
+										size="sm"
+										badge={
+											isChViewed ? (
+												<Check className="size-2 text-green-600" strokeWidth={3} />
+											) : undefined
+										}
 									>
-										<StatusBadge
-											size="sm"
-											badge={
-												isChViewed ? (
-													<Check className="size-2 text-green-600" strokeWidth={3} />
-												) : undefined
-											}
+										<div
+											className={cn(
+												"flex size-6 shrink-0 items-center justify-center rounded-full font-bold text-[0.625rem]",
+												isActive
+													? "bg-primary text-primary-foreground"
+													: "bg-muted text-muted-foreground",
+											)}
 										>
-											<div
-												className={cn(
-													"flex size-6 shrink-0 items-center justify-center rounded-full font-bold text-[0.625rem]",
-													isActive
-														? "bg-primary text-primary-foreground"
-														: "bg-muted text-muted-foreground",
-												)}
-											>
-												{ch.order + 1}
-											</div>
-										</StatusBadge>
-										<div className="min-w-0 flex-1 space-y-0.5">
-											<Markdown
-												content={ch.title}
-												inheritSize
-												className="block truncate text-sm [&_.md-p]:my-0 [&_.md-p]:inline"
-											/>
-											<span className="flex items-center gap-1.5 font-medium text-[0.6875rem] opacity-70">
-												{ch.riskLevel !== null && <RiskBadge level={ch.riskLevel} />}
-												{counts && counts.linesAdded > 0 && (
-													<span className="text-green-600 dark:text-green-500">
-														+{counts.linesAdded}
-													</span>
-												)}
-												{counts && counts.linesDeleted > 0 && (
-													<span className="text-red-600 dark:text-red-500">
-														-{counts.linesDeleted}
-													</span>
-												)}
-												{commentCount > 0 && (
-													<span className="ml-auto flex items-center gap-0.5 text-muted-foreground">
-														<MessageSquare className="size-2.5" />
-														{commentCount}
-													</span>
-												)}
-											</span>
+											{ch.order + 1}
 										</div>
-									</Link>
+									</StatusBadge>
+									<div className="min-w-0 flex-1 space-y-0.5">
+										<Markdown
+											content={ch.title}
+											inheritSize
+											className="block truncate text-sm [&_.md-p]:my-0 [&_.md-p]:inline"
+										/>
+										<span className="flex items-center gap-1.5 font-medium text-[0.6875rem] opacity-70">
+											{ch.riskLevel !== null && <RiskBadge level={ch.riskLevel} />}
+											{counts && counts.linesAdded > 0 && (
+												<span className="text-green-600 dark:text-green-500">
+													+{counts.linesAdded}
+												</span>
+											)}
+											{counts && counts.linesDeleted > 0 && (
+												<span className="text-red-600 dark:text-red-500">
+													-{counts.linesDeleted}
+												</span>
+											)}
+											{commentCount > 0 && (
+												<span className="ml-auto flex items-center gap-0.5 text-muted-foreground">
+													<MessageSquare className="size-2.5" />
+													{commentCount}
+												</span>
+											)}
+										</span>
+									</div>
 								</DropdownMenuItem>
 							);
 						})}

@@ -4,7 +4,11 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { ChapterSidePanel } from "@/components/chapter";
-import { type ChapterOverlayProps, FileDiffList } from "@/components/files";
+import {
+	type ChapterOverlayProps,
+	CONTENT_COLUMN_MIN_HEIGHT,
+	FileDiffList,
+} from "@/components/files";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChapterContext } from "@/lib/chapter-context";
@@ -355,16 +359,11 @@ function ChapterDetailContent({
 	);
 }
 
-// Anchor the content column to the same viewport-filling height as the sticky
-// sidebar (see ChapterSidePanel). Without a height floor the column collapses to
-// its natural content height, so collapsing files in an already-scrolled list
-// leaves the page scrolled into empty space below the now-short column.
-//
-// Only the left/right layouts have a sticky, viewport-height sidebar to mirror.
-// The top layout stacks the panel ABOVE the content, so this floor would
-// reserve a full extra viewport below the panel and reintroduce the same blank
-// space on short chapters — so it is applied to the side layouts only.
-const CONTENT_COLUMN_MIN_HEIGHT = "min-h-[calc(var(--main-height)_-_var(--content-top))]";
+// Only the left/right layouts have a sticky, viewport-height sidebar to mirror
+// with CONTENT_COLUMN_MIN_HEIGHT. The top layout stacks the panel ABOVE the
+// content, so this floor would reserve a full extra viewport below the panel
+// and reintroduce the same blank space on short chapters — so it is applied to
+// the side layouts only.
 
 /**
  * Position-aware variant of the shared SidebarLayout (vendored from the hosted

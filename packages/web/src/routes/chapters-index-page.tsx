@@ -18,9 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChapterContext } from "@/lib/chapter-context";
-import { buildChapterCommentCountsMap } from "@/lib/comment-counts";
 import { formatAllChaptersAsMarkdown } from "@/lib/format-chapter-markdown";
-import { useReviewContext } from "@/lib/review-context";
 import {
 	NAVIGATION_DIRECTION,
 	type NavigationDirection,
@@ -41,15 +39,10 @@ function ChapterLoadingSkeleton() {
 }
 
 function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string }) {
-	const { chapterLineCountsMap } = useChapterContext();
-	const { threads } = useReviewContext();
+	const { chapterLineCountsMap, chapterCommentCounts } = useChapterContext();
 	const view = useViewState(runId);
 
 	const sorted = useMemo(() => [...chapters].sort((a, b) => a.order - b.order), [chapters]);
-	const chapterCommentCounts = useMemo(
-		() => buildChapterCommentCountsMap(sorted, threads),
-		[sorted, threads],
-	);
 
 	const total = sorted.length;
 	const viewedCount = sorted.reduce(

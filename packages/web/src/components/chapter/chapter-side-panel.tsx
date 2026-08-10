@@ -1,9 +1,7 @@
 import type { Chapter } from "@stagereview/types/chapters";
-import { type CSSProperties, useMemo } from "react";
+import type { CSSProperties } from "react";
 import { useChapterContext } from "@/lib/chapter-context";
-import { buildChapterCommentCountsMap } from "@/lib/comment-counts";
 import type { PullRequestFile } from "@/lib/diff-types";
-import { useReviewContext } from "@/lib/review-context";
 import { PANEL_POSITION, type PanelPosition } from "@/lib/use-chapter-settings";
 import { RESIZE_HANDLE_SIDE, useResizablePanel } from "@/lib/use-resizable-panel";
 import { cn } from "@/lib/utils";
@@ -53,14 +51,9 @@ export function ChapterSidePanel({
 	onSelectFile,
 	onCopyChapter,
 }: ChapterSidePanelProps) {
-	const { chapters: allChapters, chapterLineCountsMap } = useChapterContext();
-	const { threads } = useReviewContext();
+	const { chapterLineCountsMap, chapterCommentCounts } = useChapterContext();
 
 	const counts = chapterLineCountsMap.get(chapter.id) ?? null;
-	const chapterCommentCounts = useMemo(
-		() => buildChapterCommentCountsMap(allChapters, threads),
-		[allChapters, threads],
-	);
 	const commentCount = chapterCommentCounts.get(chapter.id) ?? 0;
 
 	const isTop = position === PANEL_POSITION.TOP;

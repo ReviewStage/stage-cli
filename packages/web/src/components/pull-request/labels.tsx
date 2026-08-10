@@ -486,6 +486,7 @@ export function Labels() {
 
 					<div className="px-4 py-3">
 						<Input
+							aria-label="Filter labels"
 							placeholder="Add labels..."
 							value={search}
 							onChange={(event) => setSearch(event.target.value)}

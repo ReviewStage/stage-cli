@@ -13,6 +13,11 @@ export interface ImportChaptersResult {
 	keyChangeCount: number;
 }
 
+/**
+ * Parse and insert a chapters file directly. Not wired to any CLI command —
+ * the production ingestion path is `stagereview show`, which additionally
+ * revalidates hunk coverage and sanitizes lineRefs before persisting.
+ */
 export function importChaptersFile(jsonPath: string, db: StageDb = getDb()): ImportChaptersResult {
 	const absolute = path.resolve(jsonPath);
 	const raw = readFileSync(absolute, "utf8");

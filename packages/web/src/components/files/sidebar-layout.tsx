@@ -11,7 +11,7 @@ interface SidebarLayoutProps {
 // sidebar (see ChapterSidePanel). Without a height floor the column collapses to
 // its natural content height, so collapsing files in an already-scrolled list
 // leaves the page scrolled into empty space below the now-short column.
-const CONTENT_COLUMN_MIN_HEIGHT = "min-h-[calc(var(--main-height)_-_var(--content-top))]";
+export const CONTENT_COLUMN_MIN_HEIGHT = "min-h-[calc(var(--main-height)_-_var(--content-top))]";
 
 /**
  * The sidebar pulls left to align with the page edge (counter to the route's

@@ -1,6 +1,9 @@
 import type { Chapter } from "@stagereview/types/chapters";
 import { createContext, type ReactNode, use, useMemo } from "react";
+import { buildChapterCommentCountsMap, buildHunkRangeIndex } from "./comment-counts";
 import { filterFilesForChapter } from "./filter-files-for-chapter";
+import { parsePatchToFileDiffs } from "./parse-diff";
+import { useReviewContext } from "./review-context";
 import { useChapters } from "./use-chapters";
 import { useDiffPatch } from "./use-diff-patch";
 
@@ -13,6 +16,9 @@ interface ChapterContextValue {
 	runId: string;
 	chapters: readonly Chapter[];
 	chapterLineCountsMap: ReadonlyMap<string, ChapterLineCounts>;
+	// Threads matched to each chapter's hunk ranges, mirroring hosted's
+	// chapter-context `chapterCommentCounts` (keyed by chapter id).
+	chapterCommentCounts: ReadonlyMap<string, number>;
 }
 
 const ChapterContext = createContext<ChapterContextValue | null>(null);
@@ -39,6 +45,7 @@ function buildChapterLineCountsMap(
 export function ChapterProvider({ runId, children }: { runId: string; children: ReactNode }) {
 	const { data: chaptersData } = useChapters(runId);
 	const { data: diffData } = useDiffPatch(runId);
+	const { threads } = useReviewContext();
 
 	const chapters = useMemo<readonly Chapter[]>(() => {
 		if (!chaptersData?.chapters) return [];
@@ -50,9 +57,19 @@ export function ChapterProvider({ runId, children }: { runId: string; children: 
 		[chapters, diffData?.patch],
 	);
 
+	const hunkRangeIndex = useMemo(
+		() => buildHunkRangeIndex(diffData?.patch ? parsePatchToFileDiffs(diffData.patch) : []),
+		[diffData?.patch],
+	);
+
+	const chapterCommentCounts = useMemo(
+		() => buildChapterCommentCountsMap(chapters, hunkRangeIndex, threads),
+		[chapters, hunkRangeIndex, threads],
+	);
+
 	const value = useMemo<ChapterContextValue>(
-		() => ({ runId, chapters, chapterLineCountsMap }),
-		[runId, chapters, chapterLineCountsMap],
+		() => ({ runId, chapters, chapterLineCountsMap, chapterCommentCounts }),
+		[runId, chapters, chapterLineCountsMap, chapterCommentCounts],
 	);
 
 	return <ChapterContext value={value}>{children}</ChapterContext>;

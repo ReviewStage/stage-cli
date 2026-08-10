@@ -7,4 +7,4 @@ export {
 export { FileFilterInput } from "./file-filter-input";
 export { FilePicker } from "./file-picker";
 export { FileTree, type ViewedConfig } from "./file-tree";
-export { SidebarLayout } from "./sidebar-layout";
+export { CONTENT_COLUMN_MIN_HEIGHT, SidebarLayout } from "./sidebar-layout";

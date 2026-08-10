@@ -1,13 +1,11 @@
 import type { Chapter } from "@stagereview/types/chapters";
 import { Circle, CircleCheck } from "lucide-react";
-import { type CSSProperties, useMemo } from "react";
+import type { CSSProperties } from "react";
 import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
 import { Button } from "@/components/ui/button";
 import { useChapterContext } from "@/lib/chapter-context";
-import { buildChapterCommentCountsMap } from "@/lib/comment-counts";
 import type { PullRequestFile } from "@/lib/diff-types";
 import { SHORTCUT_KEY } from "@/lib/keyboard-shortcuts";
-import { useReviewContext } from "@/lib/review-context";
 import { PANEL_POSITION, type PanelPosition } from "@/lib/use-chapter-settings";
 import { cn } from "@/lib/utils";
 import { ChapterActionsMenu } from "./chapter-actions-menu";
@@ -65,14 +63,9 @@ export function ContinuousChapterPanel({
 	onSelectFile,
 	onCopyChapter,
 }: ContinuousChapterPanelProps) {
-	const { chapters: allChapters, chapterLineCountsMap } = useChapterContext();
-	const { threads } = useReviewContext();
+	const { chapterLineCountsMap, chapterCommentCounts } = useChapterContext();
 
 	const counts = chapterLineCountsMap.get(chapter.id) ?? null;
-	const chapterCommentCounts = useMemo(
-		() => buildChapterCommentCountsMap(allChapters, threads),
-		[allChapters, threads],
-	);
 	const commentCount = chapterCommentCounts.get(chapter.id) ?? 0;
 	const isViewed = viewedChapterIds.has(chapter.externalId);
 
