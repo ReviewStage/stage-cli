@@ -30,6 +30,14 @@ function formatHunkForPrompt(file: PullRequestFile, hunk: Hunk): string {
 ${formatHunkDiffWithLineNumbers(hunk)}`;
 }
 
+/**
+ * Remove the author-context delimiter from untrusted PR text so it cannot
+ * close (or re-open) the fence early and smuggle content out as structure.
+ */
+export function stripAuthorContextTags(text: string): string {
+	return text.replace(/<\s*\/?\s*author_provided_context\s*>/gi, "");
+}
+
 export async function runPrep(options: PrepOptions): Promise<string> {
 	const runInstructions = runInstructionsSchema.parse(options.instructions);
 	const { scope, rawDiff, mergeBaseSha, prNumber } = await resolveDiffScope(options);
@@ -59,12 +67,13 @@ export async function runPrep(options: PrepOptions): Promise<string> {
 	if (pullRequest) {
 		// Hosted's <author_provided_context> wrapper (summary-agent.ts): the tags
 		// mark the title/body as untrusted author text so ===-style lines inside a
-		// PR description can't masquerade as prep section structure.
+		// PR description can't masquerade as prep section structure. The delimiter
+		// itself is stripped from the author text so it can't close the fence early.
 		sections.push(
 			"=== PULL REQUEST ===",
 			"<author_provided_context>",
-			`PR Title: ${pullRequest.title}`,
-			`PR Description: ${truncatePrBody(pullRequest.body) || "(none)"}`,
+			`PR Title: ${stripAuthorContextTags(pullRequest.title)}`,
+			`PR Description: ${stripAuthorContextTags(truncatePrBody(pullRequest.body) ?? "") || "(none)"}`,
 			"</author_provided_context>",
 			"",
 		);
