@@ -343,6 +343,7 @@ function ChapterDetailContent({
 				key={chapter.id}
 				ref={diffListRef}
 				entries={chapterEntries}
+				fileContents={fileContents}
 				emptyMessage="No changes in this chapter"
 				viewedPathSet={view.filePathSet}
 				onToggleViewed={handleToggleFileViewed}

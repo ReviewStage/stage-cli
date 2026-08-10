@@ -117,7 +117,31 @@ export function diffRoutes(db: StageDb): Route[] {
 
 const MINUS_RE = /^--- (?:a\/)?(.+)$/m;
 const PLUS_RE = /^\+\+\+ (?:b\/)?(.+)$/m;
-const BINARY_RE = /^Binary files/m;
+const BINARY_RE = /^Binary files|^GIT binary patch/m;
+const RENAME_FROM_RE = /^(?:rename|copy) from (.+)$/m;
+const RENAME_TO_RE = /^(?:rename|copy) to (.+)$/m;
+
+/**
+ * Browser-displayable image formats. Binary files are normally skipped when
+ * building file contents, but images are shipped base64-encoded so the web
+ * UI's image diff viewer can render them.
+ */
+const IMAGE_EXTENSIONS = new Set([
+	"png",
+	"jpg",
+	"jpeg",
+	"gif",
+	"svg",
+	"webp",
+	"bmp",
+	"ico",
+	"avif",
+]);
+
+function isImagePath(filePath: string): boolean {
+	const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+	return IMAGE_EXTENSIONS.has(ext);
+}
 
 interface ParsedFilePaths {
 	oldPath: string | null;
@@ -142,8 +166,15 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 		const minus = text.match(MINUS_RE);
 		const plus = text.match(PLUS_RE);
 
-		const oldPath = minus?.[1] && minus[1] !== "/dev/null" ? minus[1] : null;
-		const newPath = plus?.[1] && plus[1] !== "/dev/null" ? plus[1] : null;
+		let oldPath = minus?.[1] && minus[1] !== "/dev/null" ? minus[1] : null;
+		let newPath = plus?.[1] && plus[1] !== "/dev/null" ? plus[1] : null;
+
+		// Pure renames/copies have no ---/+++ headers; fall back to the
+		// rename/copy header lines so their contents can still be served.
+		if (oldPath === null && newPath === null) {
+			oldPath = text.match(RENAME_FROM_RE)?.[1] ?? null;
+			newPath = text.match(RENAME_TO_RE)?.[1] ?? null;
+		}
 
 		results.push({ oldPath, newPath, isBinary });
 	}
@@ -168,12 +199,41 @@ async function getGitFileContent(
 	}
 }
 
+async function getGitFileContentBase64(
+	cwd: string,
+	ref: string,
+	filePath: string,
+): Promise<string | null> {
+	try {
+		const { stdout } = await execFileAsync("git", ["show", `${ref}:${filePath}`], {
+			cwd,
+			encoding: "buffer",
+			maxBuffer: MAX_FILE_BYTES,
+		});
+		return stdout.toString("base64");
+	} catch {
+		return null;
+	}
+}
+
 async function readFileContent(repoRoot: string, filePath: string): Promise<string | null> {
 	const resolved = path.resolve(repoRoot, filePath);
 	const rel = path.relative(repoRoot, resolved);
 	if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
 	try {
 		return await fs.readFile(resolved, "utf8");
+	} catch {
+		return null;
+	}
+}
+
+async function readFileContentBase64(repoRoot: string, filePath: string): Promise<string | null> {
+	const resolved = path.resolve(repoRoot, filePath);
+	const rel = path.relative(repoRoot, resolved);
+	if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
+	try {
+		const buffer = await fs.readFile(resolved);
+		return buffer.toString("base64");
 	} catch {
 		return null;
 	}
@@ -204,6 +264,15 @@ function fetchContent(
 	return getGitFileContent(repoRoot, ref, filePath);
 }
 
+function fetchContentBase64(
+	repoRoot: string,
+	ref: string | "DISK",
+	filePath: string,
+): Promise<string | null> {
+	if (ref === "DISK") return readFileContentBase64(repoRoot, filePath);
+	return getGitFileContentBase64(repoRoot, ref, filePath);
+}
+
 async function buildFileContents(
 	run: ChapterRunRow,
 	repoRoot: string,
@@ -215,7 +284,19 @@ async function buildFileContents(
 	const entries = await Promise.all(
 		files.map(async ({ oldPath, newPath, isBinary }) => {
 			const key = newPath ?? oldPath;
-			if (!key || isBinary) return null;
+			if (!key) return null;
+
+			// Images ship base64-encoded (whether or not git marked the diff as
+			// binary — pure renames carry no marker) so the image diff viewer
+			// can render them; other binary files carry no usable content.
+			if (isImagePath(key)) {
+				const [oldContent, newContent] = await Promise.all([
+					oldPath ? fetchContentBase64(repoRoot, oldRef, oldPath) : Promise.resolve(null),
+					newPath ? fetchContentBase64(repoRoot, newRef, newPath) : Promise.resolve(null),
+				]);
+				return [key, { oldContent, newContent, encoding: "base64" as const }] as const;
+			}
+			if (isBinary) return null;
 
 			const [oldContent, newContent] = await Promise.all([
 				oldPath ? fetchContent(repoRoot, oldRef, oldPath) : Promise.resolve(null),

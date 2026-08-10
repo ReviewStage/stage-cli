@@ -95,6 +95,7 @@ export function FilesPage({ runId }: FilesPageProps) {
 				key={runId}
 				ref={diffListRef}
 				entries={entries}
+				fileContents={diffData.fileContents}
 				emptyMessage="No files changed in this run."
 				viewedPathSet={filePathSet}
 				onToggleViewed={handleToggleViewed}
