@@ -29,6 +29,10 @@ export function isProxiableGitHubImageUrl(url: string): boolean {
 
 	if (parsed.protocol !== "https:") return false;
 
+	// fetch() rejects credential-bearing URLs outright; refusing them here
+	// keeps the client from rewriting sources the server can never fetch.
+	if (parsed.username !== "" || parsed.password !== "") return false;
+
 	if (!ALLOWED_HOSTS.has(parsed.hostname)) return false;
 
 	if (parsed.hostname === "github.com") {

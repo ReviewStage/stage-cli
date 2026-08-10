@@ -59,4 +59,8 @@ describe("proxyGitHubImageSrcset", () => {
 			"https://stagereview.app/a.png 1x",
 		);
 	});
+
+	it("rejects credential-bearing URLs the server could never fetch", () => {
+		expect(isProxiableGitHubImageUrl("https://user:pass@github.com/o/r/assets/1")).toBe(false);
+	});
 });

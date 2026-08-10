@@ -49,7 +49,9 @@ export function decodeQuotedGitPath(raw: string): string {
 		}
 		i += 1;
 	}
-	return new TextDecoder().decode(new Uint8Array(bytes));
+	// ignoreBOM keeps a leading U+FEFF in the filename instead of silently
+	// stripping it, so such paths still resolve for content lookups.
+	return new TextDecoder("utf-8", { ignoreBOM: true }).decode(new Uint8Array(bytes));
 }
 
 /**
