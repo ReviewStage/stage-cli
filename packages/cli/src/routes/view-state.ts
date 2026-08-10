@@ -22,6 +22,7 @@ import {
 } from "../github/index.js";
 import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
+import { enforceSameOrigin } from "./pull-request-shared.js";
 
 type Tx = Parameters<Parameters<StageDb["transaction"]>[0]>[0];
 
@@ -30,7 +31,8 @@ export function viewStateRoutes(db: StageDb): Route[] {
 		{
 			method: "POST",
 			pattern: "/api/chapter-view/:chapterId",
-			handler: async (_req, res, params) => {
+			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const rows = resolveChapterRows(db, params.chapterId);
 				if (rows.length === 0) {
 					writeJson(res, 404, { error: `Chapter ${params.chapterId} not found` });
@@ -62,7 +64,8 @@ export function viewStateRoutes(db: StageDb): Route[] {
 		{
 			method: "DELETE",
 			pattern: "/api/chapter-view/:chapterId",
-			handler: async (_req, res, params) => {
+			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const rows = resolveChapterRows(db, params.chapterId);
 				if (rows.length === 0) {
 					// Idempotent: if the chapter doesn't exist there's nothing to delete. The SPA
@@ -115,7 +118,8 @@ export function viewStateRoutes(db: StageDb): Route[] {
 		{
 			method: "POST",
 			pattern: "/api/key-change-view/:keyChangeId",
-			handler: (_req, res, params) => {
+			handler: (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const ids = resolveKeyChangeIds(db, params.keyChangeId);
 				if (ids.length === 0) {
 					writeJson(res, 404, { error: `Key change ${params.keyChangeId} not found` });
@@ -131,7 +135,8 @@ export function viewStateRoutes(db: StageDb): Route[] {
 		{
 			method: "DELETE",
 			pattern: "/api/key-change-view/:keyChangeId",
-			handler: (_req, res, params) => {
+			handler: (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const ids = resolveKeyChangeIds(db, params.keyChangeId);
 				if (ids.length === 0) {
 					writeJson(res, 200, {});
@@ -151,6 +156,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 			method: "POST",
 			pattern: "/api/runs/:runId/file-views",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const runId = params.runId;
 				if (!runId) {
 					writeJson(res, 400, { error: "Missing runId" });
@@ -178,6 +184,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 			method: "DELETE",
 			pattern: "/api/runs/:runId/file-views",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const runId = params.runId;
 				if (!runId) {
 					writeJson(res, 400, { error: "Missing runId" });
@@ -230,7 +237,8 @@ export function viewStateRoutes(db: StageDb): Route[] {
 		{
 			method: "GET",
 			pattern: "/api/runs/:runId/view-state",
-			handler: async (_req, res, params) => {
+			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const runId = params.runId;
 				if (!runId) {
 					writeJson(res, 400, { error: "Missing runId" });
