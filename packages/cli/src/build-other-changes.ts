@@ -3,7 +3,7 @@ import { HEADER_ONLY_OLD_START } from "@stagereview/types/chapters";
 import type { PullRequestFile } from "@stagereview/types/parsed-diff";
 import type { KeyChange } from "./schema.js";
 
-const OTHER_CHANGES_CHAPTER_ID = "chapter-other-changes";
+export const OTHER_CHANGES_CHAPTER_ID = "chapter-other-changes";
 const OTHER_CHANGES_TITLE = "Other changes";
 const OTHER_CHANGES_SUMMARY =
 	"Lockfiles, generated files, binary assets, and other ignored files, plus pure renames or moves not covered by other chapters.";
@@ -47,6 +47,11 @@ export function buildOtherChangesChapter(
 
 	if (hunkRefs.length === 0) return null;
 
+	return makeOtherChangesChapter(hunkRefs);
+}
+
+/** The static catch-all chapter shell around a caller-supplied set of hunkRefs. */
+export function makeOtherChangesChapter(hunkRefs: HunkReference[]): OtherChangesChapter {
 	return {
 		id: OTHER_CHANGES_CHAPTER_ID,
 		title: OTHER_CHANGES_TITLE,

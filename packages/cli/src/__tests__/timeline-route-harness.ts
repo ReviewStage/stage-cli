@@ -221,7 +221,9 @@ export class TimelineRouteHarness {
 		]);
 		const script = `#!/bin/sh
 dir="${fixtureDir}"
-echo "$@" >> "${this.binDir}/gh-argv.log"
+# One printf per invocation: a single O_APPEND write keeps concurrent gh calls
+# (Promise.all in getPullRequestTimeline) from interleaving log lines.
+printf '%s\\n' "$*" >> "${this.binDir}/gh-argv.log"
 emit() { [ -f "$dir/$1" ] && cat "$dir/$1" || { echo "gh: not authenticated" >&2; exit 1; }; }
 all="$*"
 if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then emit thread-metadata.json

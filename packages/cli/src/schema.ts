@@ -31,7 +31,8 @@ const fullShaSchema = z.string().regex(/^[0-9a-f]{40}$/, "Expected a full commit
 export const keyChangeSchema = z.strictObject({
 	/** A judgment-call question for a human reviewer, not source code. */
 	content: z.string().min(1),
-	// Tolerates empty and inverted ranges: sanitizeLineRefs in show.ts repairs by
+	// Tolerates empty and inverted ranges. Every production ingestion path runs
+	// through show.ts, whose sanitizeLineRefs repairs them before persistence by
 	// dropping invalid refs (and keyChanges left with none), matching hosted.
 	lineRefs: z.array(lineRefSchema),
 });

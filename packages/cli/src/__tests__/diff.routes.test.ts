@@ -269,6 +269,87 @@ describe("diff API", () => {
 		expect(data.fileContents["doomed.txt"]?.newContent).toBeNull();
 	});
 
+	it("serves both sides of a modified binary image base64-encoded", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+
+		const oldBytes = Buffer.concat([Buffer.from("PNG"), Buffer.alloc(32, 0), Buffer.from("v1")]);
+		const newBytes = Buffer.concat([Buffer.from("PNG"), Buffer.alloc(32, 0), Buffer.from("v2")]);
+		await fs.writeFile(path.join(repoRoot, "logo.png"), oldBytes);
+		git("add", "logo.png");
+		git("commit", "-m", "add image");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		await fs.writeFile(path.join(repoRoot, "logo.png"), newBytes);
+		git("commit", "-am", "modify image");
+		const headSha = git("rev-parse", "HEAD").trim();
+
+		const runId = insertCommittedRun(baseSha, headSha);
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+
+		const data = parseDiffResponse(res.body);
+		// The patch is only `diff --git` + `Binary files ... differ` — paths come
+		// from the header fallback.
+		expect(data.patch).toContain("Binary files");
+		expect(data.fileContents["logo.png"]).toMatchObject({ encoding: "base64" });
+		expect(data.fileContents["logo.png"]?.oldContent).toBe(oldBytes.toString("base64"));
+		expect(data.fileContents["logo.png"]?.newContent).toBe(newBytes.toString("base64"));
+	});
+
+	it("serves null contents for a pure rename of a binary non-image file", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+
+		const bytes = Buffer.concat([Buffer.from("%PDF"), Buffer.alloc(64, 0), Buffer.from("end")]);
+		await fs.writeFile(path.join(repoRoot, "doc.pdf"), bytes);
+		git("add", "doc.pdf");
+		git("commit", "-m", "add pdf");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		git("mv", "doc.pdf", "renamed.pdf");
+		git("commit", "-m", "rename pdf");
+		const headSha = git("rev-parse", "HEAD").trim();
+
+		const runId = insertCommittedRun(baseSha, headSha);
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+
+		const data = parseDiffResponse(res.body);
+		expect(data.patch).toContain("rename from doc.pdf");
+		// Binary bytes must not be served as a UTF-8 text preview.
+		expect(data.fileContents["renamed.pdf"]?.oldContent).toBeNull();
+		expect(data.fileContents["renamed.pdf"]?.newContent).toBeNull();
+	});
+
+	it("skips working-tree image sides larger than the file size cap", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+
+		const oldBytes = Buffer.concat([Buffer.from("PNG"), Buffer.alloc(32, 0), Buffer.from("v1")]);
+		await fs.writeFile(path.join(repoRoot, "logo.png"), oldBytes);
+		git("add", "logo.png");
+		git("commit", "-m", "add image");
+
+		// Overwrite with > 5 MiB of binary data in the working tree.
+		const huge = Buffer.alloc(5 * 1024 * 1024 + 1, 0);
+		await fs.writeFile(path.join(repoRoot, "logo.png"), huge);
+		const runId = insertWorkingTreeRun(WORKING_TREE_REF.WORK);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+
+		const data = parseDiffResponse(res.body);
+		expect(data.fileContents["logo.png"]?.oldContent).toBe(oldBytes.toString("base64"));
+		expect(data.fileContents["logo.png"]?.newContent).toBeNull();
+	});
+
 	it("returns 404 for unknown runId", async () => {
 		const { port } = await startWithRoutes();
 		const res = await rawRequest(port, "/api/runs/00000000-0000-0000-0000-000000000000/diff.patch");

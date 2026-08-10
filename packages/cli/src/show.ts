@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import type { Prologue } from "@stagereview/types/prologue";
 import open from "open";
-import { buildOtherChangesChapter } from "./build-other-changes.js";
+import {
+	buildOtherChangesChapter,
+	makeOtherChangesChapter,
+	OTHER_CHANGES_CHAPTER_ID,
+} from "./build-other-changes.js";
 import { closeDb, getDb } from "./db/client.js";
 import { parseGitDiff } from "./diff-parser.js";
 import { filterFilesForLlm, loadStageIgnore } from "./filter-files.js";
@@ -27,6 +32,7 @@ import {
 	ChaptersFileSchema,
 	DIFF_SIDE,
 	HEADER_ONLY_OLD_START,
+	type HunkReference,
 	type Scope,
 } from "./schema.js";
 import { type DiffScopeOptions, pullRequestNumberFromRef, resolveDiffScope } from "./scope.js";
@@ -115,9 +121,11 @@ async function buildChaptersFile(
  */
 function revalidateChaptersFile(file: ChaptersFile): ChaptersFile {
 	const allFiles = parseGitDiff(getRawDiffForScope(file.scope));
-	validateHunkCoverage(expectedHunkStarts(allFiles, { includeHeaderOnly: true }), file.chapters);
-	const chapters = unescapeChapters(sanitizeLineRefs(file.chapters, allFiles));
-	return { ...file, chapters };
+	const expected = expectedHunkStarts(allFiles, { includeHeaderOnly: true });
+	const repaired = repairLegacyHeaderOnlyRefs(expected, file.chapters);
+	validateHunkCoverage(expected, repaired);
+	const chapters = unescapeChapters(sanitizeLineRefs(repaired, allFiles));
+	return { ...file, chapters, prologue: unescapePrologue(file.prologue) };
 }
 
 function assembleChaptersFile(
@@ -145,9 +153,52 @@ function assembleChaptersFile(
 	return {
 		scope,
 		chapters,
-		prologue: agentOutput.prologue,
+		prologue: unescapePrologue(agentOutput.prologue),
 		generatedAt: new Date().toISOString(),
 	};
+}
+
+/**
+ * Chapters files saved by releases before the header-only sentinel existed omit
+ * zero-hunk files (binary changes, pure renames) from the other-changes chapter
+ * entirely. Repair those files by appending the missing sentinel refs to the
+ * other-changes chapter instead of rejecting them; genuinely missing hunk refs
+ * still hard-fail in `validateHunkCoverage`.
+ */
+export function repairLegacyHeaderOnlyRefs(
+	expected: Map<string, Set<number>>,
+	chapters: Chapter[],
+): Chapter[] {
+	const covered = new Map<string, Set<number>>();
+	for (const chapter of chapters) {
+		for (const ref of chapter.hunkRefs) {
+			let starts = covered.get(ref.filePath);
+			if (!starts) {
+				starts = new Set();
+				covered.set(ref.filePath, starts);
+			}
+			starts.add(ref.oldStart);
+		}
+	}
+
+	const missingHeaderOnly: HunkReference[] = [];
+	for (const [filePath, starts] of expected) {
+		for (const oldStart of starts) {
+			if (oldStart === HEADER_ONLY_OLD_START && !covered.get(filePath)?.has(oldStart)) {
+				missingHeaderOnly.push({ filePath, oldStart });
+			}
+		}
+	}
+	if (missingHeaderOnly.length === 0) return chapters;
+
+	const otherChanges = chapters.find((c) => c.id === OTHER_CHANGES_CHAPTER_ID);
+	if (otherChanges) {
+		return chapters.map((c) =>
+			c === otherChanges ? { ...c, hunkRefs: [...c.hunkRefs, ...missingHeaderOnly] } : c,
+		);
+	}
+	const maxOrder = chapters.reduce((max, c) => Math.max(max, c.order), 0);
+	return [...chapters, { ...makeOtherChangesChapter(missingHeaderOnly), order: maxOrder + 1 }];
 }
 
 function unescapeChapters(chapters: Chapter[]): Chapter[] {
@@ -159,6 +210,39 @@ function unescapeChapters(chapters: Chapter[]): Chapter[] {
 			content: unescapeLiteralNewlines(kc.content),
 		})),
 	}));
+}
+
+function unescapeNullable(value: string | null): string | null {
+	return value === null ? null : unescapeLiteralNewlines(value);
+}
+
+/**
+ * The agent's hand-written JSON often carries literal `\n` sequences in prose
+ * and mermaid sources; unescape every prologue string field the same way
+ * chapter summaries and key-change content are unescaped.
+ */
+function unescapePrologue(prologue: Prologue | undefined): Prologue | undefined {
+	if (!prologue) return prologue;
+	return {
+		...prologue,
+		motivation: unescapeNullable(prologue.motivation),
+		rootCause: unescapeNullable(prologue.rootCause),
+		outcome: unescapeNullable(prologue.outcome),
+		diagram: unescapeNullable(prologue.diagram),
+		keyChanges: prologue.keyChanges.map((kc) => ({
+			summary: unescapeLiteralNewlines(kc.summary),
+			description: unescapeLiteralNewlines(kc.description),
+		})),
+		focusAreas: prologue.focusAreas.map((fa) => ({
+			...fa,
+			title: unescapeLiteralNewlines(fa.title),
+			description: unescapeLiteralNewlines(fa.description),
+		})),
+		complexity: {
+			...prologue.complexity,
+			reasoning: unescapeLiteralNewlines(prologue.complexity.reasoning),
+		},
+	};
 }
 
 /**

@@ -157,6 +157,51 @@ describe("review API — submission", () => {
 		expect(log.some((line) => line.startsWith("submit "))).toBe(false);
 	});
 
+	it("treats a null submitPullRequestReview payload as a stale review and recovers", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, {
+			nullSubmitPayloadOnce: true,
+			reviewStateAfterSubmit: "APPROVED",
+		});
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/submit`,
+			{ event: "APPROVE", body: "LGTM" },
+		);
+
+		expect(res.status).toBe(200);
+		const log = await harness.logLines();
+		expect(log.some((line) => line.startsWith("submit-null"))).toBe(true);
+		expect(log).toContain("review-state");
+		expect(log.some((line) => line.startsWith("create-review"))).toBe(true);
+		expect(log.some((line) => line.startsWith("submit "))).toBe(true);
+	});
+
+	it("aborts recovery with a conflict when the reviews summary can't be read", async () => {
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, {
+			failSubmitReviewOnce: true,
+			reviewStateAfterSubmit: "APPROVED",
+			failRestReviews: true,
+		});
+		const runId = harness.insertRun();
+
+		const res = await harness.request(
+			await harness.start(),
+			"POST",
+			`/api/runs/${runId}/review/submit`,
+			{ event: "APPROVE", body: "LGTM" },
+		);
+
+		expect(res.status).toBe(409);
+		expect(JSON.parse(res.body).error).toMatch(/no longer pending/i);
+		const log = await harness.logLines();
+		expect(log).toContain("rest-reviews");
+		expect(log.some((line) => line.startsWith("create-review"))).toBe(false);
+		expect(log.some((line) => line.startsWith("submit "))).toBe(false);
+	});
+
 	it("surfaces the original failure when the review is still pending", async () => {
 		await harness.writeGhShim(REVIEW_QUERY_RESULT, {
 			failSubmitReviewOnce: true,

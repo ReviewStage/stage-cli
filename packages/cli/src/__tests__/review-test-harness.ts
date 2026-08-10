@@ -253,6 +253,15 @@ interface GhShimOptions {
 	 * review fixture — subsequent submits succeed.
 	 */
 	failSubmitReviewOnce?: boolean;
+	/**
+	 * The first SubmitReview mutation exits 0 but returns a null
+	 * `submitPullRequestReview` payload (GitHub's other-session discard shape),
+	 * and the pending review disappears from the review fixture — subsequent
+	 * submits succeed.
+	 */
+	nullSubmitPayloadOnce?: boolean;
+	/** The REST `pulls/:number/reviews` read fails (e.g. transient gh failure). */
+	failRestReviews?: boolean;
 	mergeBaseOid?: string;
 	noPullRequest?: boolean;
 	persistCreatedReview?: boolean;
@@ -372,6 +381,10 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   emit({ id: 123, node_id: "COMMENT_immediate" });
 } else if (args.some((arg) => arg.includes("/pulls/") && arg.endsWith("/reviews"))) {
   fs.appendFileSync(log, "rest-reviews\\n");
+  if (${options.failRestReviews ? "true" : "false"}) {
+    process.stderr.write("gh: connection reset\\n");
+    process.exit(1);
+  }
   emit(${JSON.stringify(options.restReviews ?? [])});
 } else if (query.includes("query GetReviewState")) {
   fs.appendFileSync(log, "review-state\\n");
@@ -443,9 +456,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   emit({ data: { addPullRequestReviewThreadReply: { comment: { id: "C" } } } });
 } else if (query.includes("mutation SubmitReview")) {
   const submitFailMarker = ${JSON.stringify(submitFailMarker)};
-  if (${options.failSubmitReviewOnce ? "true" : "false"} && !fs.existsSync(submitFailMarker)) {
-    fs.writeFileSync(submitFailMarker, "1");
-    fs.appendFileSync(log, "submit-fail " + fields + "\\n");
+  const dropPendingReview = () => {
     // The stale review (and its drafts) are gone from GitHub's point of view.
     const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
     review.data.repository.pullRequest.reviews.nodes = [];
@@ -454,11 +465,23 @@ if (args.some((arg) => arg.includes("/compare/"))) {
       return thread.comments.nodes.length === 0 ? [] : [thread];
     });
     fs.writeFileSync(reviewPath, JSON.stringify(review));
+  };
+  if (${options.failSubmitReviewOnce ? "true" : "false"} && !fs.existsSync(submitFailMarker)) {
+    fs.writeFileSync(submitFailMarker, "1");
+    fs.appendFileSync(log, "submit-fail " + fields + "\\n");
+    dropPendingReview();
     process.stderr.write("GraphQL: Could not approve pull request review. (submitPullRequestReview)\\n");
     process.exit(1);
   }
-  fs.appendFileSync(log, "submit " + fields + "\\n");
-  emit({ data: { submitPullRequestReview: { pullRequestReview: { id: "R" } } } });
+  if (${options.nullSubmitPayloadOnce ? "true" : "false"} && !fs.existsSync(submitFailMarker)) {
+    fs.writeFileSync(submitFailMarker, "1");
+    fs.appendFileSync(log, "submit-null " + fields + "\\n");
+    dropPendingReview();
+    emit({ data: { submitPullRequestReview: null } });
+  } else {
+    fs.appendFileSync(log, "submit " + fields + "\\n");
+    emit({ data: { submitPullRequestReview: { pullRequestReview: { id: "R" } } } });
+  }
 } else {
   emit({ data: {} });
 }

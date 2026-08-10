@@ -37,9 +37,9 @@ describe("formatInstructionsBlock", () => {
 		expect(formatInstructionsBlock("   \n  ")).toBe("");
 	});
 
-	it("renders a labeled, trimmed block when instructions are present", () => {
+	it("renders a trimmed section with the header the generation skill parses", () => {
 		expect(formatInstructionsBlock("  Group test changes separately.  ")).toBe(
-			"\n\nADDITIONAL INSTRUCTIONS:\nGroup test changes separately.",
+			"\n\n=== ADDITIONAL INSTRUCTIONS ===\nGroup test changes separately.",
 		);
 	});
 });
