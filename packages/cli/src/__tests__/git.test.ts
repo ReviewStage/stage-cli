@@ -65,7 +65,7 @@ async function initDivergedRepo(): Promise<{
 describe("isMaxBufferError", () => {
 	it("recognizes both maxBuffer overflow codes with real child processes", async () => {
 		const opts = { encoding: "utf8", maxBuffer: 1000 } as const;
-		const args = ["-c", "yes | head -c 100000"];
+		const args = ["-c", "dd if=/dev/zero bs=1000 count=100 2>/dev/null"];
 		let syncErr: unknown;
 		try {
 			execFileSync("sh", args, opts);
