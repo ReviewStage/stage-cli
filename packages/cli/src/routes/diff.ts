@@ -393,51 +393,56 @@ async function buildFileContents(
 			);
 			break;
 		}
-		entries.push(
-			await (async (): Promise<readonly [string, FileContent] | null> => {
-				const key = newPath ?? oldPath;
-				if (!key) return null;
+		const entry = await (async (): Promise<readonly [string, FileContent] | null> => {
+			const key = newPath ?? oldPath;
+			if (!key) return null;
 
-				// A symlink's content is its target path (git blob semantics) — text,
-				// even when the link is named like an image. The web routes mode
-				// 120000 to the text diff, so base64 here would corrupt it.
-				if (isSymlink) {
-					const [oldContent, newContent] = await Promise.all([
-						oldPath ? fetchSymlinkTarget(repoRoot, oldRef, oldPath) : Promise.resolve(null),
-						newPath ? fetchSymlinkTarget(repoRoot, newRef, newPath) : Promise.resolve(null),
-					]);
-					return [key, { oldContent, newContent }] as const;
-				}
-
-				// Images ship base64-encoded (whether or not git marked the diff as
-				// binary — pure renames carry no marker) so the image diff viewer
-				// can render them; other binary files carry no usable content.
-				if (isImageFile(key)) {
-					const [oldContent, newContent] = await Promise.all([
-						oldPath ? fetchContentBase64(repoRoot, oldRef, oldPath) : Promise.resolve(null),
-						newPath ? fetchContentBase64(repoRoot, newRef, newPath) : Promise.resolve(null),
-					]);
-					return [key, { oldContent, newContent, encoding: "base64" as const }] as const;
-				}
-				if (isBinary) return null;
-
+			// A symlink's content is its target path (git blob semantics) — text,
+			// even when the link is named like an image. The web routes mode
+			// 120000 to the text diff, so base64 here would corrupt it.
+			if (isSymlink) {
 				const [oldContent, newContent] = await Promise.all([
-					oldPath ? fetchContent(repoRoot, oldRef, oldPath) : Promise.resolve(null),
-					newPath ? fetchContent(repoRoot, newRef, newPath) : Promise.resolve(null),
+					oldPath ? fetchSymlinkTarget(repoRoot, oldRef, oldPath) : Promise.resolve(null),
+					newPath ? fetchSymlinkTarget(repoRoot, newRef, newPath) : Promise.resolve(null),
 				]);
+				return [key, { oldContent, newContent }] as const;
+			}
 
-				return [
-					key,
-					{ oldContent: dropBinaryContent(oldContent), newContent: dropBinaryContent(newContent) },
-				] as const;
-			})(),
-		);
-		const latest = entries[entries.length - 1];
-		if (latest) {
-			contentBudget -=
-				Buffer.byteLength(latest[1].oldContent ?? "") +
-				Buffer.byteLength(latest[1].newContent ?? "");
+			// Images ship base64-encoded (whether or not git marked the diff as
+			// binary — pure renames carry no marker) so the image diff viewer
+			// can render them; other binary files carry no usable content.
+			if (isImageFile(key)) {
+				const [oldContent, newContent] = await Promise.all([
+					oldPath ? fetchContentBase64(repoRoot, oldRef, oldPath) : Promise.resolve(null),
+					newPath ? fetchContentBase64(repoRoot, newRef, newPath) : Promise.resolve(null),
+				]);
+				return [key, { oldContent, newContent, encoding: "base64" as const }] as const;
+			}
+			if (isBinary) return null;
+
+			const [oldContent, newContent] = await Promise.all([
+				oldPath ? fetchContent(repoRoot, oldRef, oldPath) : Promise.resolve(null),
+				newPath ? fetchContent(repoRoot, newRef, newPath) : Promise.resolve(null),
+			]);
+
+			return [
+				key,
+				{ oldContent: dropBinaryContent(oldContent), newContent: dropBinaryContent(newContent) },
+			] as const;
+		})();
+		if (entry) {
+			const entryBytes =
+				Buffer.byteLength(entry[1].oldContent ?? "") + Buffer.byteLength(entry[1].newContent ?? "");
+			// Enforce before retaining: an over-budget entry is dropped, not kept.
+			if (entryBytes > contentBudget) {
+				console.error(
+					`File contents exceeded ${MAX_DIFF_BYTES} bytes; remaining files omitted from context expansion and previews`,
+				);
+				break;
+			}
+			contentBudget -= entryBytes;
 		}
+		entries.push(entry);
 	}
 
 	const map: FileContentsMap = {};

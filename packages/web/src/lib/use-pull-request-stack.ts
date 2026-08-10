@@ -7,8 +7,11 @@ import { jsonFetch } from "@/lib/use-view-state";
  * open base→head branch chains. Live PR data: never auto-refetch on
  * focus/reconnect, mirroring the queries in use-pull-request.ts.
  */
+/** Root key: stacks span sibling runs, so mutations invalidate all of them. */
+export const PULL_REQUEST_STACK_QUERY_ROOT = ["pull-request-stack"] as const;
+
 export function pullRequestStackQueryKey(runId: string): readonly unknown[] {
-	return ["pull-request-stack", runId];
+	return [...PULL_REQUEST_STACK_QUERY_ROOT, runId];
 }
 
 export function usePullRequestStack(runId: string, number: number) {

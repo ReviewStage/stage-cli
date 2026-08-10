@@ -1,7 +1,7 @@
 import type { PullRequestMergeMethod } from "@stagereview/types/pull-request";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { pullRequestStackQueryKey } from "@/lib/use-pull-request-stack";
+import { PULL_REQUEST_STACK_QUERY_ROOT } from "@/lib/use-pull-request-stack";
 import { timelineQueryKey } from "@/lib/use-timeline";
 import { jsonFetch } from "@/lib/use-view-state";
 
@@ -52,7 +52,8 @@ export function invalidatePullRequestQueries(
 		queryClient.invalidateQueries({ queryKey: ["pull-request-checks", runId] }),
 		queryClient.invalidateQueries({ queryKey: ["pull-request-labels", runId] }),
 		queryClient.invalidateQueries({ queryKey: timelineQueryKey(runId) }),
-		queryClient.invalidateQueries({ queryKey: pullRequestStackQueryKey(runId) }),
+		// Root, not per-run: a title/close/merge on one PR changes every sibling run's cached stack.
+		queryClient.invalidateQueries({ queryKey: PULL_REQUEST_STACK_QUERY_ROOT }),
 	]);
 }
 

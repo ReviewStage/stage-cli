@@ -141,7 +141,9 @@ export function scrollToRenderedLine({
 			if (shadowRootRetryTimer) clearInterval(shadowRootRetryTimer);
 			shadowRootRetryTimer = null;
 			attachShadowObserver(shadowRoot);
-			tryScroll();
+			// A hit here is final — leaving the observers armed would let a later
+			// shadow mutation snap the reader back to this old target.
+			if (tryScroll()) disconnectAll();
 		}, SCROLL_TO_LINE_POLL_MS);
 	}
 
