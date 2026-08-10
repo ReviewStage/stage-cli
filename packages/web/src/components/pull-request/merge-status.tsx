@@ -151,11 +151,15 @@ export function MergeStatus({
 	}
 
 	function handleEnableAutoMerge() {
+		// Unlike hosted (whose auto-merge mutation has no head pin), the CLI's
+		// auto-merge maps to `gh pr merge --auto`; pin the reviewed head so the
+		// stale-head guard (--match-head-commit) applies, as in handleMerge.
 		autoMergeMutation.mutate({
 			owner,
 			repo,
 			number,
 			enabled: true,
+			expectedHeadOid: headSha,
 			...(mergeMethod !== undefined && { mergeMethod }),
 		});
 	}
