@@ -10,6 +10,8 @@
     "./comments": "./src/comments.ts",
     "./diff": "./src/diff.ts",
     "./image": "./src/image.ts",
+    "./image-proxy": "./src/image-proxy.ts",
+    "./git-paths": "./src/git-paths.ts",
     "./parsed-diff": "./src/parsed-diff.ts",
     "./prologue": "./src/prologue.ts",
     "./pull-request": "./src/pull-request.ts",

@@ -1,6 +1,11 @@
 import { type FileDiffMetadata, getSingularPatch, parseDiffFromFile } from "@pierre/diffs";
 import { HEADER_ONLY_OLD_START, type HunkReference } from "@stagereview/types/chapters";
 import type { FileContentsMap } from "@stagereview/types/diff";
+import {
+	decodeGitHeaderPath,
+	decodeQuotedGitPath,
+	splitEqualGitHeader,
+} from "@stagereview/types/git-paths";
 import type { FileDiffEntry } from "./parse-diff";
 import { fileDiffToPullRequestFile } from "./parse-diff";
 
@@ -31,97 +36,21 @@ const DIFF_GIT_NAMES_RE = /^diff --git a\/(.+?) b\/(.+?)$/m;
 const PLUS_NAME_RE = /^\+\+\+ (.+)$/m;
 const MINUS_NAME_RE = /^--- (.+)$/m;
 
-/**
- * Decode the C-style escapes git emits inside quoted diff header paths
- * (spaces, non-ASCII under core.quotepath): octal byte escapes reassembled
- * as UTF-8 plus control shorthands. Mirrors the CLI server's decoder.
- */
-function decodeQuotedPath(raw: string): string {
-	const bytes: number[] = [];
-	const encoder = new TextEncoder();
-	// Code-point iteration: literal non-BMP characters must not be split into
-	// lone surrogates (escape sequences are ASCII-only, so inner indexing is safe).
-	const chars = Array.from(raw);
-	for (let i = 0; i < chars.length; i++) {
-		const ch = chars[i];
-		if (ch !== "\\") {
-			for (const byte of encoder.encode(ch ?? "")) bytes.push(byte);
-			continue;
-		}
-		const next = chars[i + 1];
-		if (next === undefined) break;
-		const octal = chars.slice(i + 1, i + 4).join("");
-		if (/^[0-7]{3}$/.test(octal)) {
-			bytes.push(Number.parseInt(octal, 8));
-			i += 3;
-			continue;
-		}
-		const shorthand: Record<string, number> = {
-			a: 0x07,
-			b: 0x08,
-			t: 0x09,
-			n: 0x0a,
-			v: 0x0b,
-			f: 0x0c,
-			r: 0x0d,
-		};
-		const code = shorthand[next];
-		if (code !== undefined) {
-			bytes.push(code);
-		} else {
-			for (const byte of encoder.encode(next)) bytes.push(byte);
-		}
-		i += 1;
-	}
-	return new TextDecoder().decode(new Uint8Array(bytes));
-}
-
-function decodeHeaderName(raw: string | undefined, prefix: "a/" | "b/"): string | undefined {
-	if (!raw) return undefined;
-	// git appends a TAB after ---/+++ paths containing spaces or specials.
-	let decoded = raw.replace(/\t$/, "");
-	if (decoded.startsWith('"') && decoded.endsWith('"') && decoded.length >= 2) {
-		decoded = decodeQuotedPath(decoded.slice(1, -1));
-	}
-	if (decoded === "/dev/null") return undefined;
-	if (decoded.startsWith(prefix)) decoded = decoded.slice(prefix.length);
-	return decoded;
-}
-
-function splitEqualGitHeader(firstLine: string): [string, string] | null {
-	if (!firstLine.startsWith("diff --git a/")) return null;
-	const rest = firstLine.slice("diff --git a/".length);
-	if ((rest.length - 3) % 2 !== 0) return null;
-	const half = (rest.length - 3) / 2;
-	const candidate = rest.slice(0, half);
-	if (rest.slice(half, half + 3) === " b/" && rest.slice(half + 3) === candidate) {
-		return [candidate, candidate];
-	}
-	return null;
-}
-
 const RENAME_FROM_NAME_RE = /^(?:rename|copy) from (.+)$/m;
 const RENAME_TO_NAME_RE = /^(?:rename|copy) to (.+)$/m;
-
-function decodeRenameName(raw: string | undefined): string | undefined {
-	if (!raw) return undefined;
-	if (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2) {
-		return decodeQuotedPath(raw.slice(1, -1));
-	}
-	return raw;
-}
 
 function parseFileNames(segment: string): { prevName?: string; name?: string } {
 	// rename/copy lines are authoritative and unambiguous — unlike the
 	// `diff --git` header, whose unquoted form can't be split reliably when a
 	// path itself contains " b/".
-	const renameFrom = decodeRenameName(segment.match(RENAME_FROM_NAME_RE)?.[1]);
-	const renameTo = decodeRenameName(segment.match(RENAME_TO_NAME_RE)?.[1]);
+	const renameFrom =
+		decodeGitHeaderPath(segment.match(RENAME_FROM_NAME_RE)?.[1], null) ?? undefined;
+	const renameTo = decodeGitHeaderPath(segment.match(RENAME_TO_NAME_RE)?.[1], null) ?? undefined;
 	if (renameFrom !== undefined && renameTo !== undefined) {
 		return { prevName: renameFrom, name: renameTo };
 	}
-	const plusName = decodeHeaderName(segment.match(PLUS_NAME_RE)?.[1], "b/");
-	const minusName = decodeHeaderName(segment.match(MINUS_NAME_RE)?.[1], "a/");
+	const plusName = decodeGitHeaderPath(segment.match(PLUS_NAME_RE)?.[1], "b/") ?? undefined;
+	const minusName = decodeGitHeaderPath(segment.match(MINUS_NAME_RE)?.[1], "a/") ?? undefined;
 	const quotedGit = segment.match(DIFF_GIT_QUOTED_NAMES_RE);
 	// Unquoted headers are ambiguous when the path contains " b/"; for
 	// non-renames both halves are identical, so prefer the equal split.
@@ -132,10 +61,10 @@ function parseFileNames(segment: string): { prevName?: string; name?: string } {
 	const equalHalves = quotedGit ? null : splitEqualGitHeader(firstLine);
 	const gitMatch = quotedGit ?? segment.match(DIFF_GIT_NAMES_RE);
 	const gitOld = quotedGit
-		? decodeQuotedPath(gitMatch?.[1] ?? "")
+		? decodeQuotedGitPath(gitMatch?.[1] ?? "")
 		: (equalHalves?.[0] ?? gitMatch?.[1]);
 	const gitNew = quotedGit
-		? decodeQuotedPath(gitMatch?.[2] ?? "")
+		? decodeQuotedGitPath(gitMatch?.[2] ?? "")
 		: (equalHalves?.[1] ?? gitMatch?.[2]);
 	const name = plusName ?? gitNew ?? undefined;
 	const prevName = minusName ?? gitOld ?? undefined;

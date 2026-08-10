@@ -1,3 +1,4 @@
+import { isProxiableGitHubImageUrl } from "@stagereview/types/image-proxy";
 import { gh } from "../github/exec.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
@@ -11,38 +12,6 @@ class ImageTooLargeError extends Error {}
 
 // SSRF allowlist — must stay in sync with the client copy in
 // packages/web/src/lib/github-image-proxy.ts.
-const ALLOWED_HOSTS = new Set(["github.com", "private-user-images.githubusercontent.com"]);
-
-const GITHUB_COM_ALLOWED_PATH_PREFIXES = ["/user-attachments/assets/"];
-
-function isAllowedGitHubComPath(pathname: string): boolean {
-	if (GITHUB_COM_ALLOWED_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
-		return true;
-	}
-
-	// /<owner>/<repo>/assets/<id> pattern
-	const segments = pathname.split("/").filter(Boolean);
-	return segments.length >= 4 && segments[2] === "assets";
-}
-
-export function isProxiableGitHubImageUrl(url: string): boolean {
-	let parsed: URL;
-	try {
-		parsed = new URL(url);
-	} catch {
-		return false;
-	}
-
-	if (parsed.protocol !== "https:") return false;
-
-	if (!ALLOWED_HOSTS.has(parsed.hostname)) return false;
-
-	if (parsed.hostname === "github.com") {
-		return isAllowedGitHubComPath(parsed.pathname);
-	}
-
-	return true;
-}
 
 let tokenPromise: Promise<string | null> | null = null;
 

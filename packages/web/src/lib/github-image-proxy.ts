@@ -1,41 +1,10 @@
+import { isProxiableGitHubImageUrl } from "@stagereview/types/image-proxy";
+
 // GitHub-hosted comment images (user attachments) 404 when loaded cross-origin,
 // because the browser's <img> request carries no GitHub credentials. Rewriting
 // them through the CLI's local /api/image-proxy lets the server fetch them with
-// the user's `gh` token. The host allowlist must stay in sync with the server
-// copy in packages/cli/src/routes/image-proxy.ts.
-
-const ALLOWED_HOSTS = new Set(["github.com", "private-user-images.githubusercontent.com"]);
-
-const GITHUB_COM_ALLOWED_PATH_PREFIXES = ["/user-attachments/assets/"];
-
-function isAllowedGitHubComPath(pathname: string): boolean {
-	if (GITHUB_COM_ALLOWED_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
-		return true;
-	}
-
-	// /<owner>/<repo>/assets/<id> pattern
-	const segments = pathname.split("/").filter(Boolean);
-	return segments.length >= 4 && segments[2] === "assets";
-}
-
-export function isProxiableGitHubImageUrl(url: string): boolean {
-	let parsed: URL;
-	try {
-		parsed = new URL(url);
-	} catch {
-		return false;
-	}
-
-	if (parsed.protocol !== "https:") return false;
-
-	if (!ALLOWED_HOSTS.has(parsed.hostname)) return false;
-
-	if (parsed.hostname === "github.com") {
-		return isAllowedGitHubComPath(parsed.pathname);
-	}
-
-	return true;
-}
+// the user's `gh` token. The URL policy is shared with the server via
+// @stagereview/types/image-proxy so the two sides cannot drift.
 
 const IMAGE_PROXY_PATH = "/api/image-proxy";
 
@@ -74,3 +43,5 @@ export function proxyGitHubImageSrcset(rawSrcset: string): string {
 		})
 		.join(", ");
 }
+
+export { isProxiableGitHubImageUrl };

@@ -2,7 +2,12 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { DiffResponse, FileContentsMap } from "@stagereview/types/diff";
+import type { DiffResponse, FileContent, FileContentsMap } from "@stagereview/types/diff";
+import {
+	decodeGitHeaderPath,
+	decodeQuotedGitPath,
+	splitEqualGitHeader,
+} from "@stagereview/types/git-paths";
 import { isImageFile } from "@stagereview/types/image";
 import { eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
@@ -156,14 +161,14 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 		const hunkStart = text.search(/^@@ /m);
 		const isSymlink = SYMLINK_MODE_RE.test(hunkStart === -1 ? text : text.slice(0, hunkStart));
 
-		let oldPath = decodeHeaderPath(text.match(MINUS_RE)?.[1], "a/");
-		let newPath = decodeHeaderPath(text.match(PLUS_RE)?.[1], "b/");
+		let oldPath = decodeGitHeaderPath(text.match(MINUS_RE)?.[1], "a/");
+		let newPath = decodeGitHeaderPath(text.match(PLUS_RE)?.[1], "b/");
 
 		// Pure renames/copies have no ---/+++ headers; fall back to the
 		// rename/copy header lines so their contents can still be served.
 		if (oldPath === null && newPath === null) {
-			oldPath = decodeHeaderPath(text.match(RENAME_FROM_RE)?.[1], null);
-			newPath = decodeHeaderPath(text.match(RENAME_TO_RE)?.[1], null);
+			oldPath = decodeGitHeaderPath(text.match(RENAME_FROM_RE)?.[1], null);
+			newPath = decodeGitHeaderPath(text.match(RENAME_TO_RE)?.[1], null);
 		}
 
 		// Modified binaries emit only `diff --git` + `Binary files ... differ`
@@ -172,8 +177,8 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 		if (oldPath === null && newPath === null) {
 			const quoted = text.match(DIFF_GIT_QUOTED_RE);
 			if (quoted) {
-				oldPath = unquoteGitPath(quoted[1]);
-				newPath = unquoteGitPath(quoted[2]);
+				oldPath = decodeQuotedGitPathCapture(quoted[1]);
+				newPath = decodeQuotedGitPathCapture(quoted[2]);
 			} else {
 				const firstLine = text.slice(0, text.indexOf("\n") === -1 ? undefined : text.indexOf("\n"));
 				const halves = splitEqualGitHeader(firstLine);
@@ -193,83 +198,10 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 	return results;
 }
 
-/**
- * Resolve the ambiguity in unquoted `diff --git a/P b/P` headers when P itself
- * contains " b/": for non-renames both paths are identical, so try the split
- * where the two halves match before falling back to the greedy regex.
- */
-function splitEqualGitHeader(firstLine: string): [string, string] | null {
-	if (!firstLine.startsWith("diff --git a/")) return null;
-	const rest = firstLine.slice("diff --git a/".length);
-	// P + " b/" + P → total length 2*|P|+3
-	if ((rest.length - 3) % 2 !== 0) return null;
-	const half = (rest.length - 3) / 2;
-	const candidate = rest.slice(0, half);
-	if (rest.slice(half, half + 3) === " b/" && rest.slice(half + 3) === candidate) {
-		return [candidate, candidate];
-	}
-	return null;
-}
-
-/**
- * Decode a raw `---`/`+++`/`rename from`/`rename to` header capture: strip
- * surrounding quotes and C-style escapes when git quoted the path (spaces,
- * non-ASCII), then drop the diff prefix (`a/`/`b/`, which sits inside the
- * quotes) and map `/dev/null` to null.
- */
-function decodeHeaderPath(raw: string | undefined, prefix: "a/" | "b/" | null): string | null {
-	if (raw === undefined) return null;
-	// git appends a TAB after ---/+++ paths containing spaces or specials.
-	let decoded = raw.replace(/\t$/, "");
-	if (decoded.startsWith('"') && decoded.endsWith('"') && decoded.length >= 2) {
-		decoded = unquoteGitPath(decoded.slice(1, -1)) ?? decoded;
-	}
-	if (decoded === "/dev/null") return null;
-	if (prefix !== null && decoded.startsWith(prefix)) decoded = decoded.slice(prefix.length);
-	return decoded;
-}
-
-/**
- * Decode the C-style escapes git uses inside quoted diff header paths:
- * `\\"` and `\\\\`, control shorthands (`\\t`, `\\n`, `\\r`), and octal byte
- * escapes for non-ASCII names (decoded as UTF-8 byte sequences).
- */
-function unquoteGitPath(headerPath: string | undefined): string | null {
-	if (headerPath === undefined) return null;
-	const bytes: number[] = [];
-	// Iterate code points, not UTF-16 units: a literal non-BMP character (git
-	// emits those unescaped) would otherwise be split into lone surrogates and
-	// decode as replacement characters. Escape sequences are ASCII-only, so
-	// indexing within them stays unit-safe.
-	const chars = Array.from(headerPath);
-	for (let i = 0; i < chars.length; i++) {
-		const ch = chars[i];
-		if (ch !== "\\") {
-			for (const byte of Buffer.from(ch ?? "", "utf8")) bytes.push(byte);
-			continue;
-		}
-		const next = chars[i + 1];
-		if (next === undefined) break;
-		const octal = chars.slice(i + 1, i + 4).join("");
-		if (/^[0-7]{3}$/.test(octal)) {
-			bytes.push(Number.parseInt(octal, 8));
-			i += 3;
-			continue;
-		}
-		const shorthand: Record<string, number> = {
-			a: 0x07,
-			b: 0x08,
-			t: 0x09,
-			n: 0x0a,
-			v: 0x0b,
-			f: 0x0c,
-			r: 0x0d,
-		};
-		const code = shorthand[next];
-		bytes.push(code ?? Buffer.from(next, "utf8")[0] ?? 0);
-		i += 1;
-	}
-	return Buffer.from(bytes).toString("utf8");
+/** Adapter: decode an already-unwrapped quoted capture, tolerating absence. */
+function decodeQuotedGitPathCapture(capture: string | undefined): string | null {
+	if (capture === undefined) return null;
+	return decodeQuotedGitPath(capture);
 }
 
 async function getGitFileContent(
@@ -424,45 +356,51 @@ async function buildFileContents(
 	const files = parseFilePathsFromPatch(patch);
 	const { oldRef, newRef } = getContentRefs(run);
 
-	const entries = await Promise.all(
-		files.map(async ({ oldPath, newPath, isBinary, isSymlink }) => {
-			const key = newPath ?? oldPath;
-			if (!key) return null;
+	// Sequential per file (each file's two sides fetch in parallel): hundreds
+	// of changed files must not fan out unbounded git child processes, matching
+	// the untracked-diff path's bound.
+	const entries: Array<readonly [string, FileContent] | null> = [];
+	for (const { oldPath, newPath, isBinary, isSymlink } of files) {
+		entries.push(
+			await (async (): Promise<readonly [string, FileContent] | null> => {
+				const key = newPath ?? oldPath;
+				if (!key) return null;
 
-			// A symlink's content is its target path (git blob semantics) — text,
-			// even when the link is named like an image. The web routes mode
-			// 120000 to the text diff, so base64 here would corrupt it.
-			if (isSymlink) {
+				// A symlink's content is its target path (git blob semantics) — text,
+				// even when the link is named like an image. The web routes mode
+				// 120000 to the text diff, so base64 here would corrupt it.
+				if (isSymlink) {
+					const [oldContent, newContent] = await Promise.all([
+						oldPath ? fetchSymlinkTarget(repoRoot, oldRef, oldPath) : Promise.resolve(null),
+						newPath ? fetchSymlinkTarget(repoRoot, newRef, newPath) : Promise.resolve(null),
+					]);
+					return [key, { oldContent, newContent }] as const;
+				}
+
+				// Images ship base64-encoded (whether or not git marked the diff as
+				// binary — pure renames carry no marker) so the image diff viewer
+				// can render them; other binary files carry no usable content.
+				if (isImageFile(key)) {
+					const [oldContent, newContent] = await Promise.all([
+						oldPath ? fetchContentBase64(repoRoot, oldRef, oldPath) : Promise.resolve(null),
+						newPath ? fetchContentBase64(repoRoot, newRef, newPath) : Promise.resolve(null),
+					]);
+					return [key, { oldContent, newContent, encoding: "base64" as const }] as const;
+				}
+				if (isBinary) return null;
+
 				const [oldContent, newContent] = await Promise.all([
-					oldPath ? fetchSymlinkTarget(repoRoot, oldRef, oldPath) : Promise.resolve(null),
-					newPath ? fetchSymlinkTarget(repoRoot, newRef, newPath) : Promise.resolve(null),
+					oldPath ? fetchContent(repoRoot, oldRef, oldPath) : Promise.resolve(null),
+					newPath ? fetchContent(repoRoot, newRef, newPath) : Promise.resolve(null),
 				]);
-				return [key, { oldContent, newContent }] as const;
-			}
 
-			// Images ship base64-encoded (whether or not git marked the diff as
-			// binary — pure renames carry no marker) so the image diff viewer
-			// can render them; other binary files carry no usable content.
-			if (isImageFile(key)) {
-				const [oldContent, newContent] = await Promise.all([
-					oldPath ? fetchContentBase64(repoRoot, oldRef, oldPath) : Promise.resolve(null),
-					newPath ? fetchContentBase64(repoRoot, newRef, newPath) : Promise.resolve(null),
-				]);
-				return [key, { oldContent, newContent, encoding: "base64" as const }] as const;
-			}
-			if (isBinary) return null;
-
-			const [oldContent, newContent] = await Promise.all([
-				oldPath ? fetchContent(repoRoot, oldRef, oldPath) : Promise.resolve(null),
-				newPath ? fetchContent(repoRoot, newRef, newPath) : Promise.resolve(null),
-			]);
-
-			return [
-				key,
-				{ oldContent: dropBinaryContent(oldContent), newContent: dropBinaryContent(newContent) },
-			] as const;
-		}),
-	);
+				return [
+					key,
+					{ oldContent: dropBinaryContent(oldContent), newContent: dropBinaryContent(newContent) },
+				] as const;
+			})(),
+		);
+	}
 
 	const map: FileContentsMap = {};
 	for (const entry of entries) {
