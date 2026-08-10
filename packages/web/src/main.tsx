@@ -3,6 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "./lib/theme";
+import { ChapterSettingsProvider } from "./lib/use-chapter-settings";
 import { DiffSettingsProvider } from "./lib/use-diff-settings";
 import { queryClient, router } from "./router";
 import "./styles/globals.css";
@@ -17,7 +18,9 @@ createRoot(rootElement).render(
 		<ThemeProvider>
 			<QueryClientProvider client={queryClient}>
 				<DiffSettingsProvider>
-					<RouterProvider router={router} />
+					<ChapterSettingsProvider>
+						<RouterProvider router={router} />
+					</ChapterSettingsProvider>
 				</DiffSettingsProvider>
 			</QueryClientProvider>
 		</ThemeProvider>
