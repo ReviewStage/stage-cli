@@ -449,6 +449,37 @@ describe("diff API", () => {
 		expect(entry?.newContent?.trim()).toBe("real.png");
 	});
 
+	it("serves the image side of a symlink-to-file transition as base64", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		await fs.writeFile(path.join(repoRoot, "real.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+		await fs.symlink("real.png", path.join(repoRoot, "logo.png"));
+		git("add", "-A");
+		git("commit", "-m", "symlink");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		await fs.rm(path.join(repoRoot, "logo.png"));
+		const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 9, 9]);
+		await fs.writeFile(path.join(repoRoot, "logo.png"), png);
+		git("add", "-A");
+		git("commit", "-m", "replace symlink with real image");
+		const headSha = git("rev-parse", "HEAD").trim();
+		const runId = insertCommittedRun(baseSha, headSha);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		const entry = data.fileContents["logo.png"];
+		expect(entry).toBeDefined();
+		expect(entry?.encoding).toBe("base64");
+		expect(entry?.newContent).toBe(png.toString("base64"));
+		// The old (symlink) side ships nothing — never image bytes as a target.
+		expect(entry?.oldContent).toBeNull();
+	});
+
 	it("refuses to serve working-tree content through a symlink escaping the repo", async () => {
 		git("init", "--initial-branch=main");
 		git("config", "user.email", "test@example.com");

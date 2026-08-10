@@ -151,10 +151,13 @@ export function diffRoutes(db: StageDb): Route[] {
 const MINUS_RE = /^--- (.+)$/m;
 const PLUS_RE = /^\+\+\+ (.+)$/m;
 const BINARY_RE = /^Binary files|^GIT binary patch/m;
-// Mode 120000 in the pre-hunk header marks a symlink (same detection as the
-// CLI diff parser's isSymlinkPatch).
-const SYMLINK_MODE_RE =
-	/(?:new file mode|deleted file mode|old mode|new mode|index [0-9a-f]+\.\.[0-9a-f]+) 120000\b/m;
+// Mode 120000 marks a symlink. Old and new sides are detected separately so a
+// symlink<->regular transition (old mode/new mode pairs) fetches each side with
+// the right reader instead of treating both as links.
+const OLD_MODE_RE = /^(?:old mode|deleted file mode) (\d{6})$/m;
+const NEW_MODE_RE = /^(?:new mode|new file mode) (\d{6})$/m;
+const INDEX_MODE_RE = /^index [0-9a-f]+\.\.[0-9a-f]+ (\d{6})$/m;
+const SYMLINK_MODE = "120000";
 const RENAME_FROM_RE = /^(?:rename|copy) from (.+)$/m;
 const RENAME_TO_RE = /^(?:rename|copy) to (.+)$/m;
 // `diff --git "a/x y" "b/x y"` — git quotes paths containing spaces or specials.
@@ -165,7 +168,8 @@ interface ParsedFilePaths {
 	oldPath: string | null;
 	newPath: string | null;
 	isBinary: boolean;
-	isSymlink: boolean;
+	oldIsSymlink: boolean;
+	newIsSymlink: boolean;
 }
 
 function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
@@ -182,7 +186,14 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 
 		const isBinary = BINARY_RE.test(text);
 		const hunkStart = text.search(/^@@ /m);
-		const isSymlink = SYMLINK_MODE_RE.test(hunkStart === -1 ? text : text.slice(0, hunkStart));
+		const header = hunkStart === -1 ? text : text.slice(0, hunkStart);
+		// `index ... <mode>` covers unchanged-mode diffs (both sides identical);
+		// old/new (or deleted/new file) mode lines cover transitions.
+		const sharedMode = header.match(INDEX_MODE_RE)?.[1];
+		const oldMode = header.match(OLD_MODE_RE)?.[1] ?? sharedMode;
+		const newMode = header.match(NEW_MODE_RE)?.[1] ?? sharedMode;
+		const oldIsSymlink = oldMode === SYMLINK_MODE;
+		const newIsSymlink = newMode === SYMLINK_MODE;
 
 		let oldPath = decodeGitHeaderPath(text.match(MINUS_RE)?.[1], "a/");
 		let newPath = decodeGitHeaderPath(text.match(PLUS_RE)?.[1], "b/");
@@ -215,7 +226,7 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 			}
 		}
 
-		results.push({ oldPath, newPath, isBinary, isSymlink });
+		results.push({ oldPath, newPath, isBinary, oldIsSymlink, newIsSymlink });
 	}
 
 	return results;
@@ -386,7 +397,7 @@ async function buildFileContents(
 	// Response-wide content budget: per-file reads are capped, but an
 	// image-heavy change could otherwise accumulate an unbounded payload.
 	let contentBudget = MAX_DIFF_BYTES;
-	for (const { oldPath, newPath, isBinary, isSymlink } of files) {
+	for (const { oldPath, newPath, isBinary, oldIsSymlink, newIsSymlink } of files) {
 		if (contentBudget <= 0) {
 			console.error(
 				`File contents exceeded ${MAX_DIFF_BYTES} bytes; remaining files omitted from context expansion and previews`,
@@ -397,10 +408,15 @@ async function buildFileContents(
 			const key = newPath ?? oldPath;
 			if (!key) return null;
 
-			// A symlink's content is its target path (git blob semantics) — text,
-			// even when the link is named like an image. The web routes mode
-			// 120000 to the text diff, so base64 here would corrupt it.
-			if (isSymlink) {
+			// A symlink side's content is its target path (git blob semantics) —
+			// text, even when the link is named like an image. Sides are handled
+			// independently so a symlink<->regular transition reads each with the
+			// right fetcher.
+			// An absent side (added/deleted file) is vacuous — the existing side's
+			// mode decides. Only a genuine symlink<->regular transition is mixed.
+			const oldSideSymlink = oldPath === null || oldIsSymlink;
+			const newSideSymlink = newPath === null || newIsSymlink;
+			if (oldSideSymlink && newSideSymlink && (oldIsSymlink || newIsSymlink)) {
 				const [oldContent, newContent] = await Promise.all([
 					oldPath ? fetchSymlinkTarget(repoRoot, oldRef, oldPath) : Promise.resolve(null),
 					newPath ? fetchSymlinkTarget(repoRoot, newRef, newPath) : Promise.resolve(null),
@@ -410,15 +426,39 @@ async function buildFileContents(
 
 			// Images ship base64-encoded (whether or not git marked the diff as
 			// binary — pure renames carry no marker) so the image diff viewer
-			// can render them; other binary files carry no usable content.
+			// can render them; other binary files carry no usable content. In a
+			// symlink<->image transition only the real-file side ships (a single
+			// encoding covers both sides of the wire entry); the link side shows
+			// as unavailable, which beats serving image bytes as a fake target.
 			if (isImageFile(key)) {
 				const [oldContent, newContent] = await Promise.all([
-					oldPath ? fetchContentBase64(repoRoot, oldRef, oldPath) : Promise.resolve(null),
-					newPath ? fetchContentBase64(repoRoot, newRef, newPath) : Promise.resolve(null),
+					oldPath && !oldIsSymlink
+						? fetchContentBase64(repoRoot, oldRef, oldPath)
+						: Promise.resolve(null),
+					newPath && !newIsSymlink
+						? fetchContentBase64(repoRoot, newRef, newPath)
+						: Promise.resolve(null),
 				]);
 				return [key, { oldContent, newContent, encoding: "base64" as const }] as const;
 			}
 			if (isBinary) return null;
+			if (oldIsSymlink || newIsSymlink) {
+				// Mixed text transition: target path on the link side, file text on
+				// the other — both plain text, so one entry represents both sides.
+				const [oldContent, newContent] = await Promise.all([
+					oldPath
+						? oldIsSymlink
+							? fetchSymlinkTarget(repoRoot, oldRef, oldPath)
+							: fetchContent(repoRoot, oldRef, oldPath)
+						: Promise.resolve(null),
+					newPath
+						? newIsSymlink
+							? fetchSymlinkTarget(repoRoot, newRef, newPath)
+							: fetchContent(repoRoot, newRef, newPath)
+						: Promise.resolve(null),
+				]);
+				return [key, { oldContent, newContent }] as const;
+			}
 
 			const [oldContent, newContent] = await Promise.all([
 				oldPath ? fetchContent(repoRoot, oldRef, oldPath) : Promise.resolve(null),

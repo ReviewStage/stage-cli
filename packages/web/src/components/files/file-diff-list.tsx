@@ -406,10 +406,13 @@ export const FileDiffSection = memo(function FileDiffSection({
 	}, [onToggleViewed, file.path]);
 
 	// A symlink named logo.png is a one-line target-path change, not image
-	// data; git marks it with mode 120000, and rendering it as an image would
-	// show a broken or misleading picture instead of the link edit.
-	const isSymlink = diff.mode === "120000" || diff.prevMode === "120000";
-	const isImage = !isSymlink && isImageFile(file.path);
+	// data; git marks it with mode 120000. Only a link-on-both-sides diff stays
+	// textual — a symlink<->image transition still shows the real image side
+	// (the server ships base64 for it and null for the link side).
+	const isSymlinkNow = diff.mode === "120000";
+	const wasSymlink = diff.prevMode === "120000" || (diff.prevMode === undefined && isSymlinkNow);
+	const isPureSymlink = isSymlinkNow && wasSymlink;
+	const isImage = !isPureSymlink && isImageFile(file.path);
 	const isPreviewOnlyFile = isFullFilePreview(entry);
 	// Joining the full line arrays is only needed for the two special renderers.
 	// The raw content entry wins when present: it covers binary images (base64)
