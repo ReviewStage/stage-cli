@@ -1,4 +1,5 @@
 import type { ResolvedThreadInfo, TimelineReviewComment } from "@stagereview/types";
+import { GHOST_TIMELINE_USER } from "@stagereview/types";
 import type { GitHubUser } from "@/components/shared/user-utils";
 import { COMMENT_SIDE, type CommentSide, SUBJECT_TYPE, type SubjectType } from "@/lib/diff-types";
 
@@ -6,7 +7,7 @@ import { COMMENT_SIDE, type CommentSide, SUBJECT_TYPE, type SubjectType } from "
 // `apps/web/src/lib/utils/normalize-threads.ts`, trimmed to the read-only
 // fields the CLI's Activity tab renders (no pending-comment machinery).
 
-/** A review comment guaranteed to have an author (GitHub omits `user` only for ghost accounts). */
+/** A review comment with its author resolved (deleted accounts become the ghost user). */
 export type ReviewCommentWithUser = TimelineReviewComment & { user: GitHubUser };
 
 export interface CommentThread {
@@ -27,7 +28,13 @@ export function groupIntoThreads(
 	comments: TimelineReviewComment[],
 	resolvedThreads?: ReadonlyMap<number, ResolvedThreadInfo>,
 ): CommentThread[] {
-	const withUser = comments.filter((c): c is ReviewCommentWithUser => c.user != null);
+	// Deleted accounts arrive as user: null. Hosted filters these out
+	// (review-threads.ts), but every other principal in the CLI's timeline
+	// ghost-normalizes — dropping a root here would hide its whole thread, so
+	// inline comments get the same ghost treatment for consistency.
+	const withUser: ReviewCommentWithUser[] = comments.map((c) =>
+		c.user != null ? { ...c, user: c.user } : { ...c, user: GHOST_TIMELINE_USER },
+	);
 
 	const roots: ReviewCommentWithUser[] = [];
 	const repliesByParent = new Map<number, ReviewCommentWithUser[]>();

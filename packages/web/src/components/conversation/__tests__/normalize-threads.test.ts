@@ -91,9 +91,11 @@ describe("groupIntoThreads — resolved threads", () => {
 		expect(threads[0]?.isResolved).toBe(true);
 	});
 
-	it("drops comments without an author (ghost accounts)", () => {
+	it("keeps comments from deleted accounts as the ghost user", () => {
 		const ghost = makeComment({ id: 1, user: null });
-		expect(groupIntoThreads([ghost])).toEqual([]);
+		const threads = groupIntoThreads([ghost]);
+		expect(threads).toHaveLength(1);
+		expect(threads[0]?.root.user.login).toBe("ghost");
 	});
 });
 
