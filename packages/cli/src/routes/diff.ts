@@ -487,7 +487,26 @@ async function buildFileContents(
 
 	const map: FileContentsMap = {};
 	for (const entry of entries) {
-		if (entry) map[entry[0]] = entry[1];
+		if (!entry) continue;
+		const [key, content] = entry;
+		const existing = map[key];
+		if (!existing) {
+			map[key] = content;
+			continue;
+		}
+		// git emits some typechanges (regular<->symlink) as same-path delete/add
+		// pairs; merge the sides so neither is lost. Mixed encodings can't share
+		// one entry — prefer the base64 (image) entry, whose side would otherwise
+		// render nothing, over the text side.
+		if ((existing.encoding ?? "utf8") === (content.encoding ?? "utf8")) {
+			map[key] = {
+				oldContent: existing.oldContent ?? content.oldContent,
+				newContent: existing.newContent ?? content.newContent,
+				...(content.encoding ? { encoding: content.encoding } : {}),
+			};
+		} else if (content.encoding === "base64") {
+			map[key] = content;
+		}
 	}
 	return map;
 }

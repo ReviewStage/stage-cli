@@ -20,6 +20,7 @@ import { PierreDiffViewer } from "@/components/chapter/pierre-diff-viewer";
 import { findRenderedDiffLine } from "@/components/chapter/rendered-line-target";
 import { ImageDiffViewer } from "@/components/diff/image-diff-viewer";
 import type { AnnotatedLineRef, DiffSide, LineRef } from "@/lib/diff-types";
+import { FILE_STATUS } from "@/lib/diff-types";
 import { buildFullFilePreviewDiff, isFullFilePreview } from "@/lib/full-file-preview";
 import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import type { FileDiffEntry } from "@/lib/parse-diff";
@@ -409,9 +410,17 @@ export const FileDiffSection = memo(function FileDiffSection({
 	// data; git marks it with mode 120000. Only a link-on-both-sides diff stays
 	// textual — a symlink<->image transition still shows the real image side
 	// (the server ships base64 for it and null for the link side).
-	const isSymlinkNow = diff.mode === "120000";
-	const wasSymlink = diff.prevMode === "120000" || (diff.prevMode === undefined && isSymlinkNow);
-	const isPureSymlink = isSymlinkNow && wasSymlink;
+	const newLink = diff.mode === "120000";
+	const oldLink = diff.prevMode === "120000" || (diff.prevMode === undefined && newLink);
+	// Only sides that exist constrain: a deleted link has no new side and an
+	// added link no old side — both stay textual. Only a genuine
+	// symlink<->regular transition routes to the image viewer.
+	const isPureSymlink =
+		file.status === FILE_STATUS.DELETED
+			? oldLink
+			: file.status === FILE_STATUS.ADDED
+				? newLink
+				: newLink && oldLink;
 	const isImage = !isPureSymlink && isImageFile(file.path);
 	const isPreviewOnlyFile = isFullFilePreview(entry);
 	// Joining the full line arrays is only needed for the two special renderers.

@@ -97,17 +97,19 @@ export function viewStateRoutes(db: StageDb): Route[] {
 					// touched, even if other chapters still cover the path. A future mark
 					// on any covering chapter re-promotes via promoteFullyCoveredFiles.
 					if (touched.length === 0) return;
-					const runIds = Array.from(new Set(touched.map((t) => t.runId)));
-					const filePaths = Array.from(new Set(touched.map((t) => t.filePath)));
-					tx.delete(fileView)
-						.where(
-							and(
-								eq(fileView.userId, LOCAL_USER_ID),
-								inArray(fileView.runId, runIds),
-								inArray(fileView.filePath, filePaths),
-							),
-						)
-						.run();
+					// Exact (runId, filePath) pairs — independent IN lists would clear
+					// the cartesian product and wipe unrelated views on sibling runs.
+					for (const { runId, filePath } of touched) {
+						tx.delete(fileView)
+							.where(
+								and(
+									eq(fileView.userId, LOCAL_USER_ID),
+									eq(fileView.runId, runId),
+									eq(fileView.filePath, filePath),
+								),
+							)
+							.run();
+					}
 				});
 				// Hosted's unmark rule: any chapter-file unview unmarks the path on
 				// GitHub unconditionally, mirroring the file_view clear above.
