@@ -141,13 +141,19 @@ export type AssignedEvent = z.infer<typeof AssignedEventSchema>;
 export const ReviewRequestEventSchema = ActorEventBaseSchema.extend({
 	// The unused selector arrives as null (a user request has requested_team:
 	// null and vice versa) — that's "absent", not a deleted account, so no
-	// ghost normalization here; the UI falls back reviewer → team → generic.
+	// per-field ghost normalization; the UI falls back reviewer → team.
 	requested_reviewer: TimelineUserSchema.nullish().transform((v) => v ?? undefined),
 	requested_team: z
 		.object({ name: z.string() })
 		.nullish()
 		.transform((v) => v ?? undefined),
-});
+}).transform((event) =>
+	// Both selectors null means the requested user was deleted (GitHub always
+	// sets one); surface the ghost like other deleted principals.
+	event.requested_reviewer === undefined && event.requested_team === undefined
+		? { ...event, requested_reviewer: GHOST_TIMELINE_USER }
+		: event,
+);
 export type ReviewRequestEvent = z.infer<typeof ReviewRequestEventSchema>;
 
 export const MilestonedEventSchema = ActorEventBaseSchema.extend({

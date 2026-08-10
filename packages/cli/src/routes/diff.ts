@@ -59,17 +59,18 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 			);
 		} catch (err: unknown) {
 			if (hasStringStdout(err)) {
+				// Reject the prospective patch before retaining it so the
+				// aggregate never exceeds the advertised cap.
+				const nextBytes = Buffer.byteLength(err.stdout);
+				if (totalBytes + nextBytes > MAX_DIFF_BYTES) {
+					console.error(
+						`Untracked diff output reached ${MAX_DIFF_BYTES} bytes; omitting remaining untracked files from the response`,
+					);
+					break;
+				}
 				patches.push(err.stdout);
-				totalBytes += Buffer.byteLength(err.stdout);
+				totalBytes += nextBytes;
 			}
-		}
-		// Post-append check so the total genuinely stays within the cap: the
-		// current file (itself up to MAX_DIFF_BYTES) is already counted.
-		if (totalBytes >= MAX_DIFF_BYTES) {
-			console.error(
-				`Untracked diff output reached ${MAX_DIFF_BYTES} bytes; omitting remaining untracked files from the response`,
-			);
-			break;
 		}
 	}
 	return patches.filter(Boolean).join("\n");

@@ -33,7 +33,9 @@ async function runMutation(res: Res, fn: () => Promise<void>): Promise<void> {
 		await fn();
 		writeJson(res, 200, { ok: true });
 	} catch (err) {
-		writeJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+		const message = err instanceof Error ? err.message : String(err);
+		console.error(`Label mutation failed: ${message}`);
+		writeJson(res, 500, { error: message });
 	}
 }
 
