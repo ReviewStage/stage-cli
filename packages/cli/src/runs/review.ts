@@ -530,7 +530,7 @@ export async function submitRunReview(
 			);
 		} catch (error) {
 			if (!(error instanceof GitHubReviewNotPendingError)) throw error;
-			await recoverFromStaleReviewAndSubmit(run, target, event, body);
+			await recoverFromStaleReviewAndSubmit(run, target, event, body, error);
 		}
 	});
 }
@@ -541,13 +541,16 @@ export async function submitRunReview(
  * submit a pending review that reappeared, treat a reviewer decision that
  * already matches the requested event as success (don't duplicate an approval
  * submitted elsewhere), drop a submit left with no payload, and otherwise open
- * a fresh review and submit it.
+ * a fresh review and submit it. When the reviews summary can't be read, the
+ * dedupe check is impossible — rethrow `cause` (surfaced as a 409) instead of
+ * risking a duplicate submission.
  */
 async function recoverFromStaleReviewAndSubmit(
 	run: ChapterRunRow,
 	target: ReviewTarget,
 	event: ReviewEvent,
 	body: string,
+	cause: GitHubReviewNotPendingError,
 ): Promise<void> {
 	try {
 		const review = await getReview(run.repoRoot, target.repo, target.prNumber);
@@ -568,8 +571,13 @@ async function recoverFromStaleReviewAndSubmit(
 			}
 		}
 
+		// Hosted's recovery fetch of the reviews summary throws on failure, aborting
+		// recovery. `getReviews` swallows failures into null — without bailing here a
+		// transient reviews failure would skip the dedupe check below and duplicate a
+		// decision already submitted from the other session.
 		const reviewsSummary = await getReviews(run.repoRoot, target.repo, target.prNumber);
-		const currentReviewer = reviewsSummary?.reviewers.find(
+		if (reviewsSummary === null) throw cause;
+		const currentReviewer = reviewsSummary.reviewers.find(
 			(reviewer) => reviewer.user.login === review.viewerLogin,
 		);
 		const alreadyMatchesRequestedSubmit =

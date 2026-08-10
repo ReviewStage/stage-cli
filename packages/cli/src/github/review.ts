@@ -673,7 +673,11 @@ export async function submitReview(
 		throw error;
 	}
 	const parsed = SubmittedReviewSchema.safeParse(JSON.parse(stdout));
-	if (parsed.success && parsed.data.data.submitPullRequestReview?.pullRequestReview === null) {
+	if (
+		parsed.success &&
+		(parsed.data.data.submitPullRequestReview === null ||
+			parsed.data.data.submitPullRequestReview.pullRequestReview === null)
+	) {
 		return await rethrowIfReviewNotPending(
 			repoRoot,
 			reviewNodeId,
