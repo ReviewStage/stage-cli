@@ -75,7 +75,8 @@ function decodeQuotedPath(raw: string): string {
 
 function decodeHeaderName(raw: string | undefined, prefix: "a/" | "b/"): string | undefined {
 	if (!raw) return undefined;
-	let decoded = raw;
+	// git appends a TAB after ---/+++ paths containing spaces or specials.
+	let decoded = raw.replace(/\t$/, "");
 	if (decoded.startsWith('"') && decoded.endsWith('"') && decoded.length >= 2) {
 		decoded = decodeQuotedPath(decoded.slice(1, -1));
 	}

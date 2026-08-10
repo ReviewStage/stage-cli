@@ -375,6 +375,26 @@ describe("diff API", () => {
 		expect(entry?.oldContent).toBe("quoted contents\n");
 	});
 
+	it("includes untracked files with non-ASCII names in work-tree diffs", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		await fs.writeFile(path.join(repoRoot, "keep.txt"), "keep\n");
+		git("add", "keep.txt");
+		git("commit", "-m", "initial");
+
+		await fs.writeFile(path.join(repoRoot, "unt ol\u00e9.txt"), "untracked contents\n");
+		const runId = insertWorkingTreeRun(WORKING_TREE_REF.WORK);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		expect(data.patch).toContain("unt ol\u00e9.txt");
+		expect(data.fileContents["unt ol\u00e9.txt"]?.newContent).toBe("untracked contents\n");
+	});
+
 	it("refuses to serve working-tree content through a symlink escaping the repo", async () => {
 		git("init", "--initial-branch=main");
 		git("config", "user.email", "test@example.com");

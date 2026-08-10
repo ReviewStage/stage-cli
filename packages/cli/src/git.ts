@@ -161,11 +161,13 @@ export function getRawDiff(args: string[]): string {
 }
 
 export function getUntrackedFiles(): string[] {
-	const out = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
+	// `-z` NUL-delimits and never C-quotes, so non-ASCII names stay literal
+	// paths that the follow-up `git diff --no-index` call can read.
+	const out = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "ignore"],
-	}).trim();
-	return out ? out.split("\n") : [];
+	});
+	return out.split("\0").filter(Boolean);
 }
 
 export function hasStringStdout(err: unknown): err is { stdout: string } {

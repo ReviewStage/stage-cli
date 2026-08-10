@@ -19,11 +19,13 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_DIFF_BYTES = 50 * 1024 * 1024;
 
 async function buildUntrackedPatch(cwd: string): Promise<string> {
-	const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard"], {
-		cwd,
-		encoding: "utf8",
-	});
-	const files = stdout.trim() ? stdout.trim().split("\n") : [];
+	// `-z` NUL-delimits and never C-quotes, so non-ASCII names stay literal paths.
+	const { stdout } = await execFileAsync(
+		"git",
+		["ls-files", "--others", "--exclude-standard", "-z"],
+		{ cwd, encoding: "utf8" },
+	);
+	const files = stdout.split("\0").filter(Boolean);
 	if (files.length === 0) return "";
 
 	const patches = await Promise.all(
@@ -180,7 +182,8 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
  */
 function decodeHeaderPath(raw: string | undefined, prefix: "a/" | "b/" | null): string | null {
 	if (raw === undefined) return null;
-	let decoded = raw;
+	// git appends a TAB after ---/+++ paths containing spaces or specials.
+	let decoded = raw.replace(/\t$/, "");
 	if (decoded.startsWith('"') && decoded.endsWith('"') && decoded.length >= 2) {
 		decoded = unquoteGitPath(decoded.slice(1, -1)) ?? decoded;
 	}

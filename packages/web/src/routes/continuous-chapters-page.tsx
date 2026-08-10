@@ -149,7 +149,11 @@ function ContinuousChaptersContent({
 		[allChapters, patch, fileContents],
 	);
 
-	const [activeChapterNumber, setActiveChapterNumber] = useState(initialChapterNumber ?? 1);
+	// Clamp deep-linked numbers so an out-of-range link can't publish an
+	// invalid active chapter (switching to paged mode would 404 on it).
+	const [activeChapterNumber, setActiveChapterNumber] = useState(() =>
+		Math.min(Math.max(initialChapterNumber ?? 1, 1), Math.max(allChapters.length, 1)),
+	);
 	const activeChapter = allChapters[activeChapterNumber - 1];
 
 	// Report the active chapter so the settings form can preserve it when
