@@ -10,6 +10,7 @@ import {
 	type ReviewEvent,
 	type ReviewResponse,
 	type ReviewThread as ReviewThreadDto,
+	SUBJECT_TYPE,
 	THREAD_SOURCE,
 } from "@stagereview/types/review";
 import { asc, eq } from "drizzle-orm";
@@ -34,6 +35,7 @@ import {
 	deleteReviewComment,
 	discardReview,
 	GITHUB_DIFF_SIDE,
+	type LoadedReviewThread as GitHubApiLoadedReviewThread,
 	type ReviewComment as GitHubApiReviewComment,
 	type ReviewThread as GitHubApiReviewThread,
 	type GitHubDiffSide,
@@ -102,8 +104,11 @@ function canWriteToGitHub(run: ChapterRunRow, review: GitHubReview): boolean {
 	return review.state === "OPEN" && runMatchesPrDiff(run, review);
 }
 
-function requireReviewThread(review: GitHubReview, threadNodeId: string): GitHubApiReviewThread {
-	const thread = review.threads.find((candidate) => candidate.threadNodeId === threadNodeId);
+function requireReviewThread(
+	review: GitHubReview,
+	threadNodeId: string,
+): GitHubApiLoadedReviewThread {
+	const thread = review.allThreads.find((candidate) => candidate.threadNodeId === threadNodeId);
 	if (thread) return thread;
 	throw new ReviewError("That GitHub review thread doesn't belong to this pull request.", 400);
 }
@@ -150,9 +155,21 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 	);
 }
 
-function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
-	// `line` is non-null (getReview drops anchorless threads); start defaults to line.
-	const endLine = t.line;
+function toGitHubCommentDto(c: GitHubApiReviewComment): GitHubReviewCommentDto {
+	return {
+		id: c.nodeId,
+		state: c.isPending ? COMMENT_STATE.PENDING : COMMENT_STATE.SUBMITTED,
+		body: c.body,
+		bodyHtml: c.bodyHtml,
+		author: { login: c.authorLogin, avatarUrl: c.authorAvatarUrl || null },
+		nodeId: c.nodeId,
+		htmlUrl: c.htmlUrl,
+		createdAt: c.createdAt,
+	};
+}
+
+// The fields every GitHub thread DTO shares; the callers add the anchor variant.
+function toGitHubThreadDtoCommon(t: GitHubApiLoadedReviewThread) {
 	return {
 		id: t.threadNodeId,
 		source: THREAD_SOURCE.GITHUB,
@@ -160,25 +177,48 @@ function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
 		filePath: t.path,
 		side: fromGitHubSide(t.side),
 		startSide: fromGitHubSide(t.startSide ?? t.side),
-		startLine: t.startLine ?? endLine,
-		endLine,
 		isResolved: t.isResolved,
 		viewerCanResolve: t.viewerCanResolve,
 		viewerCanUnresolve: t.viewerCanUnresolve,
 		viewerCanReply: t.viewerCanReply,
-		comments: t.comments.map(
-			(c): GitHubReviewCommentDto => ({
-				id: c.nodeId,
-				state: c.isPending ? COMMENT_STATE.PENDING : COMMENT_STATE.SUBMITTED,
-				body: c.body,
-				bodyHtml: c.bodyHtml,
-				author: { login: c.authorLogin, avatarUrl: c.authorAvatarUrl || null },
-				nodeId: c.nodeId,
-				htmlUrl: c.htmlUrl,
-				createdAt: c.createdAt,
-			}),
-		),
+		comments: t.comments.map(toGitHubCommentDto),
 	};
+}
+
+function toGitHubLineThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
+	// Single-line threads have no startLine on GitHub; start defaults to line.
+	const endLine = t.line;
+	return {
+		...toGitHubThreadDtoCommon(t),
+		subjectType: SUBJECT_TYPE.LINE,
+		startLine: t.startLine ?? endLine,
+		endLine,
+	};
+}
+
+function toGitHubFileThreadDto(t: GitHubApiLoadedReviewThread): GitHubReviewThreadDto {
+	return {
+		...toGitHubThreadDtoCommon(t),
+		subjectType: SUBJECT_TYPE.FILE,
+		startLine: null,
+		endLine: null,
+	};
+}
+
+/**
+ * The wire threads for the PR: line-anchored threads plus whole-file threads,
+ * which have no line but still count toward file/chapter comment badges.
+ * Outdated line threads (GitHub nulls their `line` once the code moves) stay
+ * hidden — the review query doesn't fetch `originalLine`, so they can't be
+ * placed or counted.
+ */
+function toGitHubThreadDtos(review: GitHubReview): GitHubReviewThreadDto[] {
+	return [
+		...review.threads.map(toGitHubLineThreadDto),
+		...review.allThreads
+			.filter((t) => t.subjectType === SUBJECT_TYPE.FILE)
+			.map(toGitHubFileThreadDto),
+	];
 }
 
 /**
@@ -236,7 +276,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		};
 	}
 
-	const githubThreads = review.threads.map(toGitHubThreadDto);
+	const githubThreads = toGitHubThreadDtos(review);
 	return {
 		github: GITHUB_REVIEW_STATUS.AVAILABLE,
 		threads: [...localThreads, ...githubThreads],

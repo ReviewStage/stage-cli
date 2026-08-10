@@ -174,6 +174,12 @@ interface ParsedFilePaths {
 	isBinary: boolean;
 	oldIsSymlink: boolean;
 	newIsSymlink: boolean;
+	/**
+	 * A pure rename/copy (100% similarity) emits only `similarity index` +
+	 * `rename from`/`rename to` — no mode or index lines — so the sides' mode
+	 * cannot be read from the patch and must be resolved from git.
+	 */
+	modeUnknown: boolean;
 }
 
 function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
@@ -198,6 +204,8 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 		const newMode = header.match(NEW_MODE_RE)?.[1] ?? sharedMode;
 		const oldIsSymlink = oldMode === SYMLINK_MODE;
 		const newIsSymlink = newMode === SYMLINK_MODE;
+		const modeUnknown =
+			oldMode === undefined && newMode === undefined && RENAME_FROM_RE.test(header);
 
 		let oldPath = decodeGitHeaderPath(text.match(MINUS_RE)?.[1], "a/");
 		let newPath = decodeGitHeaderPath(text.match(PLUS_RE)?.[1], "b/");
@@ -230,7 +238,7 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 			}
 		}
 
-		results.push({ oldPath, newPath, isBinary, oldIsSymlink, newIsSymlink });
+		results.push({ oldPath, newPath, isBinary, oldIsSymlink, newIsSymlink, modeUnknown });
 	}
 
 	return results;
@@ -254,6 +262,21 @@ async function getGitFileContent(
 			maxBuffer: MAX_FILE_BYTES,
 		});
 		return stdout;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Resolve a path's git mode when the patch header carries none (pure
+ * rename/copy). An empty ref denotes the index, matching `git show :path`.
+ */
+async function getGitFileMode(cwd: string, ref: string, filePath: string): Promise<string | null> {
+	const args =
+		ref === "" ? ["ls-files", "--stage", "--", filePath] : ["ls-tree", ref, "--", filePath];
+	try {
+		const { stdout } = await execFileAsync("git", args, { cwd, encoding: "utf8" });
+		return stdout.match(/^(\d{6}) /)?.[1] ?? null;
 	} catch {
 		return null;
 	}
@@ -401,7 +424,7 @@ async function buildFileContents(
 	// Response-wide content budget: per-file reads are capped, but an
 	// image-heavy change could otherwise accumulate an unbounded payload.
 	let contentBudget = MAX_DIFF_BYTES;
-	for (const { oldPath, newPath, isBinary, oldIsSymlink, newIsSymlink } of files) {
+	for (const file of files) {
 		if (contentBudget <= 0) {
 			console.error(
 				`File contents exceeded ${MAX_DIFF_BYTES} bytes; remaining files omitted from context expansion and previews`,
@@ -409,8 +432,22 @@ async function buildFileContents(
 			break;
 		}
 		const entry = await (async (): Promise<readonly [string, FileContent] | null> => {
+			const { oldPath, newPath, isBinary } = file;
+			let { oldIsSymlink, newIsSymlink } = file;
 			const key = newPath ?? oldPath;
 			if (!key) return null;
+
+			// A pure rename/copy of a symlink carries no mode lines, so both
+			// symlink flags parse false and an image-named link would ship its
+			// target string as base64 "image" bytes. No mode lines also means the
+			// mode did not change, so one old-side lookup settles both sides.
+			if (file.modeUnknown && oldPath !== null) {
+				const mode = await getGitFileMode(repoRoot, oldRef, oldPath);
+				if (mode === SYMLINK_MODE) {
+					oldIsSymlink = true;
+					newIsSymlink = true;
+				}
+			}
 
 			// A symlink side's content is its target path (git blob semantics) —
 			// text, even when the link is named like an image. Sides are handled

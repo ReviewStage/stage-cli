@@ -1,5 +1,5 @@
 import type { SelectedLineRange } from "@pierre/diffs";
-import type { ReviewThread } from "@stagereview/types/review";
+import type { LineAnchoredReviewThread, ReviewThread } from "@stagereview/types/review";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getThreadHoverRange } from "./thread-hover-range";
 
@@ -16,7 +16,7 @@ export function useThreadHover(threads: readonly ReviewThread[]) {
 		setHoverLines(null);
 	}, []);
 
-	const enter = useCallback((thread: ReviewThread) => {
+	const enter = useCallback((thread: LineAnchoredReviewThread) => {
 		hoveredThreadIdRef.current = thread.id;
 		isHoveringRef.current = true;
 		setHoverLines(getThreadHoverRange(thread));

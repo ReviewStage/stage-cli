@@ -1,12 +1,13 @@
-import type { GitHubReviewThread } from "@stagereview/types/review";
+import type { GitHubLineReviewThread } from "@stagereview/types/review";
 import { describe, expect, it } from "vitest";
 import { getThreadHoverRange } from "../thread-hover-range";
 
 describe("getThreadHoverRange", () => {
 	it("keeps the start and end on their original sides", () => {
-		const thread: GitHubReviewThread = {
+		const thread: GitHubLineReviewThread = {
 			id: "thread",
 			source: "github",
+			subjectType: "LINE",
 			threadNodeId: "thread",
 			viewerCanResolve: true,
 			viewerCanUnresolve: true,

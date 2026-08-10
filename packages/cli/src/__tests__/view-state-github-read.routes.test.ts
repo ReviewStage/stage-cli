@@ -132,7 +132,7 @@ describe("GET /api/runs/:runId/view-state GitHub merge", () => {
 		expect(await harness.graphqlCalls()).toEqual([]);
 	});
 
-	it("still merges GitHub's viewed paths when the run's head is no longer the PR's head", async () => {
+	it("skips the GitHub merge when the run's head is no longer the PR's head", async () => {
 		await harness.writeGhShim(
 			[
 				makeViewedFilesPage([
@@ -143,16 +143,21 @@ describe("GET /api/runs/:runId/view-state GitHub merge", () => {
 		);
 		const { runId } = harness.seedRun();
 		const port = await harness.start();
+		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "local.ts" });
 
 		const res = await harness.request(port, "GET", `/api/runs/${runId}/view-state`);
 
-		// The freshness gate only guards writes; reading GitHub's viewed state is
-		// harmless for a stale run.
+		// GitHub's marks refer to the PR's live head, which this run never
+		// displayed — the read merge is freshness-gated exactly like writes.
 		expect(res.status).toBe(200);
-		expect(filePaths(res.body)).toEqual(["gh-viewed.ts"]);
+		expect(filePaths(res.body)).toEqual(["local.ts"]);
+		const viewedFilesCalls = (await harness.graphqlCalls()).filter(
+			(c) => c.name === "GetPullRequestViewedFiles",
+		);
+		expect(viewedFilesCalls).toEqual([]);
 	});
 
-	it("still merges GitHub's viewed paths for working-tree runs", async () => {
+	it("skips the GitHub merge for working-tree runs without calling gh", async () => {
 		await harness.writeGhShim([
 			makeViewedFilesPage([{ path: "gh-viewed.ts", viewerViewedState: FILE_VIEWED_STATE.VIEWED }]),
 		]);
@@ -171,8 +176,30 @@ describe("GET /api/runs/:runId/view-state GitHub merge", () => {
 
 		const res = await harness.request(port, "GET", `/api/runs/${runId}/view-state`);
 
+		// Working-tree runs review uncommitted contents the PR has never seen;
+		// the scope gate decides before any gh call.
 		expect(res.status).toBe(200);
-		expect(filePaths(res.body)).toEqual(["gh-viewed.ts"]);
+		expect(filePaths(res.body)).toEqual([]);
+		expect(await harness.rawCalls()).toEqual([]);
+	});
+
+	it("degrades to local paths when the identity query fails", async () => {
+		await harness.writeGhShim(
+			[
+				makeViewedFilesPage([
+					{ path: "gh-viewed.ts", viewerViewedState: FILE_VIEWED_STATE.VIEWED },
+				]),
+			],
+			{ failIdentityQuery: true },
+		);
+		const { runId } = harness.seedRun();
+		const port = await harness.start();
+		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "local.ts" });
+
+		const res = await harness.request(port, "GET", `/api/runs/${runId}/view-state`);
+
+		expect(res.status).toBe(200);
+		expect(filePaths(res.body)).toEqual(["local.ts"]);
 	});
 
 	it("never calls gh for runs without a GitHub remote", async () => {

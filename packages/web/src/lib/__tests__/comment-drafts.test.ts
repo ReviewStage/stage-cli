@@ -1,4 +1,7 @@
-import type { LocalReviewThread as CommentThread } from "@stagereview/types/review";
+import type {
+	LocalReviewThread as CommentThread,
+	GitHubFileReviewThread,
+} from "@stagereview/types/review";
 import { describe, expect, it } from "vitest";
 import {
 	buildCommentAnnotations,
@@ -72,6 +75,33 @@ describe("buildCommentAnnotations", () => {
 			[makeThread({ side: "additions", endLine: 5 })],
 			[draftState("additions", 3, 5)],
 		);
+		expect(annotations).toHaveLength(1);
+		expect(rowFor(annotations, "additions", 5)?.metadata).toHaveLength(1);
+	});
+
+	it("skips whole-file threads — they have no line to render a row on", () => {
+		const fileThread: GitHubFileReviewThread = {
+			id: "file-thread",
+			source: "github",
+			subjectType: "FILE",
+			threadNodeId: "file-thread",
+			viewerCanResolve: true,
+			viewerCanUnresolve: true,
+			viewerCanReply: true,
+			filePath: "a.ts",
+			side: "additions",
+			startSide: "additions",
+			startLine: null,
+			endLine: null,
+			isResolved: false,
+			comments: [],
+		};
+
+		const annotations = buildCommentAnnotations(
+			[fileThread, makeThread({ side: "additions", endLine: 5 })],
+			[],
+		);
+
 		expect(annotations).toHaveLength(1);
 		expect(rowFor(annotations, "additions", 5)?.metadata).toHaveLength(1);
 	});

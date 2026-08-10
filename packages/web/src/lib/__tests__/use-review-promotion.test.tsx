@@ -37,6 +37,7 @@ const reviewWithLocalThread = (): ReviewResponse => ({
 const REMOTE_THREAD: ReviewThread = {
 	id: "THREAD_remote",
 	source: "github",
+	subjectType: "LINE",
 	threadNodeId: "THREAD_remote",
 	viewerCanResolve: true,
 	viewerCanUnresolve: true,

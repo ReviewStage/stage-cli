@@ -1,4 +1,5 @@
 import { DIFF_SIDE, type DiffSide } from "@stagereview/types/chapters";
+import { SUBJECT_TYPE } from "@stagereview/types/review";
 import { describe, expect, it } from "vitest";
 import {
 	buildChapterCommentCountsMap,
@@ -14,6 +15,10 @@ function thread(
 	side: DiffSide = DIFF_SIDE.ADDITIONS,
 ): CommentThreadLike {
 	return { filePath, side, endLine };
+}
+
+function fileThread(filePath: string): CommentThreadLike {
+	return { filePath, side: DIFF_SIDE.ADDITIONS, endLine: null, subjectType: SUBJECT_TYPE.FILE };
 }
 
 interface HunkSpec {
@@ -63,6 +68,26 @@ describe("buildFileCommentCountsMap", () => {
 
 	it("ignores threads on files outside the given set", () => {
 		const counts = buildFileCommentCountsMap([{ path: "a.ts" }], [thread("elsewhere.ts")]);
+
+		expect(counts).toEqual(new Map([["a.ts", 0]]));
+	});
+
+	it("counts a whole-file thread toward its file", () => {
+		const counts = buildFileCommentCountsMap(
+			[{ path: "a.ts" }, { path: "b.ts" }],
+			[fileThread("a.ts"), thread("a.ts", 3)],
+		);
+
+		expect(counts).toEqual(
+			new Map([
+				["a.ts", 2],
+				["b.ts", 0],
+			]),
+		);
+	});
+
+	it("ignores a whole-file thread on a path outside the given set", () => {
+		const counts = buildFileCommentCountsMap([{ path: "a.ts" }], [fileThread("elsewhere.ts")]);
 
 		expect(counts).toEqual(new Map([["a.ts", 0]]));
 	});
@@ -182,6 +207,58 @@ describe("buildChapterCommentCountsMap", () => {
 		const chapter = { id: "ch-1", hunkRefs: [{ filePath: "a.ts", oldStart: 99 }] };
 
 		const counts = buildChapterCommentCountsMap([chapter], index, [thread("a.ts", 3)]);
+
+		expect(counts.get("ch-1")).toBe(0);
+	});
+
+	it("counts a whole-file thread toward every chapter containing hunks of its file", () => {
+		const index = buildHunkRangeIndex([
+			makeFile("src/shared.ts", [
+				{ oldStart: 1, oldLines: 10, newStart: 1, newLines: 10 },
+				{ oldStart: 50, oldLines: 5, newStart: 55, newLines: 8 },
+			]),
+			makeFile("src/other.ts", [{ oldStart: 1, oldLines: 3, newStart: 1, newLines: 3 }]),
+		]);
+		const ch1 = { id: "ch-1", hunkRefs: [{ filePath: "src/shared.ts", oldStart: 1 }] };
+		const ch2 = { id: "ch-2", hunkRefs: [{ filePath: "src/shared.ts", oldStart: 50 }] };
+		const ch3 = { id: "ch-3", hunkRefs: [{ filePath: "src/other.ts", oldStart: 1 }] };
+
+		const counts = buildChapterCommentCountsMap([ch1, ch2, ch3], index, [
+			fileThread("src/shared.ts"),
+		]);
+
+		expect(counts.get("ch-1")).toBe(1);
+		expect(counts.get("ch-2")).toBe(1);
+		expect(counts.get("ch-3")).toBe(0);
+	});
+
+	it("counts a whole-file thread once per chapter", () => {
+		const index = buildHunkRangeIndex([
+			makeFile("a.ts", [
+				{ oldStart: 1, oldLines: 5, newStart: 1, newLines: 5 },
+				{ oldStart: 20, oldLines: 5, newStart: 20, newLines: 5 },
+			]),
+		]);
+		const chapter = {
+			id: "ch-1",
+			hunkRefs: [
+				{ filePath: "a.ts", oldStart: 1 },
+				{ filePath: "a.ts", oldStart: 20 },
+			],
+		};
+
+		const counts = buildChapterCommentCountsMap([chapter], index, [fileThread("a.ts")]);
+
+		expect(counts.get("ch-1")).toBe(1);
+	});
+
+	it("ignores a whole-file thread on a path not in the diff", () => {
+		const index = buildHunkRangeIndex([
+			makeFile("a.ts", [{ oldStart: 1, oldLines: 10, newStart: 1, newLines: 10 }]),
+		]);
+		const chapter = { id: "ch-1", hunkRefs: [{ filePath: "a.ts", oldStart: 1 }] };
+
+		const counts = buildChapterCommentCountsMap([chapter], index, [fileThread("elsewhere.ts")]);
 
 		expect(counts.get("ch-1")).toBe(0);
 	});

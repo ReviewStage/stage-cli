@@ -1,4 +1,5 @@
 import { DIFF_SIDE, type DiffSide } from "@stagereview/types/chapters";
+import { SUBJECT_TYPE, type SubjectType } from "@stagereview/types/review";
 
 /**
  * Comment counts for file trees and chapter lists, mirroring the hosted app's
@@ -7,13 +8,17 @@ import { DIFF_SIDE, type DiffSide } from "@stagereview/types/chapters";
  * comments into line-anchored threads (one thread = one root comment), so a
  * thread counts toward the file it is anchored to and — like hosted's
  * `commentMatchesHunk` — toward every chapter with a hunk whose line range
- * contains the thread's anchor on its side.
+ * contains the thread's anchor on its side. Whole-file threads have no anchor
+ * and count toward every chapter containing any hunk of their file.
  */
 
 export interface CommentThreadLike {
 	filePath: string;
 	side: DiffSide;
-	endLine: number;
+	/** Null only for whole-file GitHub threads (`subjectType: FILE`). */
+	endLine: number | null;
+	/** Absent on local threads, which are always line-anchored. */
+	subjectType?: SubjectType;
 }
 
 export function buildFileCommentCountsMap(
@@ -76,12 +81,15 @@ export function buildHunkRangeIndex(files: readonly HunkRangeSource[]): HunkRang
 }
 
 /**
- * Mirrors hosted's `commentMatchesHunk` for the CLI's thread model: a thread's
- * anchor line (`endLine`, GitHub's `line`) must fall inside the hunk's range
- * on the thread's side. The CLI has no file-level or outdated (line-less)
- * threads, so hosted's fallbacks for those don't apply.
+ * Mirrors hosted's `commentMatchesHunk` for the CLI's thread model: a whole-file
+ * thread matches every hunk of its file, and a line thread's anchor (`endLine`,
+ * GitHub's `line`) must fall inside the hunk's range on the thread's side. The
+ * CLI drops outdated (line-less) threads before they reach the wire, so hosted's
+ * `original_line` fallback for those has no counterpart here.
  */
 function threadMatchesHunk(thread: CommentThreadLike, hunk: HunkRange): boolean {
+	if (thread.subjectType === SUBJECT_TYPE.FILE) return true;
+	if (thread.endLine === null) return false;
 	if (thread.side === DIFF_SIDE.DELETIONS) {
 		return thread.endLine >= hunk.oldStart && thread.endLine < hunk.oldStart + hunk.oldLines;
 	}

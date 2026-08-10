@@ -185,10 +185,14 @@ export function ReviewPanel() {
 	// Hosted binds these on the pending review panel: mod+j toggles the tray,
 	// mod+enter submits when focus is inside it. The global hotkey is the only
 	// mod+enter path — a textarea-level handler too would double-submit.
+	// Unlike hosted, the CLI renders this component on runs with no reachable
+	// PR (it returns null below), so the bindings are disabled there — a dead
+	// mod+j must not shadow the browser shortcut or toggle invisible state.
+	const hotkeysEnabled = review.github === GITHUB_REVIEW_STATUS.AVAILABLE;
 	useHotkeys(
 		KEYBOARD_SHORTCUTS.TOGGLE_REVIEW_PANEL.hotkey,
 		() => setOpen((v) => !v),
-		{ preventDefault: true, enableOnFormTags: ["TEXTAREA"] },
+		{ preventDefault: true, enableOnFormTags: ["TEXTAREA"], enabled: hotkeysEnabled },
 		[],
 	);
 	useHotkeys(
@@ -197,7 +201,7 @@ export function ReviewPanel() {
 			if (!popoverContentRef.current?.contains(document.activeElement)) return;
 			submitRef.current();
 		},
-		{ preventDefault: true, enableOnFormTags: ["TEXTAREA"] },
+		{ preventDefault: true, enableOnFormTags: ["TEXTAREA"], enabled: hotkeysEnabled },
 		[],
 	);
 

@@ -113,6 +113,7 @@ function makeThread(states: GitHubReviewComment["state"][]): GitHubReviewThread 
 	return {
 		id: "thread",
 		source: THREAD_SOURCE.GITHUB,
+		subjectType: "LINE",
 		threadNodeId: "thread",
 		viewerCanResolve: true,
 		viewerCanUnresolve: true,

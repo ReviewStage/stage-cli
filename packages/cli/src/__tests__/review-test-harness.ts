@@ -79,6 +79,62 @@ const pendingThread = {
 	},
 };
 
+const fileLevelThread = {
+	id: "THREAD_file",
+	isResolved: false,
+	viewerCanResolve: true,
+	viewerCanUnresolve: true,
+	viewerCanReply: true,
+	path: "src/foo.ts",
+	line: null,
+	subjectType: "FILE",
+	startLine: null,
+	diffSide: "RIGHT",
+	startDiffSide: null,
+	comments: {
+		pageInfo: { hasNextPage: false, endCursor: null },
+		nodes: [
+			{
+				id: "COMMENT_file",
+				url: "https://github.com/owner/repo/pull/5#discussion_r4",
+				body: "Whole-file comment",
+				bodyHTML: "<p>Whole-file comment</p>",
+				createdAt: "2026-01-04T00:00:00Z",
+				author: { login: "octocat", avatarUrl: "https://x/o.png" },
+				pullRequestReview: { state: "COMMENTED" },
+			},
+		],
+	},
+};
+
+const outdatedThread = {
+	id: "THREAD_outdated",
+	isResolved: false,
+	viewerCanResolve: true,
+	viewerCanUnresolve: true,
+	viewerCanReply: true,
+	path: "src/foo.ts",
+	line: null,
+	subjectType: "LINE",
+	startLine: null,
+	diffSide: "RIGHT",
+	startDiffSide: null,
+	comments: {
+		pageInfo: { hasNextPage: false, endCursor: null },
+		nodes: [
+			{
+				id: "COMMENT_outdated",
+				url: "https://github.com/owner/repo/pull/5#d9",
+				body: "Outdated draft",
+				bodyHTML: "<p>Outdated draft</p>",
+				createdAt: "2026-01-03T00:00:00Z",
+				author: { login: "octocat", avatarUrl: "https://x/o.png" },
+				pullRequestReview: { state: "PENDING" },
+			},
+		],
+	},
+};
+
 function makePromotionThread(rootState: "PENDING" | "COMMENTED") {
 	return {
 		id: "THREAD_new",
@@ -206,38 +262,11 @@ export function makeCrossSideRangeReview(): unknown {
 }
 
 export function makeAnchorlessPendingReview(): unknown {
-	return makeReview(
-		[
-			{
-				id: "THREAD_outdated",
-				isResolved: false,
-				viewerCanResolve: true,
-				viewerCanUnresolve: true,
-				viewerCanReply: true,
-				path: "src/foo.ts",
-				line: null,
-				subjectType: "LINE",
-				startLine: null,
-				diffSide: "RIGHT",
-				startDiffSide: null,
-				comments: {
-					pageInfo: { hasNextPage: false, endCursor: null },
-					nodes: [
-						{
-							id: "COMMENT_outdated",
-							url: "https://github.com/owner/repo/pull/5#d9",
-							body: "Outdated draft",
-							bodyHTML: "<p>Outdated draft</p>",
-							createdAt: "2026-01-03T00:00:00Z",
-							author: { login: "octocat", avatarUrl: "https://x/o.png" },
-							pullRequestReview: { state: "PENDING" },
-						},
-					],
-				},
-			},
-		],
-		"REVIEW_pending",
-	);
+	return makeReview([outdatedThread], "REVIEW_pending");
+}
+
+export function makeFileLevelThreadReview(): unknown {
+	return makeReview([submittedThread, fileLevelThread, outdatedThread], null);
 }
 
 interface GhShimOptions {

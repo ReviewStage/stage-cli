@@ -148,24 +148,26 @@ export interface ReviewComment {
 	isPending: boolean;
 }
 
-/** A line-anchored review thread on the PR, with its comments oldest-first. */
-export interface ReviewThread {
+/** A rooted review thread as loaded from GitHub; outdated/whole-file threads have no line. */
+export interface LoadedReviewThread {
 	threadNodeId: string;
 	isResolved: boolean;
 	viewerCanResolve: boolean;
 	viewerCanUnresolve: boolean;
 	viewerCanReply: boolean;
 	path: string;
-	line: number;
+	subjectType: SubjectType;
+	line: number | null;
 	startLine: number | null;
 	side: GitHubDiffSide;
 	startSide: GitHubDiffSide | null;
 	comments: ReviewComment[];
 }
 
-/** A rooted review thread as loaded from GitHub; outdated/whole-file threads have no line. */
-export interface LoadedReviewThread extends Omit<ReviewThread, "line"> {
-	line: number | null;
+/** A line-anchored review thread on the PR, with its comments oldest-first. */
+export interface ReviewThread extends LoadedReviewThread {
+	subjectType: typeof SUBJECT_TYPE.LINE;
+	line: number;
 }
 
 export interface GitHubReview {
@@ -187,8 +189,9 @@ export interface GitHubReview {
 	pendingReviewBody: string;
 	/** Viewer's pending (draft) comments across all threads, including anchorless ones. */
 	pendingComments: PendingReviewComment[];
-	/** All rooted threads, including outdated/anchorless ones hidden from the line-based UI. */
+	/** All rooted threads, including whole-file and outdated ones absent from `threads`. */
 	allThreads: LoadedReviewThread[];
+	/** Line-anchored threads only — the ones the line-based diff UI can place. */
 	threads: ReviewThread[];
 }
 
@@ -204,8 +207,8 @@ const PENDING_STATE = "PENDING";
 
 /**
  * The PR's review threads (pending + submitted) as the viewer sees them, plus the
- * ids the write mutations need. Threads with no anchorable line (outdated or
- * whole-file) are dropped — the review UI is line-anchored.
+ * ids the write mutations need. `threads` holds only line-anchored threads;
+ * whole-file and outdated (line-less) threads stay in `allThreads`.
  */
 export async function getReview(
 	repoRoot: string,
@@ -268,6 +271,7 @@ export async function getReview(
 				viewerCanUnresolve: node.viewerCanUnresolve,
 				viewerCanReply: node.viewerCanReply,
 				path: node.path,
+				subjectType: node.subjectType,
 				line: node.line,
 				startLine: node.startLine,
 				side: node.diffSide,
@@ -275,8 +279,8 @@ export async function getReview(
 				comments: comments.map(toReviewComment),
 			};
 			allThreads.push(loadedThread);
-			if (node.line === null) continue;
-			threads.push({ ...loadedThread, line: node.line });
+			if (node.subjectType !== SUBJECT_TYPE.LINE || node.line === null) continue;
+			threads.push({ ...loadedThread, subjectType: node.subjectType, line: node.line });
 		}
 		cursor = nextCursor(pr.reviewThreads.pageInfo);
 	} while (cursor !== null);

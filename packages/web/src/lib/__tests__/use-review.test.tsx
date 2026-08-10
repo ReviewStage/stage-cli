@@ -10,6 +10,7 @@ import { jsonResponse, makeWrapper } from "./fixtures";
 const GITHUB_THREAD: ReviewThread = {
 	id: "THREAD_github",
 	source: "github",
+	subjectType: "LINE",
 	threadNodeId: "THREAD_github",
 	viewerCanResolve: true,
 	viewerCanUnresolve: true,

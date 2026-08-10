@@ -1,5 +1,4 @@
 import {
-	type DiffLineAnnotation,
 	type FileDiffMetadata,
 	type GetHoveredLineResult,
 	getLineAnnotationName,
@@ -8,6 +7,7 @@ import {
 	type SelectedLineRange,
 } from "@pierre/diffs";
 import { FileDiff, PatchDiff } from "@pierre/diffs/react";
+import type { LineAnchoredReviewThread } from "@stagereview/types/review";
 import { Plus } from "lucide-react";
 import {
 	type CSSProperties,
@@ -24,6 +24,7 @@ import { ReviewThreadView } from "@/components/comments/review-thread";
 import { MinimizedAnnotationIndicator } from "@/components/diff/minimized-annotation-indicator";
 import {
 	buildCommentAnnotations,
+	type CommentAnnotation,
 	type CommentDraft,
 	clearDraftBody,
 	type DraftBodies,
@@ -51,7 +52,6 @@ import {
 } from "@/lib/diff-typography";
 import { useReviewContext } from "@/lib/review-context";
 import { useDiffSettings } from "@/lib/use-diff-settings";
-import type { ReviewThread as CommentThread } from "@/lib/use-review";
 import { toSingleSideSelection, useTextSelection } from "@/lib/use-text-selection";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
 import { TextSelectionPopup } from "./text-selection-popup";
@@ -268,7 +268,7 @@ const NO_FORCE_SHOWN_LINES: ForceShownLines = {
  * Mirrors the hosted app's isAnnotationRowCollapsed.
  */
 function isAnnotationRowCollapsed(
-	annotation: DiffLineAnnotation<CommentThread[]>,
+	annotation: CommentAnnotation,
 	hasDraft: boolean,
 	inlineCommentsMinimized: boolean,
 	forceShownLines: ForceShownLines,
@@ -463,7 +463,7 @@ export function PierreDiffViewer({
 	);
 
 	const renderAnnotation = useCallback(
-		(annotation: DiffLineAnnotation<CommentThread[]>): ReactNode => {
+		(annotation: CommentAnnotation): ReactNode => {
 			const threads = annotation.metadata ?? [];
 			const draft = findDraftAt(drafts, annotation.side, annotation.lineNumber);
 			if (threads.length === 0 && !draft) return null;
@@ -744,7 +744,7 @@ export function PierreDiffViewer({
 				ref={diffContainerRef}
 				style={typographyStyle}
 			>
-				<FileDiff<CommentThread[]> fileDiff={fileDiff} {...sharedProps} />
+				<FileDiff<LineAnchoredReviewThread[]> fileDiff={fileDiff} {...sharedProps} />
 				{overlay}
 				{textSelectionPopup}
 			</div>
@@ -757,7 +757,7 @@ export function PierreDiffViewer({
 			ref={diffContainerRef}
 			style={typographyStyle}
 		>
-			<PatchDiff<CommentThread[]> patch={patch} {...sharedProps} />
+			<PatchDiff<LineAnchoredReviewThread[]> patch={patch} {...sharedProps} />
 			{overlay}
 			{textSelectionPopup}
 		</div>

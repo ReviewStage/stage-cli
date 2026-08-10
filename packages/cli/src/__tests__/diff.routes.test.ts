@@ -449,6 +449,37 @@ describe("diff API", () => {
 		expect(entry?.newContent?.trim()).toBe("real.png");
 	});
 
+	it("serves both sides of a pure-renamed image-named symlink as its target path", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		await fs.writeFile(path.join(repoRoot, "real.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+		await fs.symlink("real.png", path.join(repoRoot, "logo.png"));
+		git("add", "-A");
+		git("commit", "-m", "add symlink");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		git("mv", "logo.png", "icon.png");
+		git("commit", "-m", "rename symlink");
+		const headSha = git("rev-parse", "HEAD").trim();
+		const runId = insertCommittedRun(baseSha, headSha);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		// A pure rename emits no mode or index lines, so the symlink mode must
+		// come from git itself — not default to a regular (image) file.
+		expect(data.patch).toContain("rename from logo.png");
+		expect(data.patch).not.toMatch(/^index /m);
+		const entry = data.fileContents["icon.png"];
+		expect(entry).toBeDefined();
+		expect(entry?.encoding).toBeUndefined();
+		expect(entry?.oldContent?.trim()).toBe("real.png");
+		expect(entry?.newContent?.trim()).toBe("real.png");
+	});
+
 	it("serves the image side of a symlink-to-file transition as base64", async () => {
 		git("init", "--initial-branch=main");
 		git("config", "user.email", "test@example.com");

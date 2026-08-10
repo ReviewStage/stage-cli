@@ -21,7 +21,7 @@ import {
 	parseGitHubRepo,
 	unmarkFileAsViewed,
 } from "../github/index.js";
-import { SCOPE_KIND } from "../schema.js";
+import { SCOPE_KIND, type ScopeKind } from "../schema.js";
 import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
 import { enforceSameOrigin } from "./pull-request-shared.js";
@@ -508,22 +508,64 @@ function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
+/** The run fields freshness gating needs, threaded from the chapter_run row. */
+interface PullRequestRunContext {
+	repoRoot: string;
+	originUrl: string | null;
+	prNumber: number | null;
+	scopeKind: ScopeKind;
+	headSha: string;
+}
+
+/**
+ * A run's pull request after the freshness gate: the live PR when the run's
+ * diff is the one the PR currently shows, or why it isn't.
+ */
+type FreshPullRequestDecision =
+	| { kind: "fresh"; repoRoot: string; repo: GitHubRepo; prNumber: number; nodeId: string }
+	| { kind: "no-pr" }
+	| { kind: "working-tree" }
+	| { kind: "stale-head"; prNumber: number };
+
+/**
+ * Resolves a run's PR and gates on diff identity the way review writes are
+ * gated (see review.ts's runMatchesPrDiff): only a committed run whose
+ * recorded head is still the PR's live head resolves as fresh — anything
+ * else reviewed different contents than the PR shows. Shared by GitHub view
+ * mutations and the GET read-merge so both apply the exact same gate. The
+ * scope check runs before any gh call; gh failures propagate so each caller
+ * picks its own degradation.
+ */
+async function resolveFreshPullRequest(
+	run: PullRequestRunContext,
+): Promise<FreshPullRequestDecision> {
+	if (run.scopeKind !== SCOPE_KIND.COMMITTED) return { kind: "working-tree" };
+	const prRun = await pullRequestRunTarget(run);
+	if (!prRun) return { kind: "no-pr" };
+	const identity = await getPullRequestIdentity(prRun.repoRoot, prRun.repo, prRun.prNumber);
+	if (identity.headRefOid !== run.headSha) {
+		return { kind: "stale-head", prNumber: prRun.prNumber };
+	}
+	return { kind: "fresh", ...prRun, nodeId: identity.nodeId };
+}
+
 /**
  * Unions GitHub's VIEWED file paths into the local set for GET view-state.
  * Read-side merge only — we deliberately don't seed file_view rows from GitHub,
  * so local state stays purely local and offline semantics are unchanged.
- * Unlike mutations, reads aren't freshness-gated: showing which files GitHub
- * already considers viewed is harmless even for working-tree or stale-head
- * runs. GitHub being unreachable degrades to the local paths.
+ * Reads are freshness-gated exactly like mutations: GitHub's marks refer to
+ * the PR's live head contents, so merging them into a working-tree or
+ * stale-head run would collapse files the user never reviewed as displayed.
+ * GitHub being unreachable degrades to the local paths.
  */
 async function withGitHubViewedPaths(
-	run: { repoRoot: string; originUrl: string | null; prNumber: number | null },
+	run: PullRequestRunContext,
 	localPaths: string[],
 ): Promise<string[]> {
 	try {
-		const target = await pullRequestRunTarget(run);
-		if (!target) return localPaths;
-		const { files } = await getViewedFiles(target.repoRoot, target.repo, target.prNumber);
+		const decision = await resolveFreshPullRequest(run);
+		if (decision.kind !== "fresh") return localPaths;
+		const { files } = await getViewedFiles(decision.repoRoot, decision.repo, decision.prNumber);
 		const union = new Set(localPaths);
 		for (const file of files) {
 			if (file.viewerViewedState === FILE_VIEWED_STATE.VIEWED) union.add(file.path);
@@ -690,40 +732,30 @@ class GitHubViewSync {
 			.all();
 		if (!run) return "no-pr";
 
-		// Working-tree marks reflect uncommitted contents the PR has never seen,
-		// so they never write to GitHub — decided before any gh call.
-		if (run.scopeKind !== SCOPE_KIND.COMMITTED) {
-			console.error(
-				"Skipping GitHub viewed sync: working-tree runs don't review the pull request's commits",
-			);
-			return "skipped";
-		}
-
-		let prRun: PullRequestRunTarget | null;
+		let decision: FreshPullRequestDecision;
 		try {
-			prRun = await pullRequestRunTarget(run);
+			decision = await resolveFreshPullRequest(run);
 		} catch (err) {
 			console.error(
 				`Failed to resolve the run's pull request for GitHub view sync: ${errorMessage(err)}`,
 			);
 			return "unresolved";
 		}
-		if (!prRun) return "no-pr";
-
-		try {
-			const identity = await getPullRequestIdentity(prRun.repoRoot, prRun.repo, prRun.prNumber);
-			if (identity.headRefOid !== run.headSha) {
+		switch (decision.kind) {
+			case "no-pr":
+				return "no-pr";
+			case "working-tree":
 				console.error(
-					`Skipping GitHub viewed sync for pull request #${prRun.prNumber}: the run's head commit is no longer the pull request's head`,
+					"Skipping GitHub viewed sync: working-tree runs don't review the pull request's commits",
 				);
 				return "skipped";
-			}
-			return { repoRoot: prRun.repoRoot, nodeId: identity.nodeId };
-		} catch (err) {
-			console.error(
-				`Failed to resolve pull request identity for GitHub view sync: ${errorMessage(err)}`,
-			);
-			return "unresolved";
+			case "stale-head":
+				console.error(
+					`Skipping GitHub viewed sync for pull request #${decision.prNumber}: the run's head commit is no longer the pull request's head`,
+				);
+				return "skipped";
+			case "fresh":
+				return { repoRoot: decision.repoRoot, nodeId: decision.nodeId };
 		}
 	}
 }

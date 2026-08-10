@@ -53,6 +53,8 @@ export interface GhShimOptions {
 	branchPrNumber?: number | null;
 	/** Delay (ms) before the shim answers the first mark/unmark mutation, to force overlap. */
 	firstMutationDelayMs?: number;
+	/** Make the `GetPullRequestIdentity` query fail while everything else succeeds. */
+	failIdentityQuery?: boolean;
 }
 
 interface SeedRunOptions {
@@ -144,6 +146,10 @@ if (args[0] === "pr" && args[1] === "view") {
 } else {
   const query = args.find((a) => a.startsWith("query=")) || "";
   if (query.includes("query GetPullRequestIdentity")) {
+    if (${JSON.stringify(options.failIdentityQuery ?? false)}) {
+      process.stderr.write("gh shim: identity query failed\\n");
+      process.exit(1);
+    }
     emit({ data: { repository: { pullRequest: { id: ${JSON.stringify(PR_NODE_ID)}, headRefOid: ${JSON.stringify(prHeadSha)} } } } });
   } else if (query.includes("query GetPullRequestViewedFiles")) {
     const pages = ${JSON.stringify(viewedFilesPages)};

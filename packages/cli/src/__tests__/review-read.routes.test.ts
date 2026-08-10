@@ -2,6 +2,7 @@ import { ReviewResponseSchema } from "@stagereview/types/review";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	makeCrossSideRangeReview,
+	makeFileLevelThreadReview,
 	REVIEW_QUERY_RESULT,
 	ReviewRouteHarness,
 } from "./review-test-harness.js";
@@ -82,6 +83,23 @@ describe("review API — read", () => {
 		const githubThread = body.threads.find((thread) => thread.source === "github");
 
 		expect(githubThread).toMatchObject({ side: "additions", startSide: "deletions" });
+	});
+
+	it("surfaces whole-file threads without a line anchor and drops outdated line threads", async () => {
+		await harness.writeGhShim(makeFileLevelThreadReview());
+		const runId = harness.insertRun();
+
+		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
+
+		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
+		expect(review.threads.map((t) => t.id).sort()).toEqual(["THREAD_file", "THREAD_sub"]);
+		expect(review.threads.find((t) => t.id === "THREAD_file")).toMatchObject({
+			source: "github",
+			subjectType: "FILE",
+			filePath: "src/foo.ts",
+			startLine: null,
+			endLine: null,
+		});
 	});
 
 	it("keeps local threads visible when GitHub is offline", async () => {

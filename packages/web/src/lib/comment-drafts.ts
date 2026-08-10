@@ -1,4 +1,5 @@
 import type { DiffLineAnnotation } from "@pierre/diffs";
+import type { LineAnchoredReviewThread } from "@stagereview/types/review";
 import type { DiffSide } from "@/lib/diff-types";
 import type { ReviewThread as CommentThread } from "@/lib/use-review";
 
@@ -77,16 +78,21 @@ export function upsertDraft(drafts: readonly DraftState[], anchor: CommentDraft)
 	);
 }
 
+/** An annotation row's threads: only line-anchored threads can occupy a row. */
+export type CommentAnnotation = DiffLineAnnotation<LineAnchoredReviewThread[]>;
+
 /**
  * Groups threads and open drafts into one annotation row per `(side, endLine)`, so
  * Pierre renders a row (existing comments and/or a composer) directly below the line.
+ * Whole-file threads have no line anchor and are skipped — they surface in the
+ * file/chapter comment-count badges instead.
  */
 export function buildCommentAnnotations(
 	threads: readonly CommentThread[],
 	drafts: readonly CommentDraft[],
-): DiffLineAnnotation<CommentThread[]>[] {
-	const bySideLine = new Map<DiffSide, Map<number, DiffLineAnnotation<CommentThread[]>>>();
-	const ensure = (side: DiffSide, line: number): DiffLineAnnotation<CommentThread[]> => {
+): CommentAnnotation[] {
+	const bySideLine = new Map<DiffSide, Map<number, CommentAnnotation>>();
+	const ensure = (side: DiffSide, line: number): CommentAnnotation => {
 		let byLine = bySideLine.get(side);
 		if (!byLine) {
 			byLine = new Map();
@@ -99,9 +105,12 @@ export function buildCommentAnnotations(
 		}
 		return entry;
 	};
-	for (const thread of threads) ensure(thread.side, thread.endLine).metadata.push(thread);
+	for (const thread of threads) {
+		if (thread.endLine === null) continue;
+		ensure(thread.side, thread.endLine).metadata.push(thread);
+	}
 	for (const draft of drafts) ensure(draft.side, draft.endLine);
-	const out: DiffLineAnnotation<CommentThread[]>[] = [];
+	const out: CommentAnnotation[] = [];
 	for (const byLine of bySideLine.values()) {
 		for (const entry of byLine.values()) out.push(entry);
 	}

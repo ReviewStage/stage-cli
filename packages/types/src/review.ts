@@ -73,23 +73,30 @@ export type GitHubReviewComment = z.infer<typeof GitHubReviewCommentSchema>;
 export const ReviewCommentSchema = z.union([LocalReviewCommentSchema, GitHubReviewCommentSchema]);
 export type ReviewComment = z.infer<typeof ReviewCommentSchema>;
 
+// What a GitHub review thread anchors to: a diff line (range) or a whole file.
+export const SUBJECT_TYPE = {
+	LINE: "LINE",
+	FILE: "FILE",
+} as const;
+export type SubjectType = (typeof SUBJECT_TYPE)[keyof typeof SUBJECT_TYPE];
+
 const ReviewThreadBaseSchema = z.object({
 	id: z.string(),
 	filePath: z.string(),
 	side: z.enum(DIFF_SIDE),
-	startLine: z.number().int().positive(),
-	endLine: z.number().int().positive(),
 	isResolved: z.boolean(),
 });
 
 export const LocalReviewThreadSchema = ReviewThreadBaseSchema.extend({
 	source: z.literal(THREAD_SOURCE.LOCAL),
 	threadNodeId: z.null(),
+	startLine: z.number().int().positive(),
+	endLine: z.number().int().positive(),
 	comments: z.array(LocalReviewCommentSchema),
 });
 export type LocalReviewThread = z.infer<typeof LocalReviewThreadSchema>;
 
-export const GitHubReviewThreadSchema = ReviewThreadBaseSchema.extend({
+const GitHubReviewThreadBaseSchema = ReviewThreadBaseSchema.extend({
 	source: z.literal(THREAD_SOURCE.GITHUB),
 	threadNodeId: z.string().min(1),
 	startSide: z.enum(DIFF_SIDE),
@@ -98,20 +105,38 @@ export const GitHubReviewThreadSchema = ReviewThreadBaseSchema.extend({
 	viewerCanReply: z.boolean(),
 	comments: z.array(GitHubReviewCommentSchema),
 });
+
+export const GitHubLineReviewThreadSchema = GitHubReviewThreadBaseSchema.extend({
+	subjectType: z.literal(SUBJECT_TYPE.LINE),
+	startLine: z.number().int().positive(),
+	endLine: z.number().int().positive(),
+});
+export type GitHubLineReviewThread = z.infer<typeof GitHubLineReviewThreadSchema>;
+
+// A whole-file review thread (GitHub's `subjectType: FILE`). It has no line
+// anchor, so it renders in file/chapter comment counts rather than inline rows.
+export const GitHubFileReviewThreadSchema = GitHubReviewThreadBaseSchema.extend({
+	subjectType: z.literal(SUBJECT_TYPE.FILE),
+	startLine: z.null(),
+	endLine: z.null(),
+});
+export type GitHubFileReviewThread = z.infer<typeof GitHubFileReviewThreadSchema>;
+
+export const GitHubReviewThreadSchema = z.discriminatedUnion("subjectType", [
+	GitHubLineReviewThreadSchema,
+	GitHubFileReviewThreadSchema,
+]);
 export type GitHubReviewThread = z.infer<typeof GitHubReviewThreadSchema>;
 
-/** A line-anchored local or GitHub thread with source-specific identifier invariants. */
+/** A local or GitHub thread with source-specific identifier invariants. */
 export const ReviewThreadSchema = z.discriminatedUnion("source", [
 	LocalReviewThreadSchema,
 	GitHubReviewThreadSchema,
 ]);
 export type ReviewThread = z.infer<typeof ReviewThreadSchema>;
 
-export const SUBJECT_TYPE = {
-	LINE: "LINE",
-	FILE: "FILE",
-} as const;
-export type SubjectType = (typeof SUBJECT_TYPE)[keyof typeof SUBJECT_TYPE];
+/** The threads the line-based diff UI can anchor: everything but whole-file threads. */
+export type LineAnchoredReviewThread = LocalReviewThread | GitHubLineReviewThread;
 
 export const PendingReviewCommentSchema = z.object({
 	id: z.string(),
