@@ -291,8 +291,10 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 				computeItemKey={(_, entry) => entry.file.path}
 				overscan={{ main: 1000, reverse: 500 }}
 				defaultItemHeight={400}
-				itemContent={(_, entry) => (
-					<div style={{ paddingTop: FILE_DIFF_SECTION_GAP_PX }}>
+				itemContent={(index, entry) => (
+					// The page shell already pads above the list, so the first item
+					// carries no gap of its own (matches the pre-virtuoso space-y-4).
+					<div style={{ paddingTop: index === 0 ? 0 : FILE_DIFF_SECTION_GAP_PX }}>
 						<FileDiffSection
 							entry={entry}
 							content={
