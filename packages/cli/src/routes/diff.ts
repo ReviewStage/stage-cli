@@ -383,7 +383,16 @@ async function buildFileContents(
 	// of changed files must not fan out unbounded git child processes, matching
 	// the untracked-diff path's bound.
 	const entries: Array<readonly [string, FileContent] | null> = [];
+	// Response-wide content budget: per-file reads are capped, but an
+	// image-heavy change could otherwise accumulate an unbounded payload.
+	let contentBudget = MAX_DIFF_BYTES;
 	for (const { oldPath, newPath, isBinary, isSymlink } of files) {
+		if (contentBudget <= 0) {
+			console.error(
+				`File contents exceeded ${MAX_DIFF_BYTES} bytes; remaining files omitted from context expansion and previews`,
+			);
+			break;
+		}
 		entries.push(
 			await (async (): Promise<readonly [string, FileContent] | null> => {
 				const key = newPath ?? oldPath;
@@ -423,6 +432,12 @@ async function buildFileContents(
 				] as const;
 			})(),
 		);
+		const latest = entries[entries.length - 1];
+		if (latest) {
+			contentBudget -=
+				Buffer.byteLength(latest[1].oldContent ?? "") +
+				Buffer.byteLength(latest[1].newContent ?? "");
+		}
 	}
 
 	const map: FileContentsMap = {};

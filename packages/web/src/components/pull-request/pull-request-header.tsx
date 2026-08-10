@@ -97,6 +97,16 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 	const [isEditing, setIsEditing] = useState(false);
 	const [editValue, setEditValue] = useState(pullRequest.title);
 	const inputRef = useRef<HTMLInputElement>(null);
+
+	// Stack navigation swaps PRs while this header stays mounted; an open
+	// editor must not carry the previous PR's title into the sibling. Same
+	// render-time adjustment as the labels/reviewers state.
+	const [editorOwner, setEditorOwner] = useState(pullRequest.number);
+	if (editorOwner !== pullRequest.number) {
+		setEditorOwner(pullRequest.number);
+		setIsEditing(false);
+		setEditValue(pullRequest.title);
+	}
 	const invalidate = useInvalidatePullRequest(runId);
 
 	const updateMutation = useMutation({

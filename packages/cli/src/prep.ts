@@ -51,10 +51,15 @@ export async function runPrep(options: PrepOptions): Promise<string> {
 		.flatMap((file) => file.hunks.map((hunk) => formatHunkForPrompt(file, hunk)))
 		.join("\n\n");
 
-	const totalFiles = files.length;
-	const totalAdded = files.reduce((sum, f) => sum + f.additions, 0);
-	const totalDeleted = files.reduce((sum, f) => sum + f.deletions, 0);
-	const fileTypes = [...new Set(files.map((f) => f.path.split(".").pop() || "unknown"))].join(", ");
+	// Stats describe the whole change like hosted's (computed from the PR's
+	// full file list) — a lockfile-heavy PR must not report "0 files" to the
+	// prologue's complexity assessment even though its hunks are filtered out.
+	const totalFiles = allFiles.length;
+	const totalAdded = allFiles.reduce((sum, f) => sum + f.additions, 0);
+	const totalDeleted = allFiles.reduce((sum, f) => sum + f.deletions, 0);
+	const fileTypes = [...new Set(allFiles.map((f) => f.path.split(".").pop() || "unknown"))].join(
+		", ",
+	);
 
 	const commitMessages = getCommitMessages(mergeBaseSha, scope.headSha);
 
