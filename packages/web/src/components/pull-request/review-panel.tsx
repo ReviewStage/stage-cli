@@ -5,6 +5,7 @@ import {
 } from "@stagereview/types/review";
 import { ChevronRight, CornerDownLeft, MessageSquarePlus, Trash2 } from "lucide-react";
 import { type KeyboardEvent, useMemo, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { CommentMarkdownEditor } from "@/components/comments/comment-markdown-editor";
 import {
 	AlertDialog,
@@ -21,6 +22,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import { useReviewContext } from "@/lib/review-context";
 import { canSubmitReview } from "@/lib/review-submission";
 import { useRemoteDraft } from "@/lib/use-remote-draft";
@@ -169,6 +171,27 @@ export function ReviewPanel() {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [showDiscard, setShowDiscard] = useState(false);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const popoverContentRef = useRef<HTMLDivElement>(null);
+	const submitRef = useRef<() => void>(() => {});
+
+	// Hosted binds these on the pending review panel: mod+j toggles the tray,
+	// mod+enter submits when focus is inside it (the textarea also handles
+	// mod+enter directly for the common case).
+	useHotkeys(
+		KEYBOARD_SHORTCUTS.TOGGLE_REVIEW_PANEL.hotkey,
+		() => setOpen((v) => !v),
+		{ preventDefault: true, enableOnFormTags: ["TEXTAREA"] },
+		[],
+	);
+	useHotkeys(
+		KEYBOARD_SHORTCUTS.SUBMIT_REVIEW.hotkey,
+		() => {
+			if (!popoverContentRef.current?.contains(document.activeElement)) return;
+			submitRef.current();
+		},
+		{ preventDefault: true, enableOnFormTags: ["TEXTAREA"] },
+		[],
+	);
 
 	const { pendingComments, hasPendingReview, isOwnPullRequest, canWriteToGitHub } = review;
 	const pendingCommentCount = pendingComments.length;
@@ -230,6 +253,8 @@ export function ReviewPanel() {
 		}
 	}
 
+	submitRef.current = () => void handleSubmit();
+
 	function handleKeyDown(e: KeyboardEvent) {
 		if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
@@ -264,7 +289,7 @@ export function ReviewPanel() {
 						{canWriteToGitHub ? "Submit your review" : "This GitHub review is read-only"}
 					</TooltipContent>
 				</Tooltip>
-				<PopoverContent align="end" className="w-96">
+				<PopoverContent ref={popoverContentRef} align="end" className="w-96">
 					<p className="font-medium text-sm">Finish your review</p>
 					<p className="mt-0.5 text-muted-foreground text-xs">
 						{!canWriteToGitHub
