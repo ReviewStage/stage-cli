@@ -56,7 +56,13 @@ describe("review API — read", () => {
 		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
 		expect(review.github).toBe("available");
 		expect(review.pendingComments).toEqual([
-			{ id: "COMMENT_pending", filePath: "src/bar.ts", line: 4, body: "Draft comment" },
+			{
+				id: "COMMENT_pending",
+				filePath: "src/bar.ts",
+				line: 4,
+				subjectType: "LINE",
+				body: "Draft comment",
+			},
 		]);
 		expect(review.threads.map((t) => t.comments[0]?.state).sort()).toEqual([
 			"local",

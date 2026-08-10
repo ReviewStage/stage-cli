@@ -65,7 +65,15 @@ const review = (promoted: boolean): ReviewResponse => ({
 	github: "available",
 	threads: promoted ? [REMOTE_THREAD] : [],
 	pendingComments: promoted
-		? [{ id: "COMMENT_remote", filePath: "src/foo.ts", line: 3, body: "Promote me" }]
+		? [
+				{
+					id: "COMMENT_remote",
+					filePath: "src/foo.ts",
+					line: 3,
+					subjectType: "LINE" as const,
+					body: "Promote me",
+				},
+			]
 		: [],
 	hasPendingReview: promoted,
 	pendingReviewBody: "",

@@ -2,11 +2,13 @@ import {
 	type PendingReviewComment,
 	REVIEW_EVENT,
 	type ReviewEvent,
+	SUBJECT_TYPE,
 } from "@stagereview/types/review";
-import { ChevronRight, CornerDownLeft, MessageSquarePlus, Trash2 } from "lucide-react";
+import { ChevronRight, CornerDownLeft, File, MessageSquarePlus, Trash2 } from "lucide-react";
 import { type KeyboardEvent, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { CommentMarkdownEditor } from "@/components/comments/comment-markdown-editor";
+import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
 import {
 	AlertDialog,
 	AlertDialogCancel,
@@ -128,7 +130,7 @@ function PendingCommentsList({
 				</Badge>
 			</CollapsibleTrigger>
 			<CollapsibleContent>
-				<div className="mt-1.5 max-h-[200px] overflow-y-auto rounded-lg border border-border bg-muted/30">
+				<div className="mt-1.5 max-h-[200px] overflow-y-auto scrollbar-thin rounded-lg border border-border bg-muted/30">
 					<div className="divide-y divide-border/50">
 						{[...byFile.entries()].map(([path, comments]) => (
 							<div key={path} className="px-3 py-2">
@@ -137,7 +139,13 @@ function PendingCommentsList({
 									{comments.map((c) => (
 										<div key={c.id} className="flex items-baseline gap-2 pl-2 text-xs">
 											<span className="inline-block w-10 shrink-0 text-right font-mono text-muted-foreground">
-												{c.line === null ? "Outdated" : `L${c.line}`}
+												{c.subjectType === SUBJECT_TYPE.FILE ? (
+													<File className="inline size-3" />
+												) : c.line === null ? (
+													"Outdated"
+												) : (
+													`L${c.line}`
+												)}
 											</span>
 											<span className="line-clamp-1 text-muted-foreground">{c.body}</span>
 										</div>
@@ -265,31 +273,49 @@ export function ReviewPanel() {
 	return (
 		<>
 			<Popover open={open} onOpenChange={setOpen}>
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<span className="inline-flex">
-							<PopoverTrigger asChild>
-								<Button
-									size="sm"
-									className="h-7 cursor-pointer px-2"
-									disabled={!canWriteToGitHub && !hasPendingReview}
-								>
-									<MessageSquarePlus className="size-3.5" />
-									<span className="ml-1 hidden text-xs @7xl:inline">Review</span>
-									{pendingCommentCount > 0 && (
-										<Badge className="ml-1 h-4 min-w-4 border-0 bg-primary-foreground/20 px-1 text-[10px] leading-none text-primary-foreground">
-											{pendingCommentCount}
-										</Badge>
-									)}
-								</Button>
-							</PopoverTrigger>
-						</span>
-					</TooltipTrigger>
-					<TooltipContent>
-						{canWriteToGitHub ? "Submit your review" : "This GitHub review is read-only"}
-					</TooltipContent>
-				</Tooltip>
-				<PopoverContent ref={popoverContentRef} align="end" className="w-96">
+				{canWriteToGitHub ? (
+					<ShortcutTooltip
+						shortcutKey="TOGGLE_REVIEW_PANEL"
+						label={isOwnPullRequest ? "Comment" : "Review"}
+						side="bottom"
+					>
+						<PopoverTrigger asChild>
+							<Button size="sm" className="h-7 cursor-pointer px-2">
+								<MessageSquarePlus className="size-3.5" />
+								<span className="ml-1 hidden text-xs @7xl:inline">Review</span>
+								{pendingCommentCount > 0 && (
+									<Badge className="ml-1 h-4 min-w-4 border-0 bg-primary-foreground/20 px-1 text-[10px] leading-none text-primary-foreground">
+										{pendingCommentCount}
+									</Badge>
+								)}
+							</Button>
+						</PopoverTrigger>
+					</ShortcutTooltip>
+				) : (
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<span className="inline-flex">
+								<PopoverTrigger asChild>
+									<Button
+										size="sm"
+										className="h-7 cursor-pointer px-2"
+										disabled={!hasPendingReview}
+									>
+										<MessageSquarePlus className="size-3.5" />
+										<span className="ml-1 hidden text-xs @7xl:inline">Review</span>
+										{pendingCommentCount > 0 && (
+											<Badge className="ml-1 h-4 min-w-4 border-0 bg-primary-foreground/20 px-1 text-[10px] leading-none text-primary-foreground">
+												{pendingCommentCount}
+											</Badge>
+										)}
+									</Button>
+								</PopoverTrigger>
+							</span>
+						</TooltipTrigger>
+						<TooltipContent>This GitHub review is read-only</TooltipContent>
+					</Tooltip>
+				)}
+				<PopoverContent ref={popoverContentRef} align="end" className="w-[520px] p-4">
 					<p className="font-medium text-sm">Finish your review</p>
 					<p className="mt-0.5 text-muted-foreground text-xs">
 						{!canWriteToGitHub

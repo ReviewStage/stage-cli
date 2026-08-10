@@ -1,4 +1,5 @@
 import type { ReviewEvent } from "@stagereview/types/review";
+import { SUBJECT_TYPE, type SubjectType } from "@stagereview/types/review";
 import { z } from "zod";
 import { ghReadOrThrow, ghWriteOrThrow } from "./exec.js";
 import type { GitHubRepo } from "./repo.js";
@@ -44,6 +45,7 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
 		  viewerCanReply
           path
           line
+          subjectType
           startLine
           diffSide
           startDiffSide
@@ -93,6 +95,7 @@ const GqlReviewThreadSchema = z.object({
 	viewerCanReply: z.boolean(),
 	path: z.string(),
 	line: z.number().nullable(),
+	subjectType: z.enum(SUBJECT_TYPE),
 	startLine: z.number().nullable(),
 	diffSide: z.enum(GITHUB_DIFF_SIDE),
 	startDiffSide: z.enum(GITHUB_DIFF_SIDE).nullable(),
@@ -193,6 +196,7 @@ export interface PendingReviewComment {
 	id: string;
 	filePath: string;
 	line: number | null;
+	subjectType: SubjectType;
 	body: string;
 }
 
@@ -251,6 +255,7 @@ export async function getReview(
 					id: c.id,
 					filePath: node.path,
 					line: node.line,
+					subjectType: node.subjectType,
 					body: c.body,
 				});
 			}

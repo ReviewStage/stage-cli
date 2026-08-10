@@ -31,7 +31,13 @@ describe("review API — pending review recovery", () => {
 		});
 
 		expect(review.pendingComments).toEqual([
-			{ id: "COMMENT_outdated", filePath: "src/foo.ts", line: null, body: "Outdated draft" },
+			{
+				id: "COMMENT_outdated",
+				filePath: "src/foo.ts",
+				line: null,
+				subjectType: "LINE",
+				body: "Outdated draft",
+			},
 		]);
 		expect(submit.status).toBe(200);
 	});

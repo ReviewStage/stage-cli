@@ -107,10 +107,17 @@ export const ReviewThreadSchema = z.discriminatedUnion("source", [
 ]);
 export type ReviewThread = z.infer<typeof ReviewThreadSchema>;
 
+export const SUBJECT_TYPE = {
+	LINE: "LINE",
+	FILE: "FILE",
+} as const;
+export type SubjectType = (typeof SUBJECT_TYPE)[keyof typeof SUBJECT_TYPE];
+
 export const PendingReviewCommentSchema = z.object({
 	id: z.string(),
 	filePath: z.string(),
 	line: z.number().int().positive().nullable(),
+	subjectType: z.enum(SUBJECT_TYPE),
 	body: z.string(),
 });
 export type PendingReviewComment = z.infer<typeof PendingReviewCommentSchema>;
