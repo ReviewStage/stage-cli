@@ -111,8 +111,8 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 
 	const updateMutation = useMutation({
 		...titleMutationOptions(runId),
-		onSuccess: async () => {
-			await invalidate();
+		onSuccess: async (_data, _variables, ctx) => {
+			await invalidate(ctx);
 			setIsEditing(false);
 			toast.success("Title updated");
 		},

@@ -28,8 +28,8 @@ export function usePullRequestStatusActions({ runId, pullRequest }: Options) {
 
 	const draftMutation = useMutation({
 		...draftMutationOptions(runId),
-		onSuccess: async () => {
-			await invalidate();
+		onSuccess: async (_data, _variables, ctx) => {
+			await invalidate(ctx);
 			toast.success(pullRequest.draft ? "Marked as ready for review" : "Converted to draft");
 		},
 		onError: (error) =>
@@ -38,8 +38,8 @@ export function usePullRequestStatusActions({ runId, pullRequest }: Options) {
 
 	const closeMutation = useMutation({
 		...closeMutationOptions(runId),
-		onSuccess: async () => {
-			await invalidate();
+		onSuccess: async (_data, _variables, ctx) => {
+			await invalidate(ctx);
 			setShowCloseDialog(false);
 			toast.success("Pull request closed");
 		},
@@ -51,8 +51,8 @@ export function usePullRequestStatusActions({ runId, pullRequest }: Options) {
 
 	const reopenMutation = useMutation({
 		...reopenMutationOptions(runId),
-		onSuccess: async () => {
-			await invalidate();
+		onSuccess: async (_data, _variables, ctx) => {
+			await invalidate(ctx);
 			toast.success("Pull request reopened");
 		},
 		onError: (error) =>

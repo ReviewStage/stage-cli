@@ -110,12 +110,21 @@ export async function getTimeline(
 		const item = RawTimelineItemSchema.safeParse(raw);
 		if (!item.success) continue;
 
+		// Unknown event types skip by design (hosted's type-guard pass), but a
+		// KNOWN type failing validation means schema drift — dropping it would
+		// silently remove conversation content, so those fail the boundary.
 		if (item.data.event === "commented") {
 			const comment = TimelineIssueCommentSchema.safeParse(raw);
-			if (comment.success) comments.push(comment.data);
+			if (!comment.success) {
+				throw new Error(`Unexpected commented event shape: ${comment.error.message}`);
+			}
+			comments.push(comment.data);
 		} else if (item.data.event === "reviewed") {
 			const review = TimelineReviewSchema.safeParse(raw);
-			if (review.success) rawReviews.push(review.data);
+			if (!review.success) {
+				throw new Error(`Unexpected reviewed event shape: ${review.error.message}`);
+			}
+			rawReviews.push(review.data);
 		} else if (item.data.event === "review_dismissed") {
 			const dismissed = ReviewDismissedEventSchema.safeParse(raw);
 			if (dismissed.success) {

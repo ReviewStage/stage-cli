@@ -15,7 +15,7 @@ import {
 	repositoryLabelsQueryOptions,
 	useInvalidatePullRequest,
 } from "@/lib/pull-request-mutations";
-import { useReview } from "@/lib/use-review";
+import { GITHUB_REVIEW_STATUS, useReview } from "@/lib/use-review";
 import { cn } from "@/lib/utils";
 
 // ─── Label chip (vendored from hosted dashboard/pull-request-shared.tsx) ────────
@@ -93,9 +93,12 @@ function sortLabels(labels: GitHubLabel[]) {
 
 function useLabelManager({ open, search }: UseLabelManagerOptions) {
 	const { runId, owner, repo, number } = usePullRequestContext();
-	// Hosted gates label writes on membership (useCanMutatePullRequest); the CLI's
-	// equivalent write gate is the run's GitHub writability.
-	const { canWriteToGitHub: canApprove } = useReview(runId);
+	// Hosted gates label writes on membership (useCanMutatePullRequest). Labels
+	// are PR metadata with no diff coordinates, so unlike review comments they
+	// only need GitHub to be reachable — not a fresh diff anchor: a stale or
+	// working-tree run can still manage labels.
+	const { github } = useReview(runId);
+	const canApprove = github === GITHUB_REVIEW_STATUS.AVAILABLE;
 	const invalidatePullRequestQueries = useInvalidatePullRequest(runId);
 	const [optimisticAdditions, setOptimisticAdditions] = useState<Map<string, GitHubLabel>>(
 		() => new Map(),
@@ -265,7 +268,7 @@ interface CurrentLabelRowProps {
 	isPendingAddition: boolean;
 	onRemoveMutate: (name: string) => void;
 	onRemoveError: (name: string) => void;
-	invalidatePullRequestQueries: () => void;
+	invalidatePullRequestQueries: (context?: { mutatedRunId: string }) => void;
 }
 
 function CurrentLabelRow({
@@ -281,9 +284,12 @@ function CurrentLabelRow({
 }: CurrentLabelRowProps) {
 	const removeMutation = useMutation({
 		...removeLabelMutationOptions(runId),
-		onMutate: () => onRemoveMutate(label.name),
-		onSuccess: () => {
-			invalidatePullRequestQueries();
+		onMutate: () => {
+			onRemoveMutate(label.name);
+			return { mutatedRunId: runId };
+		},
+		onSuccess: (_data, _variables, ctx) => {
+			invalidatePullRequestQueries(ctx);
 			toast.success("Label removed");
 		},
 		onError: () => {
@@ -335,7 +341,7 @@ interface RepositoryLabelRowProps {
 	onAddMutate: (label: GitHubLabel) => void;
 	onAddSuccess: (name: string) => void;
 	onAddError: (name: string) => void;
-	invalidatePullRequestQueries: () => void;
+	invalidatePullRequestQueries: (context?: { mutatedRunId: string }) => void;
 }
 
 function RepositoryLabelRow({
@@ -352,11 +358,14 @@ function RepositoryLabelRow({
 }: RepositoryLabelRowProps) {
 	const addMutation = useMutation({
 		...addLabelsMutationOptions(runId),
-		onMutate: () => onAddMutate(label),
-		onSuccess: () => {
+		onMutate: () => {
+			onAddMutate(label);
+			return { mutatedRunId: runId };
+		},
+		onSuccess: (_data, _variables, ctx) => {
 			onAddSuccess(label.name);
 			onSuccess();
-			invalidatePullRequestQueries();
+			invalidatePullRequestQueries(ctx);
 			toast.success("Label added");
 		},
 		onError: () => {

@@ -40,6 +40,15 @@ async function write(
 	return text ? JSON.parse(text) : {};
 }
 
+/**
+ * Captured at mutate() time, when the rendering component's runId still names
+ * the PR being mutated. Settle callbacks re-render with a stack sibling's
+ * runId after navigation; this context keeps invalidation on the mutated run.
+ */
+export interface PullRequestMutationContext {
+	mutatedRunId: string;
+}
+
 /** Invalidate every PR-derived query for a run after a mutation. */
 export function invalidatePullRequestQueries(
 	queryClient: QueryClient,
@@ -57,9 +66,11 @@ export function invalidatePullRequestQueries(
 	]);
 }
 
-export function useInvalidatePullRequest(runId: string): () => Promise<unknown> {
+export function useInvalidatePullRequest(
+	runId: string,
+): (context?: PullRequestMutationContext) => Promise<unknown> {
 	const queryClient = useQueryClient();
-	return () => invalidatePullRequestQueries(queryClient, runId);
+	return (context) => invalidatePullRequestQueries(queryClient, context?.mutatedRunId ?? runId);
 }
 
 // Mutation-option factories — mirror hosted's `orpc.pullRequests.X.mutationOptions()`
@@ -72,6 +83,7 @@ type RepoVars = { owner?: string; repo?: string };
 
 export function titleMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: { number: number; title: string }) =>
 			write(runId, "/title", "PATCH", { number: v.number, title: v.title }),
 	};
@@ -79,18 +91,21 @@ export function titleMutationOptions(runId: string) {
 
 export function closeMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: { number: number }) => write(runId, "/close", "POST", { number: v.number }),
 	};
 }
 
 export function reopenMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: { number: number }) => write(runId, "/reopen", "POST", { number: v.number }),
 	};
 }
 
 export function draftMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: { number: number; draft: boolean }) =>
 			write(runId, "/draft", "POST", { number: v.number, draft: v.draft }),
 	};
@@ -98,6 +113,7 @@ export function draftMutationOptions(runId: string) {
 
 export function mergeMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (
 			v: RepoVars & {
 				number: number;
@@ -117,6 +133,7 @@ export function mergeMutationOptions(runId: string) {
 // Forward the head SHA so the server can guard against a stale head (--match-head-commit).
 export function enqueueMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: RepoVars & { number: number; expectedHeadOid?: string }) =>
 			write(runId, "/auto-merge", "POST", {
 				number: v.number,
@@ -128,6 +145,7 @@ export function enqueueMutationOptions(runId: string) {
 
 export function setAutoMergeMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (
 			v: RepoVars & {
 				number: number;
@@ -151,6 +169,7 @@ export function setAutoMergeMutationOptions(runId: string) {
 // the PR itself (gh resolves the queue entry), not a mergeQueueEntryId.
 export function dequeueMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: RepoVars & { number: number }) =>
 			write(runId, "/auto-merge", "POST", { number: v.number, enabled: false }),
 	};
@@ -158,6 +177,7 @@ export function dequeueMutationOptions(runId: string) {
 
 export function addReviewerMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: RepoVars & { number: number; reviewers: string[] }) =>
 			write(runId, "/reviewers", "POST", { number: v.number, reviewers: v.reviewers }),
 	};
@@ -165,6 +185,7 @@ export function addReviewerMutationOptions(runId: string) {
 
 export function removeReviewerMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: RepoVars & { number: number; reviewer: string }) =>
 			write(runId, "/reviewers", "DELETE", { number: v.number, reviewers: [v.reviewer] }),
 	};
@@ -212,6 +233,7 @@ export function repositoryLabelsQueryOptions(runId: string) {
 
 export function addLabelsMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: RepoVars & { number: number; labels: string[] }) =>
 			write(runId, "/labels", "POST", { number: v.number, labels: v.labels }),
 	};
@@ -219,6 +241,7 @@ export function addLabelsMutationOptions(runId: string) {
 
 export function removeLabelMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: RepoVars & { number: number; label: string }) =>
 			write(runId, "/labels", "DELETE", { number: v.number, label: v.label }),
 	};

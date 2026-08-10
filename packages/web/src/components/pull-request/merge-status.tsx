@@ -103,25 +103,25 @@ export function MergeStatus({
 		...mergeMutationOptions(runId),
 		onSuccess: () => toast.success("Pull request merged"),
 		onError: (error) => toast.error(errorMessage(error, "Failed to merge pull request")),
-		onSettled: invalidate,
+		onSettled: (_data, _error, _variables, ctx) => invalidate(ctx),
 	});
 
 	const enqueueMutation = useMutation({
 		...enqueueMutationOptions(runId),
 		onError: (error) => toast.error(errorMessage(error, "Failed to add to merge queue")),
-		onSettled: invalidate,
+		onSettled: (_data, _error, _variables, ctx) => invalidate(ctx),
 	});
 
 	const autoMergeMutation = useMutation({
 		...setAutoMergeMutationOptions(runId),
 		onError: (error) => toast.error(errorMessage(error, "Failed to update auto-merge")),
-		onSettled: invalidate,
+		onSettled: (_data, _error, _variables, ctx) => invalidate(ctx),
 	});
 
 	const dequeueMutation = useMutation({
 		...dequeueMutationOptions(runId),
 		onError: (error) => toast.error(errorMessage(error, "Failed to remove from merge queue")),
-		onSettled: invalidate,
+		onSettled: (_data, _error, _variables, ctx) => invalidate(ctx),
 	});
 
 	const isPending =
