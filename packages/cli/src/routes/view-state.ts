@@ -14,12 +14,14 @@ import {
 import {
 	FILE_VIEWED_STATE,
 	type GitHubRepo,
-	getPullRequestNodeId,
+	getPullRequestIdentity,
+	getPullRequestOrThrow,
 	getViewedFiles,
 	markFileAsViewed,
 	parseGitHubRepo,
 	unmarkFileAsViewed,
 } from "../github/index.js";
+import { SCOPE_KIND } from "../schema.js";
 import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
 import { enforceSameOrigin } from "./pull-request-shared.js";
@@ -473,7 +475,7 @@ function runExists(db: StageDb, runId: string): boolean {
 	return rows.length > 0;
 }
 
-// ─── GitHub viewed-state sync (PR runs only, always best-effort) ─────────────────
+// ─── GitHub viewed-state sync (runs that resolve to a PR, always best-effort) ────
 
 interface PullRequestRunTarget {
 	repoRoot: string;
@@ -481,14 +483,25 @@ interface PullRequestRunTarget {
 	prNumber: number;
 }
 
-/** A run's GitHub PR context, or null for runs without a PR on a GitHub remote. */
-function pullRequestRunTarget(
-	run: { repoRoot: string; originUrl: string | null; prNumber: number | null } | undefined,
-): PullRequestRunTarget | null {
-	if (!run || run.prNumber === null) return null;
+/**
+ * A run's GitHub PR context. `--pr` runs carry their number; branch runs
+ * resolve the PR of whatever branch the run's clone has checked out, via
+ * `gh pr view` in the run's repoRoot (the same discovery the review routes
+ * use). Returns null when there is genuinely no PR — no GitHub remote, or a
+ * branch with no PR — and throws when gh itself fails, so callers can tell
+ * "no PR" from "couldn't ask GitHub".
+ */
+async function pullRequestRunTarget(run: {
+	repoRoot: string;
+	originUrl: string | null;
+	prNumber: number | null;
+}): Promise<PullRequestRunTarget | null> {
 	const repo = parseGitHubRepo(run.originUrl);
 	if (!repo) return null;
-	return { repoRoot: run.repoRoot, repo, prNumber: run.prNumber };
+	if (run.prNumber !== null) return { repoRoot: run.repoRoot, repo, prNumber: run.prNumber };
+	const pr = await getPullRequestOrThrow(run.repoRoot, run.originUrl, null);
+	if (!pr) return null;
+	return { repoRoot: run.repoRoot, repo, prNumber: pr.number };
 }
 
 function errorMessage(err: unknown): string {
@@ -499,15 +512,17 @@ function errorMessage(err: unknown): string {
  * Unions GitHub's VIEWED file paths into the local set for GET view-state.
  * Read-side merge only — we deliberately don't seed file_view rows from GitHub,
  * so local state stays purely local and offline semantics are unchanged.
- * GitHub being unreachable degrades to the local paths.
+ * Unlike mutations, reads aren't freshness-gated: showing which files GitHub
+ * already considers viewed is harmless even for working-tree or stale-head
+ * runs. GitHub being unreachable degrades to the local paths.
  */
 async function withGitHubViewedPaths(
 	run: { repoRoot: string; originUrl: string | null; prNumber: number | null },
 	localPaths: string[],
 ): Promise<string[]> {
-	const target = pullRequestRunTarget(run);
-	if (!target) return localPaths;
 	try {
+		const target = await pullRequestRunTarget(run);
+		if (!target) return localPaths;
 		const { files } = await getViewedFiles(target.repoRoot, target.repo, target.prNumber);
 		const union = new Set(localPaths);
 		for (const file of files) {
@@ -521,36 +536,95 @@ async function withGitHubViewedPaths(
 }
 
 /**
+ * Serializes GitHub view mutations per (runId, filePath). Overlapping mark and
+ * unmark requests for the same pair would otherwise race their gh processes
+ * and could land on GitHub in the wrong order, desyncing it from local state.
+ * A sync batch chains behind the current tail of every pair it touches and
+ * becomes their new tail, so mutations for a pair execute in the order the
+ * local writes committed. Entries are removed once a tail settles, so retired
+ * pairs don't accumulate.
+ */
+const mutationChains = new Map<string, Map<string, Promise<void>>>();
+
+function chainGitHubMutations(pairs: RunPath[], task: () => Promise<void>): Promise<void> {
+	const tails: Array<Promise<void>> = [];
+	for (const { runId, filePath } of pairs) {
+		const tail = mutationChains.get(runId)?.get(filePath);
+		if (tail) tails.push(tail);
+	}
+	// allSettled: a failed batch must not wedge every later batch for the pair.
+	const next = Promise.allSettled(tails).then(task);
+	for (const { runId, filePath } of pairs) {
+		let byPath = mutationChains.get(runId);
+		if (!byPath) {
+			byPath = new Map();
+			mutationChains.set(runId, byPath);
+		}
+		byPath.set(filePath, next);
+	}
+	const cleanup = () => {
+		for (const { runId, filePath } of pairs) {
+			const byPath = mutationChains.get(runId);
+			if (byPath?.get(filePath) !== next) continue;
+			byPath.delete(filePath);
+			if (byPath.size === 0) mutationChains.delete(runId);
+		}
+	};
+	void next.then(cleanup, cleanup);
+	return next;
+}
+
+/** A run's sync decision: a writable PR target, or why it has none. */
+type SyncDecision = { repoRoot: string; nodeId: string } | "no-pr" | "skipped" | "unresolved";
+
+/**
  * Best-effort per-request propagation of file view marks to GitHub, mirroring
  * hosted Stage's chapter-file-view sync rules: mark a file only when every
  * chapter containing it is viewed (the exact condition under which
  * promoteFullyCoveredFiles promotes it locally), and unmark unconditionally
- * whenever any chapter-file view is removed. Every GitHub failure is logged and
- * swallowed — the local operation always succeeds regardless.
+ * whenever any chapter-file view is removed. Writes are freshness-gated the
+ * way review writes are (see review.ts's runMatchesPrDiff): only a committed
+ * run whose recorded head is still the PR's live head may touch the PR —
+ * anything else reviewed different contents. Every GitHub failure is logged
+ * and swallowed — the local operation always succeeds regardless.
  */
 class GitHubViewSync {
 	/**
-	 * runId → resolved mutation target, "no-pr" (branch/non-GitHub run — safe
-	 * to ignore), or "unresolved" (a PR run whose identity lookup failed —
-	 * must poison the whole path, or a fork with unavailable GitHub access
-	 * would make another run's PR look unambiguous).
+	 * runId → sync decision. "no-pr" rows are safely ignorable in the ambiguity
+	 * check: the run either has no GitHub remote (a local-only diff that can't
+	 * reference any PR) or its checked-out branch has no PR (nothing to
+	 * mutate) — since branch runs now resolve their PR via gh, "no-pr" never
+	 * conceals a live PR. "skipped" rows resolved fine but are write-gated
+	 * (working-tree scope, or a head that is no longer the PR's), a deliberate
+	 * per-run skip that shouldn't block sibling runs. "unresolved" rows failed
+	 * PR resolution and must poison every path they touch — otherwise a fork
+	 * with unavailable GitHub access would make another run's PR look
+	 * unambiguous.
 	 */
-	private readonly targets = new Map<
-		string,
-		{ repoRoot: string; nodeId: string } | "no-pr" | "unresolved"
-	>();
+	private readonly targets = new Map<string, SyncDecision>();
 
 	constructor(private readonly db: StageDb) {}
 
-	async mark(paths: RunPath[]): Promise<void> {
-		await this.sync(paths, markFileAsViewed, "viewed");
+	mark(paths: RunPath[]): Promise<void> {
+		return this.sync(paths, markFileAsViewed, "viewed");
 	}
 
-	async unmark(paths: RunPath[]): Promise<void> {
-		await this.sync(paths, unmarkFileAsViewed, "unviewed");
+	unmark(paths: RunPath[]): Promise<void> {
+		return this.sync(paths, unmarkFileAsViewed, "unviewed");
 	}
 
-	private async sync(
+	private sync(
+		paths: RunPath[],
+		mutate: (repoRoot: string, pullRequestNodeId: string, path: string) => Promise<void>,
+		verb: "viewed" | "unviewed",
+	): Promise<void> {
+		if (paths.length === 0) return Promise.resolve();
+		// Enqueued synchronously (before any await) so overlapping requests chain
+		// in the same order their local writes committed.
+		return chainGitHubMutations(paths, () => this.performSync(paths, mutate, verb));
+	}
+
+	private async performSync(
 		paths: RunPath[],
 		mutate: (repoRoot: string, pullRequestNodeId: string, path: string) => Promise<void>,
 		verb: "viewed" | "unviewed",
@@ -564,7 +638,7 @@ class GitHubViewSync {
 		const unresolvedPaths = new Set<string>();
 		for (const { runId, filePath } of paths) {
 			const target = await this.resolveTarget(runId);
-			if (target === "no-pr") continue;
+			if (target === "no-pr" || target === "skipped") continue;
 			if (target === "unresolved") {
 				unresolvedPaths.add(filePath);
 				continue;
@@ -593,37 +667,63 @@ class GitHubViewSync {
 		}
 	}
 
-	private async resolveTarget(
-		runId: string,
-	): Promise<{ repoRoot: string; nodeId: string } | "no-pr" | "unresolved"> {
+	private async resolveTarget(runId: string): Promise<SyncDecision> {
 		const cached = this.targets.get(runId);
 		if (cached !== undefined) return cached;
+		const decision = await this.decideTarget(runId);
+		this.targets.set(runId, decision);
+		return decision;
+	}
 
+	private async decideTarget(runId: string): Promise<SyncDecision> {
 		const [run] = this.db
 			.select({
 				repoRoot: chapterRun.repoRoot,
 				originUrl: chapterRun.originUrl,
 				prNumber: chapterRun.prNumber,
+				scopeKind: chapterRun.scopeKind,
+				headSha: chapterRun.headSha,
 			})
 			.from(chapterRun)
 			.where(eq(chapterRun.id, runId))
 			.limit(1)
 			.all();
-		const prRun = pullRequestRunTarget(run);
+		if (!run) return "no-pr";
 
-		let target: { repoRoot: string; nodeId: string } | "no-pr" | "unresolved" = "no-pr";
-		if (prRun) {
-			try {
-				const nodeId = await getPullRequestNodeId(prRun.repoRoot, prRun.repo, prRun.prNumber);
-				target = { repoRoot: prRun.repoRoot, nodeId };
-			} catch (err) {
-				console.error(
-					`Failed to resolve pull request node id for GitHub view sync: ${errorMessage(err)}`,
-				);
-				target = "unresolved";
-			}
+		// Working-tree marks reflect uncommitted contents the PR has never seen,
+		// so they never write to GitHub — decided before any gh call.
+		if (run.scopeKind !== SCOPE_KIND.COMMITTED) {
+			console.error(
+				"Skipping GitHub viewed sync: working-tree runs don't review the pull request's commits",
+			);
+			return "skipped";
 		}
-		this.targets.set(runId, target);
-		return target;
+
+		let prRun: PullRequestRunTarget | null;
+		try {
+			prRun = await pullRequestRunTarget(run);
+		} catch (err) {
+			console.error(
+				`Failed to resolve the run's pull request for GitHub view sync: ${errorMessage(err)}`,
+			);
+			return "unresolved";
+		}
+		if (!prRun) return "no-pr";
+
+		try {
+			const identity = await getPullRequestIdentity(prRun.repoRoot, prRun.repo, prRun.prNumber);
+			if (identity.headRefOid !== run.headSha) {
+				console.error(
+					`Skipping GitHub viewed sync for pull request #${prRun.prNumber}: the run's head commit is no longer the pull request's head`,
+				);
+				return "skipped";
+			}
+			return { repoRoot: prRun.repoRoot, nodeId: identity.nodeId };
+		} catch (err) {
+			console.error(
+				`Failed to resolve pull request identity for GitHub view sync: ${errorMessage(err)}`,
+			);
+			return "unresolved";
+		}
 	}
 }

@@ -2,7 +2,7 @@ import type { z } from "zod";
 import type { RepoContext } from "../git.js";
 import { type ChaptersFile, ChaptersFileSchema } from "../schema.js";
 
-const SHA = {
+export const SHA = {
 	base: "1111111111111111111111111111111111111111",
 	head: "2222222222222222222222222222222222222222",
 	mergeBase: "3333333333333333333333333333333333333333",

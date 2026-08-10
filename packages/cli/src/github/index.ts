@@ -33,9 +33,10 @@ export { type GitHubRepo, isGitHubRemote, parseGitHubRepo } from "./repo.js";
 export {
 	FILE_VIEWED_STATE,
 	type FileViewedState,
-	getPullRequestNodeId,
+	getPullRequestIdentity,
 	getViewedFiles,
 	markFileAsViewed,
+	type PullRequestIdentity,
 	unmarkFileAsViewed,
 	type ViewedFile,
 } from "./viewed-files.js";

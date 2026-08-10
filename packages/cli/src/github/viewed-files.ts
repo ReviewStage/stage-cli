@@ -47,10 +47,11 @@ const UNMARK_FILE_AS_VIEWED = `mutation UnmarkFileAsViewed($pullRequestId: ID!, 
   }
 }`;
 
-const GET_PULL_REQUEST_NODE_ID = `query GetPullRequestNodeId($owner: String!, $repo: String!, $number: Int!) {
+const GET_PULL_REQUEST_IDENTITY = `query GetPullRequestIdentity($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       id
+      headRefOid
     }
   }
 }`;
@@ -74,9 +75,13 @@ const ViewedFilesQuerySchema = z.object({
 	}),
 });
 
-const NodeIdQuerySchema = z.object({
+const IdentityQuerySchema = z.object({
 	data: z.object({
-		repository: z.object({ pullRequest: z.object({ id: z.string() }).nullable() }).nullable(),
+		repository: z
+			.object({
+				pullRequest: z.object({ id: z.string(), headRefOid: z.string() }).nullable(),
+			})
+			.nullable(),
 	}),
 });
 
@@ -156,21 +161,27 @@ export async function getViewedFiles(
 	return { pullRequestNodeId, files };
 }
 
+export interface PullRequestIdentity {
+	nodeId: string;
+	/** The PR's live head commit, for freshness checks against a run's recorded head. */
+	headRefOid: string;
+}
+
 /**
- * Resolves a pull request's GraphQL node id — the lighter lookup for mutation-only
- * paths that don't need the full viewed-files listing.
+ * Resolves a pull request's GraphQL node id and live head commit — the lighter
+ * lookup for mutation-only paths that don't need the full viewed-files listing.
  */
-export async function getPullRequestNodeId(
+export async function getPullRequestIdentity(
 	repoRoot: string,
 	repo: GitHubRepo,
 	prNumber: number,
-): Promise<string> {
+): Promise<PullRequestIdentity> {
 	const stdout = await ghReadOrThrow(
 		[
 			"api",
 			"graphql",
 			"-f",
-			`query=${GET_PULL_REQUEST_NODE_ID}`,
+			`query=${GET_PULL_REQUEST_IDENTITY}`,
 			"-f",
 			`owner=${repo.owner}`,
 			"-f",
@@ -180,15 +191,15 @@ export async function getPullRequestNodeId(
 		],
 		repoRoot,
 	);
-	const parsed = NodeIdQuerySchema.safeParse(JSON.parse(stdout));
+	const parsed = IdentityQuerySchema.safeParse(JSON.parse(stdout));
 	if (!parsed.success) {
-		throw new Error("Unexpected response shape from GitHub pull request node id query");
+		throw new Error("Unexpected response shape from GitHub pull request identity query");
 	}
 	const pullRequest = parsed.data.data.repository?.pullRequest;
 	if (!pullRequest) {
 		throw new Error(`Pull request #${prNumber} not found in ${repo.owner}/${repo.repo}`);
 	}
-	return pullRequest.id;
+	return { nodeId: pullRequest.id, headRefOid: pullRequest.headRefOid };
 }
 
 const MutationEnvelopeSchema = z.object({

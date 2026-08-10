@@ -2,7 +2,13 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fileView } from "../db/schema/index.js";
 import { FILE_VIEWED_STATE } from "../github/index.js";
-import { makeViewedFilesPage, ViewStateGitHubHarness } from "./view-state-github-harness.js";
+import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
+import { makeFixture, SHA } from "./fixtures.js";
+import {
+	makeViewedFilesPage,
+	PR_NUMBER,
+	ViewStateGitHubHarness,
+} from "./view-state-github-harness.js";
 
 const harness = new ViewStateGitHubHarness();
 
@@ -95,15 +101,78 @@ describe("GET /api/runs/:runId/view-state GitHub merge", () => {
 		expect(filePaths(res.body)).toEqual(["local.ts"]);
 	});
 
-	it("never calls gh for runs without a PR number", async () => {
-		await harness.writeGhShim();
+	it("resolves the checked-out branch's PR and merges its viewed paths for runs without a PR number", async () => {
+		await harness.writeGhShim([
+			makeViewedFilesPage([{ path: "gh-viewed.ts", viewerViewedState: FILE_VIEWED_STATE.VIEWED }]),
+		]);
 		const { runId } = harness.seedRun(undefined, { prNumber: null });
+		const port = await harness.start();
+		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "local.ts" });
+
+		const res = await harness.request(port, "GET", `/api/runs/${runId}/view-state`);
+
+		expect(res.status).toBe(200);
+		expect(filePaths(res.body).sort()).toEqual(["gh-viewed.ts", "local.ts"]);
+		const viewedFilesCalls = (await harness.graphqlCalls()).filter(
+			(c) => c.name === "GetPullRequestViewedFiles",
+		);
+		expect(viewedFilesCalls[0]?.fields.number).toBe(String(PR_NUMBER));
+	});
+
+	it("degrades to local paths when the checked-out branch has no PR", async () => {
+		await harness.writeGhShim(undefined, { branchPrNumber: null });
+		const { runId } = harness.seedRun(undefined, { prNumber: null });
+		const port = await harness.start();
+		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "local.ts" });
+
+		const res = await harness.request(port, "GET", `/api/runs/${runId}/view-state`);
+
+		expect(res.status).toBe(200);
+		expect(filePaths(res.body)).toEqual(["local.ts"]);
+		expect(await harness.graphqlCalls()).toEqual([]);
+	});
+
+	it("still merges GitHub's viewed paths when the run's head is no longer the PR's head", async () => {
+		await harness.writeGhShim(
+			[
+				makeViewedFilesPage([
+					{ path: "gh-viewed.ts", viewerViewedState: FILE_VIEWED_STATE.VIEWED },
+				]),
+			],
+			{ prHeadSha: "9".repeat(40) },
+		);
+		const { runId } = harness.seedRun();
+		const port = await harness.start();
+
+		const res = await harness.request(port, "GET", `/api/runs/${runId}/view-state`);
+
+		// The freshness gate only guards writes; reading GitHub's viewed state is
+		// harmless for a stale run.
+		expect(res.status).toBe(200);
+		expect(filePaths(res.body)).toEqual(["gh-viewed.ts"]);
+	});
+
+	it("still merges GitHub's viewed paths for working-tree runs", async () => {
+		await harness.writeGhShim([
+			makeViewedFilesPage([{ path: "gh-viewed.ts", viewerViewedState: FILE_VIEWED_STATE.VIEWED }]),
+		]);
+		const { runId } = harness.seedRun(
+			makeFixture({
+				scope: {
+					kind: SCOPE_KIND.WORKING_TREE,
+					ref: WORKING_TREE_REF.WORK,
+					baseSha: SHA.base,
+					headSha: SHA.head,
+					mergeBaseSha: SHA.mergeBase,
+				},
+			}),
+		);
 		const port = await harness.start();
 
 		const res = await harness.request(port, "GET", `/api/runs/${runId}/view-state`);
 
 		expect(res.status).toBe(200);
-		expect(await harness.graphqlCalls()).toEqual([]);
+		expect(filePaths(res.body)).toEqual(["gh-viewed.ts"]);
 	});
 
 	it("never calls gh for runs without a GitHub remote", async () => {
@@ -116,6 +185,6 @@ describe("GET /api/runs/:runId/view-state GitHub merge", () => {
 		const res = await harness.request(port, "GET", `/api/runs/${runId}/view-state`);
 
 		expect(res.status).toBe(200);
-		expect(await harness.graphqlCalls()).toEqual([]);
+		expect(await harness.rawCalls()).toEqual([]);
 	});
 });

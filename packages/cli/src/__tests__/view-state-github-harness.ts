@@ -10,7 +10,7 @@ import { viewStateRoutes } from "../routes/view-state.js";
 import { insertChaptersFile } from "../runs/import-chapters.js";
 import type { ChaptersFile } from "../schema.js";
 import { LOOPBACK_HOST, type ServerHandle, startServer } from "../server.js";
-import { makeFixture, makeRepoContext } from "./fixtures.js";
+import { makeFixture, makeRepoContext, SHA } from "./fixtures.js";
 
 export const GITHUB_ORIGIN = "git@github.com:owner/repo.git";
 export const PR_NUMBER = 7;
@@ -44,6 +44,15 @@ export function makeViewedFilesPage(
 export interface GraphqlCall {
 	name: string;
 	fields: Record<string, string>;
+}
+
+export interface GhShimOptions {
+	/** headRefOid served by both `gh pr view` and the identity query. */
+	prHeadSha?: string;
+	/** PR number `gh pr view` reports for the checked-out branch; null → "no pull requests found". */
+	branchPrNumber?: number | null;
+	/** Delay (ms) before the shim answers the first mark/unmark mutation, to force overlap. */
+	firstMutationDelayMs?: number;
 }
 
 interface SeedRunOptions {
@@ -90,29 +99,78 @@ export class ViewStateGitHubHarness {
 	}
 
 	/**
-	 * Installs a fake `gh` answering the viewed-files GraphQL operations. Viewed-files
-	 * pages are selected by the `after` cursor variable: absent → first page, present →
-	 * second page.
+	 * Installs a fake `gh` answering the viewed-files GraphQL operations plus the
+	 * `gh pr view` / REST calls branch-PR resolution makes. Viewed-files pages are
+	 * selected by the `after` cursor variable: absent → first page, present →
+	 * second page. Mutations append `{ name, path }` to a completions log in
+	 * response order so tests can assert GitHub-side ordering.
 	 */
-	async writeGhShim(viewedFilesPages: unknown[] = [makeViewedFilesPage([])]): Promise<void> {
+	async writeGhShim(
+		viewedFilesPages: unknown[] = [makeViewedFilesPage([])],
+		options: GhShimOptions = {},
+	): Promise<void> {
+		const prHeadSha = options.prHeadSha ?? SHA.head;
+		const branchPrNumber =
+			options.branchPrNumber === undefined ? PR_NUMBER : options.branchPrNumber;
+		const firstMutationDelayMs = options.firstMutationDelayMs ?? 0;
 		const shim = `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
-fs.appendFileSync(${JSON.stringify(this.argvLogPath())}, JSON.stringify(args) + "\\n");
-const query = args.find((a) => a.startsWith("query=")) || "";
+const argvLog = ${JSON.stringify(this.argvLogPath())};
+fs.appendFileSync(argvLog, JSON.stringify(args) + "\\n");
 function emit(o) { process.stdout.write(JSON.stringify(o)); }
-if (query.includes("query GetPullRequestNodeId")) {
-  emit({ data: { repository: { pullRequest: { id: ${JSON.stringify(PR_NODE_ID)} } } } });
-} else if (query.includes("query GetPullRequestViewedFiles")) {
-  const pages = ${JSON.stringify(viewedFilesPages)};
-  emit(args.some((a) => a.startsWith("after=")) ? pages[1] : pages[0]);
-} else if (query.includes("mutation MarkFileAsViewed")) {
-  emit({ data: { markFileAsViewed: { clientMutationId: null } } });
-} else if (query.includes("mutation UnmarkFileAsViewed")) {
-  emit({ data: { unmarkFileAsViewed: { clientMutationId: null } } });
+if (args[0] === "pr" && args[1] === "view") {
+  const branchPrNumber = ${JSON.stringify(branchPrNumber)};
+  if (branchPrNumber === null) {
+    process.stderr.write('no pull requests found for branch "feature"\\n');
+    process.exit(1);
+  }
+  emit({
+    number: branchPrNumber,
+    title: "Branch PR",
+    body: null,
+    url: "https://github.com/owner/repo/pull/" + branchPrNumber,
+    state: "OPEN",
+    isDraft: false,
+    mergedAt: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    author: null,
+    headRefName: "feature",
+    headRefOid: ${JSON.stringify(prHeadSha)},
+    baseRefName: "main",
+  });
+} else if (args[0] === "api" && args[1] !== "graphql") {
+  emit({ user: null });
 } else {
-  process.stderr.write("gh shim: unexpected call\\n");
-  process.exit(1);
+  const query = args.find((a) => a.startsWith("query=")) || "";
+  if (query.includes("query GetPullRequestIdentity")) {
+    emit({ data: { repository: { pullRequest: { id: ${JSON.stringify(PR_NODE_ID)}, headRefOid: ${JSON.stringify(prHeadSha)} } } } });
+  } else if (query.includes("query GetPullRequestViewedFiles")) {
+    const pages = ${JSON.stringify(viewedFilesPages)};
+    emit(args.some((a) => a.startsWith("after=")) ? pages[1] : pages[0]);
+  } else if (query.includes("mutation MarkFileAsViewed") || query.includes("mutation UnmarkFileAsViewed")) {
+    const mark = query.includes("mutation MarkFileAsViewed");
+    const name = mark ? "MarkFileAsViewed" : "UnmarkFileAsViewed";
+    const filePath = (args.find((a) => a.startsWith("path=")) || "path=").slice("path=".length);
+    const respond = () => {
+      fs.appendFileSync(
+        ${JSON.stringify(this.completionsLogPath())},
+        JSON.stringify({ name, path: filePath }) + "\\n",
+      );
+      emit({ data: { [mark ? "markFileAsViewed" : "unmarkFileAsViewed"]: { clientMutationId: null } } });
+    };
+    const delayMs = ${JSON.stringify(firstMutationDelayMs)};
+    const priorMutations = fs
+      .readFileSync(argvLog, "utf8")
+      .split("\\n")
+      .filter((line) => line.includes("mutation ")).length;
+    // priorMutations includes this call's own argv line.
+    if (delayMs > 0 && priorMutations === 1) setTimeout(respond, delayMs);
+    else respond();
+  } else {
+    process.stderr.write("gh shim: unexpected call\\n");
+    process.exit(1);
+  }
 }
 `;
 		await fs.writeFile(path.join(this.binDir, "gh"), shim);
@@ -189,14 +247,20 @@ if (query.includes("query GetPullRequestNodeId")) {
 		});
 	}
 
-	/** Every gh GraphQL call so far, as operation name plus `-f`/`-F` variables. */
-	async graphqlCalls(): Promise<GraphqlCall[]> {
+	/** Every gh invocation so far, as raw argv arrays (GraphQL, `pr view`, and REST alike). */
+	async rawCalls(): Promise<string[][]> {
 		const text = await fs.readFile(this.argvLogPath(), "utf8").catch(() => "");
 		return text
 			.split("\n")
 			.filter(Boolean)
-			.map((line) => {
-				const args: string[] = JSON.parse(line);
+			.map((line): string[] => JSON.parse(line));
+	}
+
+	/** Every gh GraphQL call so far, as operation name plus `-f`/`-F` variables. */
+	async graphqlCalls(): Promise<GraphqlCall[]> {
+		return (await this.rawCalls())
+			.filter((args) => args.some((arg) => arg.startsWith("query=")))
+			.map((args) => {
 				const fields: Record<string, string> = {};
 				let name = "";
 				for (const arg of args) {
@@ -214,7 +278,30 @@ if (query.includes("query GetPullRequestNodeId")) {
 			});
 	}
 
+	/** Mark/unmark mutations in the order the shim answered them (not spawn order). */
+	async mutationCompletions(): Promise<Array<{ name: string; path: string }>> {
+		const text = await fs.readFile(this.completionsLogPath(), "utf8").catch(() => "");
+		return text
+			.split("\n")
+			.filter(Boolean)
+			.map((line): { name: string; path: string } => JSON.parse(line));
+	}
+
+	/** Polls the argv log until a gh call matching `predicate` has been spawned. */
+	async waitForGhCall(predicate: (args: string[]) => boolean, timeoutMs = 5000): Promise<void> {
+		const deadline = Date.now() + timeoutMs;
+		while (Date.now() < deadline) {
+			if ((await this.rawCalls()).some(predicate)) return;
+			await new Promise((resolve) => setTimeout(resolve, 10));
+		}
+		throw new Error("Timed out waiting for the expected gh call");
+	}
+
 	private argvLogPath(): string {
 		return path.join(this.binDir, "gh-argv.log");
+	}
+
+	private completionsLogPath(): string {
+		return path.join(this.binDir, "gh-completions.log");
 	}
 }

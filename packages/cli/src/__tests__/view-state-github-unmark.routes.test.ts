@@ -91,14 +91,50 @@ describe("GitHub unmark sync", () => {
 		);
 	});
 
-	it("never calls gh when unmarking on a run without a PR number", async () => {
+	it("resolves the checked-out branch's PR and unmarks on it for runs without a PR number", async () => {
 		await harness.writeGhShim();
 		const { runId } = harness.seedRun(undefined, { prNumber: null });
 		const port = await harness.start();
 		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "src/foo.ts" });
 
+		const res = await harness.request(port, "DELETE", `/api/runs/${runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+
+		expect(res.status).toBe(200);
+		const calls = await unmarkCalls();
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.fields).toEqual({ pullRequestId: PR_NODE_ID, path: "src/foo.ts" });
+	});
+
+	it("skips the GitHub unmark when the run's head is no longer the PR's head", async () => {
+		await harness.writeGhShim(undefined, { prHeadSha: "9".repeat(40) });
+		const { runId } = harness.seedRun();
+		const port = await harness.start();
+		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "src/foo.ts" });
+
+		const res = await harness.request(port, "DELETE", `/api/runs/${runId}/file-views`, {
+			path: "src/foo.ts",
+		});
+
+		// Local state is cleared; the stale run leaves the live PR's viewed
+		// state alone in both directions.
+		expect(res.status).toBe(200);
+		expect(harness.db.select().from(fileView).where(eq(fileView.runId, runId)).all()).toHaveLength(
+			0,
+		);
+		const names = (await harness.graphqlCalls()).map((c) => c.name);
+		expect(names).toEqual(["GetPullRequestIdentity", "GetPullRequestIdentity"]);
+	});
+
+	it("never calls gh when unmarking on a run without a GitHub remote", async () => {
+		await harness.writeGhShim();
+		const { runId } = harness.seedRun(undefined, { originUrl: null, prNumber: null });
+		const port = await harness.start();
+		await harness.request(port, "POST", `/api/runs/${runId}/file-views`, { path: "src/foo.ts" });
+
 		await harness.request(port, "DELETE", `/api/runs/${runId}/file-views`, { path: "src/foo.ts" });
 
-		expect(await harness.graphqlCalls()).toEqual([]);
+		expect(await harness.rawCalls()).toEqual([]);
 	});
 });
