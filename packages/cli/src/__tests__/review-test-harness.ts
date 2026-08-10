@@ -309,6 +309,8 @@ interface InsertRunOptions {
 	committed?: boolean;
 	headSha?: string;
 	prNumber?: number | null;
+	/** Import-time branch stored on the run; defaults to null (legacy row). */
+	headRef?: string | null;
 	repoRoot?: string;
 }
 
@@ -396,6 +398,10 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   const mergeBaseOid = ${JSON.stringify(options.mergeBaseOid ?? MERGE_BASE)};
   if (args.includes("--jq")) process.stdout.write(mergeBaseOid + "\\n");
   else emit({ merge_base_commit: { sha: mergeBaseOid } });
+} else if (args[0] === "pr" && args[1] === "list") {
+  // Branch-pinned resolution: the run's import-time branch resolves to the
+  // same PR number the checkout-discovery fixture serves via pr view.
+  emit(${options.noPullRequest ? "[]" : "[{ number: 5 }]"});
 } else if (args[0] === "pr" && args[1] === "view") {
   if (${options.noPullRequest ? "true" : "false"}) {
     process.stderr.write("no pull requests found for branch \\"feature\\"\\n");
@@ -536,6 +542,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 				repoRoot: options.repoRoot ?? this.repoRoot,
 				originUrl,
 				prNumber: options.prNumber === undefined ? this.prNumber : options.prNumber,
+				headRef: options.headRef ?? null,
 				scopeKind: committed ? SCOPE_KIND.COMMITTED : SCOPE_KIND.WORKING_TREE,
 				workingTreeRef: committed ? null : WORKING_TREE_REF.WORK,
 				baseSha: BASE,

@@ -1,9 +1,9 @@
 import type { PullRequestStackResponse } from "@stagereview/types";
-import { desc, inArray } from "drizzle-orm";
+import { and, desc, inArray, isNull, or } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import { chapterRun } from "../db/schema/index.js";
 import { type GitHubRepo, parseGitHubRepo } from "../github/index.js";
-import { getPullRequestStack } from "../github/pull-request-stack.js";
+import { getPullRequestStack, type PullRequestStackEntry } from "../github/pull-request-stack.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
 import {
@@ -21,32 +21,63 @@ function isSameRepo(a: GitHubRepo, b: GitHubRepo): boolean {
 	);
 }
 
+/** Local runs attached to stack entries, keyed the way each run kind matches. */
+interface StackRunAttachments {
+	/** Latest `--pr` run per stored PR number. */
+	byPrNumber: Map<number, string>;
+	/** Latest branch-detected run (no stored number) per import-time branch. */
+	byHeadRef: Map<string, string>;
+}
+
 /**
- * Latest local run per PR number, restricted to runs whose origin points at
- * the same GitHub repo. Only `--pr` runs record a prNumber, so branch-detected
- * runs never match — attributing those to a PR would take a live gh lookup per
- * run.
+ * Latest local run per stack entry, restricted to runs whose origin points at
+ * the same GitHub repo. `--pr` runs attach by their stored prNumber; branch-
+ * detected runs attach by the branch recorded at import (`headRef`) matching
+ * an entry's head branch. Legacy rows with neither never attach.
  */
-function latestRunIdByPrNumber(
+function latestRunIdsForEntries(
 	db: StageDb,
 	repo: GitHubRepo,
-	numbers: number[],
-): Map<number, string> {
-	const byNumber = new Map<number, string>();
-	if (numbers.length === 0) return byNumber;
+	entries: PullRequestStackEntry[],
+): StackRunAttachments {
+	const byPrNumber = new Map<number, string>();
+	const byHeadRef = new Map<string, string>();
+	if (entries.length === 0) return { byPrNumber, byHeadRef };
 	const rows = db
-		.select({ id: chapterRun.id, originUrl: chapterRun.originUrl, prNumber: chapterRun.prNumber })
+		.select({
+			id: chapterRun.id,
+			originUrl: chapterRun.originUrl,
+			prNumber: chapterRun.prNumber,
+			headRef: chapterRun.headRef,
+		})
 		.from(chapterRun)
-		.where(inArray(chapterRun.prNumber, numbers))
+		.where(
+			or(
+				inArray(
+					chapterRun.prNumber,
+					entries.map((entry) => entry.number),
+				),
+				and(
+					isNull(chapterRun.prNumber),
+					inArray(
+						chapterRun.headRef,
+						entries.map((entry) => entry.headRef),
+					),
+				),
+			),
+		)
 		.orderBy(desc(chapterRun.createdAt))
 		.all();
 	for (const row of rows) {
-		if (row.prNumber === null || byNumber.has(row.prNumber)) continue;
 		const runRepo = parseGitHubRepo(row.originUrl);
 		if (!runRepo || !isSameRepo(runRepo, repo)) continue;
-		byNumber.set(row.prNumber, row.id);
+		if (row.prNumber !== null) {
+			if (!byPrNumber.has(row.prNumber)) byPrNumber.set(row.prNumber, row.id);
+		} else if (row.headRef !== null && !byHeadRef.has(row.headRef)) {
+			byHeadRef.set(row.headRef, row.id);
+		}
 	}
-	return byNumber;
+	return { byPrNumber, byHeadRef };
 }
 
 export function stackRoutes(db: StageDb): Route[] {
@@ -66,15 +97,14 @@ export function stackRoutes(db: StageDb): Route[] {
 					return;
 				}
 				const entries = await getPullRequestStack(run.repoRoot, repo, number);
-				const runIds = latestRunIdByPrNumber(
-					db,
-					repo,
-					entries.map((entry) => entry.number),
-				);
+				const runIds = latestRunIdsForEntries(db, repo, entries);
 				const body: PullRequestStackResponse = {
 					stack: entries.map((entry) => ({
 						...entry,
-						runId: runIds.get(entry.number) ?? null,
+						// A stored prNumber is authoritative; headRef only attaches
+						// branch-detected runs, which never carry a number.
+						runId:
+							runIds.byPrNumber.get(entry.number) ?? runIds.byHeadRef.get(entry.headRef) ?? null,
 					})),
 				};
 				writeJson(res, 200, body);

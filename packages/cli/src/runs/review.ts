@@ -26,6 +26,7 @@ import {
 	getPullRequestOrThrow,
 	getReviews,
 	parseGitHubRepo,
+	pullRequestSelectorForRun,
 } from "../github/index.js";
 import {
 	addImmediateReviewComment,
@@ -240,13 +241,19 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 
 	const repo = parseGitHubRepo(run.originUrl);
 	if (!repo) return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
-	const hasStoredPullRequest = run.prNumber !== null;
+	// A stored number or an import-time branch both pin resolution to the run's
+	// own PR; only legacy rows (neither) discover the checkout's PR.
+	const hasPinnedPullRequest = run.prNumber !== null || run.headRef !== null;
 
 	let review: GitHubReview;
 	try {
 		let prNumber = run.prNumber;
 		if (prNumber === null) {
-			const pr = await getPullRequestOrThrow(run.repoRoot, run.originUrl, null);
+			const pr = await getPullRequestOrThrow(
+				run.repoRoot,
+				run.originUrl,
+				pullRequestSelectorForRun(run),
+			);
 			prNumber = pr?.number ?? null;
 		}
 		if (prNumber === null) return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
@@ -262,10 +269,11 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 	// surface only local line threads. Keep the pending-review lifecycle visible so
 	// the viewer can inspect and discard drafts even though this run is read-only.
 	if (!runMatchesPrDiff(run, review)) {
-		// Automatic discovery follows the checkout's current branch, not the branch
+		// Legacy discovery follows the checkout's current branch, not the branch
 		// that created this historical run. A mismatch therefore cannot safely retain
 		// lifecycle controls: they may belong to an entirely different pull request.
-		if (!hasStoredPullRequest) return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
+		// Pinned runs resolved their own PR, so their lifecycle stays visible.
+		if (!hasPinnedPullRequest) return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
 		return {
 			...base,
 			github: GITHUB_REVIEW_STATUS.AVAILABLE,
@@ -307,7 +315,11 @@ async function resolveReviewIdentity(run: ChapterRunRow): Promise<ReviewIdentity
 	if (!repo) throw new ReviewError("This run isn't associated with a GitHub remote.", 404);
 	let prNumber = run.prNumber;
 	if (prNumber === null) {
-		const pr = await getPullRequestOrThrow(run.repoRoot, run.originUrl, null);
+		const pr = await getPullRequestOrThrow(
+			run.repoRoot,
+			run.originUrl,
+			pullRequestSelectorForRun(run),
+		);
 		prNumber = pr?.number ?? null;
 	}
 	if (prNumber === null) {
@@ -651,7 +663,10 @@ async function recoverFromStaleReviewAndSubmit(
 export async function discardRunReview(run: ChapterRunRow): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
 		if (review.pendingReviewNodeId === null) return;
-		if (run.prNumber === null && !runMatchesPrDiff(run, review)) {
+		// Legacy rows (no stored number, no import-time branch) discover the
+		// checkout's PR, so a diff mismatch may mean the pending review belongs
+		// to an entirely different pull request.
+		if (run.prNumber === null && run.headRef === null && !runMatchesPrDiff(run, review)) {
 			throw new ReviewError(
 				"This run isn't tied to the pull request currently discovered for the checkout. Re-run with --pr before discarding its review.",
 				409,

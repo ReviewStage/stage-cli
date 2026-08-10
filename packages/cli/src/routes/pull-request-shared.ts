@@ -12,8 +12,14 @@ type Req = Parameters<RouteHandler>[0];
 export interface RunRepo {
 	repoRoot: string;
 	originUrl: string | null;
-	/** PR this run targets (`--pr`), or null to fall back to the checked-out branch's PR. */
+	/** PR this run targets (`--pr`), or null for branch-detected and legacy runs. */
 	prNumber: number | null;
+	/**
+	 * Branch checked out when the run was imported; pins PR discovery to the
+	 * branch the user actually reviewed. Null on legacy rows, which fall back
+	 * to the checked-out branch's PR.
+	 */
+	headRef: string | null;
 }
 
 /** Resolve a run's repo context, writing the matching error response on failure. */
@@ -35,7 +41,7 @@ export function resolveRun(db: StageDb, params: RouteParams, res: Res): RunRepo 
 		});
 		return null;
 	}
-	return { repoRoot, originUrl: run.originUrl, prNumber: run.prNumber };
+	return { repoRoot, originUrl: run.originUrl, prNumber: run.prNumber, headRef: run.headRef };
 }
 
 export function requireRepo(run: RunRepo, res: Res): GitHubRepo | null {

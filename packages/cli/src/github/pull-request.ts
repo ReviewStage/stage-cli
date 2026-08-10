@@ -117,6 +117,21 @@ async function fetchRestPullRequest(
 export type PullRequestSelector = number | { branch: string } | null;
 
 /**
+ * The selector pinning a run's PR resolution: the stored number for `--pr`
+ * runs, else the branch recorded at import (`headRef`) so historical runs keep
+ * resolving their own PR after the checkout moves on. Null only for legacy
+ * rows that predate `headRef`, which fall back to checkout discovery.
+ */
+export function pullRequestSelectorForRun(run: {
+	prNumber: number | null;
+	headRef: string | null;
+}): PullRequestSelector {
+	if (run.prNumber !== null) return run.prNumber;
+	if (run.headRef !== null) return { branch: run.headRef };
+	return null;
+}
+
+/**
  * Resolve the GitHub PR for a run, mapped onto the REST-shaped
  * `GitHubPullRequest` the UI consumes. Returns null whenever resolution isn't
  * possible — non-GitHub remote, `gh` missing or unauthenticated, no PR found,

@@ -85,6 +85,53 @@ describe("pull-request API — discovery", () => {
 		expect((JSON.parse(response.body) as PullRequestResponse).pullRequest).toBeNull();
 	});
 
+	it("resolves a branch run's PR from its import-time branch, not the checkout", async () => {
+		await harness.writeFakeGh({
+			pr: PR_JSON,
+			prList: JSON.stringify([{ number: 7 }]),
+			restPr: REST_PR_JSON,
+		});
+		const runId = harness.insertRun(GITHUB_ORIGIN, null, "feature");
+
+		const response = await harness.request(
+			await harness.start(),
+			`/api/runs/${runId}/pull-request`,
+		);
+
+		expect((JSON.parse(response.body) as PullRequestResponse).pullRequest?.number).toBe(7);
+		const argv = await harness.argv();
+		expect(argv).toContain("pr list --head feature");
+		expect(argv).toContain("pr view 7 --json");
+	});
+
+	it("returns null when the import-time branch has no PR", async () => {
+		await harness.writeFakeGh({ pr: PR_JSON, prList: "[]", restPr: REST_PR_JSON });
+		const runId = harness.insertRun(GITHUB_ORIGIN, null, "feature");
+
+		const response = await harness.request(
+			await harness.start(),
+			`/api/runs/${runId}/pull-request`,
+		);
+
+		expect((JSON.parse(response.body) as PullRequestResponse).pullRequest).toBeNull();
+		expect(await harness.argv()).not.toContain("pr view");
+	});
+
+	it("keeps checkout discovery for legacy runs without a recorded branch", async () => {
+		await harness.writeFakeGh({ pr: PR_JSON, restPr: REST_PR_JSON });
+		const runId = harness.insertRun(GITHUB_ORIGIN, null, null);
+
+		const response = await harness.request(
+			await harness.start(),
+			`/api/runs/${runId}/pull-request`,
+		);
+
+		expect((JSON.parse(response.body) as PullRequestResponse).pullRequest?.number).toBe(7);
+		const argv = await harness.argv();
+		expect(argv).not.toContain("pr list");
+		expect(argv).toContain("pr view --json");
+	});
+
 	it("returns null for non-GitHub remotes", async () => {
 		await harness.writeFakeGh({ pr: PR_JSON });
 		const runId = harness.insertRun("git@gitlab.com:owner/repo.git");
