@@ -89,10 +89,12 @@ If `prep` exits non-zero, relay its stderr to the user and stop.
 
 Read `$PREP_FILE` via the Read tool (or equivalent). For large diffs, use the Read tool's `offset` and `limit` parameters to read in chunks.
 
-The file has two sections separated by headers:
+`prep` writes a single combined file with sections separated by `=== ... ===` headers. Not every section is always present:
 
-1. **`=== COMMIT MESSAGES ===`** — `git log --oneline` output for prologue context.
-2. **`=== HUNKS ===`** — formatted diff hunks with line numbers. Each hunk looks like:
+- **`=== PULL REQUEST ===`** — the PR title and description (present only when reviewing a GitHub PR, e.g. with `--pr`). These are the author's own words about what this change does and why. Use this context to understand the author's intent — it is often the most reliable signal for motivation and grouping — and to ground your narrative in the author's stated intent rather than reverse-engineering motivation from code alone. When this section is absent, the commit messages are the fallback signal for intent.
+- **`=== ADDITIONAL INSTRUCTIONS ===`** — optional user-provided instructions. When present, you **must** follow them; they apply to both the chapters (Step 3) and the prologue (Step 4).
+- **`=== COMMIT MESSAGES ===`** — `git log --oneline` output for prologue context.
+- **`=== HUNKS ===`** — formatted diff hunks with line numbers. Each hunk looks like:
 
 ```
 === File: src/app.ts (modified) | filePath: "src/app.ts", oldStart: 1 ===
@@ -106,11 +108,11 @@ The file has two sections separated by headers:
 
 The two number columns are the **old line number** (left) and **new line number** (right). A blank column means the line doesn't exist on that side — additions have no old line number, deletions have no new line number. These numbers are used directly for `lineRefs` in key changes (see Step 3d).
 
-`commits.txt` contains `git log --oneline` output for prologue context.
+The file also includes a `Stats:` line (file count, +added/−deleted line totals, file types) — quick context for the prologue's complexity rating.
 
 ## Step 3 — Cluster + narrate
 
-Using the hunks from `hunks.txt`, produce a `chapters` array. Each chapter groups related hunks into a coherent story beat, narrates them for a reviewer unfamiliar with this part of the codebase, and flags judgment calls that need human input.
+Using the hunks from the `=== HUNKS ===` section, produce a `chapters` array. Each chapter groups related hunks into a coherent story beat, narrates them for a reviewer unfamiliar with this part of the codebase, and flags judgment calls that need human input.
 
 ### 3a — Clustering rules
 
@@ -153,9 +155,21 @@ Use the `filePath` and `oldStart` values from these headers to build `hunkRefs`.
 Write each chapter as a story beat — a meaningful step that moves the branch forward, not a summary of files changed.
 
 - **Title:** action-oriented verb phrase, max 8 words (e.g., "Wire org ID through the API layer"). No filler like "Add support for".
-- **Summary:** 2–3 sentences covering what this chapter enables and why. Lead with impact, then connect to the broader purpose. When a chapter builds on a previous one, open with that causal link explicitly (e.g., "Now that X is in place…").
+- **Summary:** 2–3 sentences covering what this chapter enables and why. Lead with impact, then connect to the broader purpose and explain why it appears at this point in the review sequence. When a chapter builds on a previous one, open with that causal link explicitly (e.g., "Now that X is in place…").
   - Keep paragraphs short. Prefer splitting distinct points into separate short paragraphs (separated by a blank line) rather than writing one long dense paragraph. Each paragraph should convey a single idea.
   - Markdown allowed: `**bold**` for emphasis, `*italics*` for nuance, `` `backticks` `` for inline code references, and fenced code blocks when a short snippet (≤ 6 lines) helps illustrate the change.
+
+**Chapter mermaid diagrams:** When a chapter spans multiple components in a data or control flow — e.g. a new endpoint wiring through middleware to a database, a state machine gaining transitions, or an event pipeline connecting producers to consumers — include a fenced ` ```mermaid ` code block in the summary to visualize the relationship. Place the diagram after the prose summary, not before it.
+
+Skip diagrams for single-file changes, renames, config updates, test-only chapters, or anything where prose alone is clear. Most chapters should NOT have a diagram.
+
+Diagram type guide:
+
+- `graph TD` or `graph LR` for data flow, component wiring, module dependencies
+- `sequenceDiagram` for request/response or call chains across layers
+- `stateDiagram-v2` for lifecycle or state machine changes
+
+Keep diagrams concise — under 10 nodes. They render inline in a narrow side panel.
 
 ### 3d — Key change rules
 
@@ -163,11 +177,11 @@ Key changes are **judgment calls only a human reviewer can make** — things tha
 
 Return an **empty array** when nothing needs human input — do **not** invent items to fill the list. When a chapter is a straightforward rename, type fix, or mechanical refactor with no judgment calls, `keyChanges` should be `[]`.
 
-Frame each item as a **question**.
+Frame each item as a **question**. Key change `content` fields are single sentences — use only inline markdown (`**bold**`, `*italics*`, `` `backticks` ``), never fenced code blocks.
 
-Each key change includes `lineRefs`: one line range per distinct spot the question depends on. Most questions touch a single location, so use one range; only add more when the judgment genuinely spans related code in different places.
+Each key change includes `lineRefs`: one line range per distinct spot the question depends on. Most questions touch a single location, so use one range; only add more when the judgment genuinely spans related code in different places (e.g., a config value and its call site).
 
-**Reading line numbers from `hunks.txt`:** Each diff line shows two number columns — old (left) and new (right). Use these numbers directly:
+**Reading line numbers from the formatted hunks:** Each diff line shows two number columns — old (left) and new (right). Use these numbers directly:
 - For `side: "deletions"` — use the **old** (left) column number as `startLine`/`endLine`.
 - For `side: "additions"` — use the **new** (right) column number as `startLine`/`endLine`.
 - Do **not** count lines yourself — read the numbers from the formatted output.
@@ -186,7 +200,107 @@ Keep ranges tight — point to the specific lines the question is about, not the
 - "The function now handles errors." — changelog item, not a question
 - "Make sure the tests pass." — CI catches this, not a human judgment call
 
-### 3e — Output format
+### 3e — Risk classification
+
+Classify each chapter as **High**, **Medium**, or **Low** risk. This becomes the chapter's `riskLevel` (`"high"`, `"medium"`, or `"low"`), accompanied by `riskReasons` — short plain-English reasons explaining the risk level.
+
+Risk means: **how bad it would be if a human reviewer missed a problem in this chapter**. It is not a prediction that the code is buggy.
+
+Score the chapter, not the whole change. If a chapter spans multiple categories, use the highest applicable risk.
+
+Do not use file count or lines changed as the main signal. A small auth change can be High risk. A large fixture update can be Low risk.
+
+#### High Risk
+
+Use **High** when a missed issue could cause a security problem, data loss, cross-tenant access, broken deploy, production outage, incorrect billing, or hard-to-reverse behavior.
+
+High risk includes:
+- Auth, authorization, sessions, permissions, RBAC, org/repo/team scoping, route guards, middleware, or tenant boundaries.
+- Secrets, tokens, API keys, OAuth, cryptography, signing, webhook verification, CORS, CSP, security headers, or trust-boundary logic.
+- Database schema changes, migrations, data migrations, backfills, destructive writes, indexes on important tables, or changes to persistence semantics.
+- Data access changes that could expose, hide, duplicate, corrupt, or delete important records.
+- Billing, payments, invoices, subscriptions, credits, quotas, metering, or entitlements.
+- Production deploy config, release workflows, CI/CD publishing, infrastructure, Docker/runtime images, environment variables, domains, routing, networking, or service startup.
+- GitHub Actions or automation with elevated tokens, `pull_request_target`, package publishing, deployment credentials, or broad repository permissions.
+- Dependency or lockfile changes that affect production runtime, security, bundling, native modules, build behavior, or transitive package resolution.
+- Background jobs, queues, schedulers, webhooks, retries, idempotency, email sending, notifications, or other side-effectful async work.
+- Public API contracts, external integrations, webhooks, SDK-facing behavior, or changes likely to affect external callers.
+- Cross-cutting changes to request handling, caching, error handling, logging, rate limits, retries, serialization, or data fetching.
+- Large refactors across sensitive areas where behavior must remain equivalent.
+- Any change where rollback is risky, slow, manual, or requires data repair.
+
+#### Medium Risk
+
+Use **Medium** when the chapter changes real behavior, but the blast radius is bounded and rollback is straightforward.
+
+Medium risk includes:
+- Localized production behavior in one feature area.
+- Internal API, procedure, or service changes with a small known set of callers.
+- Business logic, validation, parsing, formatting, state transitions, or error handling that affects users but not sensitive boundaries.
+- Frontend behavior in important user flows, especially create, save, submit, delete, import, export, or navigation behavior.
+- Non-destructive query changes, data mapping, filtering, sorting, pagination, or cache behavior with limited scope.
+- Runtime config with bounded impact, such as one app feature or one non-production environment.
+- Build, lint, test, or tool config that affects developer or CI behavior but not production deploy credentials or runtime semantics.
+- Dependency changes limited to dev tooling, tests, formatting, or non-production build support.
+- Refactors intended to preserve behavior in non-sensitive code.
+- File deletions where reviewers need to confirm the deleted path is no longer used.
+- Test changes that materially redefine expected behavior.
+- Changes with limited user impact but enough logic that a reviewer should still verify product intent.
+
+#### Low Risk
+
+Use **Low** when the chapter is reviewable but unlikely to affect production behavior, sensitive boundaries, persistent data, deployment, or external contracts.
+
+Low risk includes:
+- Tests, fixtures, mocks, snapshots, stories, examples, and demo data that do not redefine production behavior.
+- Docs, README updates, comments, internal copy, changelog text, or non-critical explanatory content.
+- Localized presentational UI changes with no data fetching, writes, permissions, routing, or workflow behavior.
+- Type-only changes, small renames, import cleanup, dead-code removal, or mechanical refactors in non-sensitive code.
+- Generated files when the source-of-truth change is elsewhere and reproducible.
+- Formatter, linter, editor, Storybook, or dev-only config that does not affect CI gates, deployment, package resolution, or production output.
+- Asset changes such as icons, images, screenshots, or styling tokens with no functional behavior.
+- Test-only dependency changes that do not affect production resolution or build output.
+
+#### Modifiers
+
+Raise risk when:
+- The chapter crosses multiple domains, such as frontend plus API plus database.
+- The reviewer must understand subtle invariants, ordering, race conditions, idempotency, cache invalidation, or rollback behavior.
+- The change is hard to review as one coherent unit.
+- The chapter changes behavior without corresponding tests.
+- The path is high-traffic, high-value, or used during incident recovery.
+- The change affects defaults, fallbacks, retries, timeouts, limits, or permission-denied behavior.
+- The code silently changes what data users can see, edit, delete, export, or share.
+
+Lower risk only when:
+- The change is clearly isolated.
+- The affected path is non-production or dev-only.
+- Rollback is immediate and does not require data repair.
+- The chapter is purely presentational, test-only, or mechanical.
+- A feature flag truly prevents user exposure and the risky path is not active by default.
+
+Do not lower risk just because:
+- The change includes tests.
+- The code is small.
+- The author says it is safe.
+- CI passed.
+- The risky code is behind a helper function.
+
+#### Mixed Chapters
+
+If a chapter includes both risky and harmless changes, classify by the riskiest meaningful change.
+
+Examples:
+- Migration plus tests: High.
+- Auth middleware plus UI copy: High.
+- Backend API behavior plus frontend display: Medium or High depending on sensitivity.
+- Dev-only fixture update plus docs: Low.
+- Lockfile plus production dependency update: High.
+- Lockfile churn from dev-only test tooling: Medium or Low depending on CI/build impact.
+
+In `riskReasons`, include short plain-English reasons explaining the risk level. Reasons should not restate file counts, change volume, or speculate about bug likelihood.
+
+### 3f — Output format
 
 Produce an array of chapter objects. Each chapter:
 
@@ -213,6 +327,11 @@ Produce an array of chapter objects. Each chapter:
         }
       ]
     }
+  ],
+  "riskLevel": "medium",  // "high" | "medium" | "low" | null — see 3e
+  "riskReasons": [
+    // short plain-English reasons for the risk level; [] allowed
+    "Changes validation behavior in an important user flow"
   ]
 }
 ```
@@ -224,23 +343,63 @@ Produce an array of chapter objects. Each chapter:
 
 After building the chapters, generate a **prologue** — a high-level overview of the entire change. The prologue helps reviewers orient themselves before diving into individual chapters.
 
-Use `commits.txt` from the prep output for context.
+The prologue summarizes the change for quick scanning — reviewers will spend 5 seconds on it. Write like you're telling a coworker what this change does. Plain English, no filler, no ceremony. Every word should earn its place.
 
-Using the diff, chapters, and commit messages, produce a `prologue` object with the following fields:
+Use the `=== COMMIT MESSAGES ===` section — and the `=== PULL REQUEST ===` section, when present — from the prep output for context.
 
-### motivation (string or null)
+Using the diff, chapters, and that context, produce a `prologue` object with the following fields:
 
-One sentence a non-engineer would understand. What was broken, annoying, or missing — from a person's perspective. If the commit messages are generic and the diff doesn't make the motivation obvious, use `null`.
+### motivation and outcome (each: string or null)
 
-**Good:** "Dashboards would break during deploys, so people had to keep refreshing until things came back."
-**Bad:** "The API client had no retry logic for 503 errors." (too technical — no one outside the team knows what that means)
+Two fields — `motivation` and `outcome` — or `null` if you can't confidently infer each.
+Use the PR title/description as signal when the prep file has a `=== PULL REQUEST ===` section; otherwise use the commit messages. If they're generic or contradicted by the diff, return `null`.
 
-### outcome (string or null)
+Write for someone on their first week at the company. No architecture knowledge, no system internals, no code concepts.
+You can name product features (dashboards, onboarding, billing) but never explain HOW something works — only WHAT was wrong and WHAT got better.
+Think: "if I said this to someone at a dinner party, would they get it?"
 
-One sentence a non-engineer would understand. What's better now. Same null rule as motivation.
+`motivation`: One sentence. What was annoying, broken, or missing — from a person's perspective.
+`outcome`: One sentence. What's better now for that person.
 
-**Good:** "Dashboards stay up during deploys now."
-**Bad:** "Added exponential backoff with a base delay of 100ms." (implementation detail)
+✓ motivation: "Dashboards would break during deploys, so people had to keep refreshing until things came back."
+  outcome: "Dashboards stay up during deploys now."
+
+✓ motivation: "We were wasting money processing boring PRs that nobody needed to review."
+  outcome: "Those PRs get skipped automatically now."
+
+✓ motivation: "People who already had an account would get stuck on a dead-end page if they tried to sign up again."
+  outcome: "They get sent to the login page instead."
+
+✓ motivation: "Loading the activity feed was painfully slow on repos with lots of PRs."
+  outcome: "It loads fast now, even on big repos."
+
+✗ motivation: "This PR makes improvements to the codebase." (too vague — return null instead)
+✗ motivation: "The API client had no retry logic for 503 errors." (no one outside this team knows what that means)
+✗ motivation: "We weren't handling temporary server errors." (still too inside-baseball)
+✗ motivation: "The analysis pipeline lacked early-exit logic for excluded file patterns." (way too technical — say what people experienced)
+✗ outcome: "Added exponential backoff with a base delay of 100ms." (implementation detail — belongs in keyChanges)
+✗ outcome: "The session token is now preserved during the reset flow." (only a developer would understand this)
+✗ outcome: "Introduced a caching layer with TTL-based invalidation." (say what got faster, not how)
+
+### rootCause (string or null)
+
+The technical reason the problem in `motivation` happened — or `null`.
+Unlike motivation and outcome, this is for the engineer reviewing the change, so it CAN use technical terms: file, function, and system names, and the underlying mechanism.
+1–2 sentences explaining WHY the old code behaved the way it did.
+
+Only produce it when the change fixes a bug, regression, or broken behavior AND the cause is evident from the diff or description.
+Return `null` for features, refactors, config changes, dependency bumps, or whenever you can't confidently identify the cause from what you see. Never speculate.
+Don't restate the symptom (that's motivation) or list what changed (that's keyChanges) — explain the mechanism behind the failure.
+
+✓ motivation: "Sessions would randomly log people out in the middle of what they were doing."
+  rootCause: "The session cookie's expiry was derived from each web node's local clock instead of the token's issued-at time, so any clock skew between nodes expired sessions early."
+
+✓ motivation: "Large CSV exports would silently cut off partway through."
+  rootCause: "The export buffered every row in memory and flushed once at the end, so exports past the buffer's size limit were truncated instead of being streamed to the client incrementally."
+
+✗ rootCause: "There was a bug in the session logic." (vague — explain the mechanism or return null)
+✗ rootCause: "Added retry logic and a reconciliation job." (that's what changed — belongs in keyChanges)
+✗ rootCause: "Sessions were expiring too early." (that's the symptom — belongs in motivation)
 
 ### diagram (string or null)
 
@@ -261,28 +420,49 @@ Each object has:
 - `summary`: 6–10 words describing what's different now. **Outcome-focused**, not action-focused.
 - `description`: Capitalized sentence, 10–15 words of additional context.
 
-**Good:** `summary: "Audit runs are now tracked in a database"`, `description: "Uses new Drizzle ORM schema with full history retention"`
-**Bad:** `summary: "Adds Drizzle ORM layer"` (action-focused — describe what changed, not what you did)
+✓ summary: "Audit runs are now tracked in a database", description: "Uses new Drizzle ORM schema with full history retention"
+✓ summary: "Users stay logged in after password reset", description: "Session token is now preserved during the reset flow"
+✓ summary: "SSO now works with Okta and Azure AD", description: "Expanded identity provider support beyond just Google"
+✓ summary: "Deprecated v1 API endpoints are removed", description: "Cleans up unused routes that were causing confusion"
+
+✗ summary: "Adds Drizzle ORM layer" (action-focused, should describe outcome)
+✗ summary: "Fixed bug" (too vague, what's different now?)
+✗ description: "uses new schema" (should be capitalized: "Uses new schema")
 
 ### focusAreas (array of 1–5 objects)
 
-Always provide at least 1 focus area. Even clean changes have spots worth a reviewer's attention.
+ALWAYS provide 1–5 focus areas. These tell reviewers where to pay attention.
+
+Two categories:
+1. PROBLEMS (`security`, `breaking-change`, `high-complexity`, `data-integrity`) → use `critical`/`high`/`medium` severity
+2. POINTS OF INTEREST (`new-pattern`, `architecture`, `performance`, `testing-gap`) → use `info` severity
 
 Each object has:
 - `type`: one of `security`, `breaking-change`, `high-complexity`, `data-integrity`, `new-pattern`, `architecture`, `performance`, `testing-gap`
 - `severity`: one of `critical`, `high`, `medium` (for problems) or `info` (for points of interest)
 - `title`: 3–5 word noun phrase (e.g., "Unvalidated user input")
-- `description`: WHY this was flagged + a declarative action for the reviewer. Use "confirm", "verify", or "check" to give the reviewer a specific task.
+- `description`: WHY this was flagged + a declarative action for the reviewer. Use "confirm", "verify", or "check" to give the reviewer a specific task. Be as specific as needed — clarity over brevity.
 - `locations`: array of file paths where this applies
 
-**Good:** `type: "security", severity: "high", title: "Unvalidated user input", description: "User-provided ID passed directly to database query — confirm input is validated and parameterized"`
-**Bad:** `description: "Worth understanding"` (no action, vague)
+Even "clean" changes have areas worth a reviewer's attention — new patterns, complex logic, etc.
+
+✓ type: "security", severity: "high", title: "Unvalidated user input", description: "User-provided ID passed directly to database query — confirm input is validated and parameterized"
+✓ type: "new-pattern", severity: "info", title: "New caching layer", description: "Introduces Redis with custom invalidation on user updates — verify cache is cleared on all relevant mutations"
+✓ type: "architecture", severity: "info", title: "New service boundary", description: "Auth logic extracted into separate module — confirm error handling and retry logic is consistent with existing patterns"
+✓ type: "high-complexity", severity: "medium", title: "Complex date handling", description: "Converts between UTC, user timezone, and server time — check that daylight saving transitions are handled"
+
+✗ description: "Worth understanding" (no action, vague)
+✗ description: "Watch for edge cases" (no specific action)
+✗ description: "Review carefully" (generic)
 
 ### complexity
 
 Object with:
 - `level`: one of `low`, `medium`, `high`, `very-high`
-- `reasoning`: brief explanation (e.g., "New DB schema plus multiple service changes")
+- `reasoning`: brief explanation of complexity
+
+✓ reasoning: "New DB schema plus multiple service changes"
+✗ reasoning: "This change involves modifications across multiple interconnected systems"
 
 ### Style
 
@@ -296,8 +476,27 @@ Compute a unique temp path and write the JSON via a bash heredoc:
 AGENT_OUTPUT=$(mktemp "${TMPDIR:-/tmp}/stage-agent-output.XXXXXX")
 cat > "$AGENT_OUTPUT" << 'AGENT_EOF'
 {
-  "chapters": [ ... ],
-  "prologue": { ... }
+  "chapters": [
+    {
+      "id": "chapter-1",
+      "order": 1,
+      "title": "...",
+      "summary": "...",
+      "hunkRefs": [ ... ],
+      "keyChanges": [ ... ],
+      "riskLevel": "medium",
+      "riskReasons": [ "..." ]
+    }
+  ],
+  "prologue": {
+    "motivation": "...",
+    "rootCause": null,
+    "outcome": "...",
+    "diagram": null,
+    "keyChanges": [ ... ],
+    "focusAreas": [ ... ],
+    "complexity": { "level": "medium", "reasoning": "..." }
+  }
 }
 AGENT_EOF
 ```
@@ -314,8 +513,11 @@ Field rules:
 | `chapters[].keyChanges[].lineRefs` | Array with at least one entry |
 | `lineRefs[].side` | `"additions"` (right side) or `"deletions"` (left side) |
 | `lineRefs[].startLine` / `endLine` | Positive integers; `endLine >= startLine` |
+| `chapters[].riskLevel` | One of `"high"`, `"medium"`, `"low"`, or `null` — classify per 3e; how bad it would be if a reviewer missed a problem, not a prediction that the code is buggy |
+| `chapters[].riskReasons` | Array of strings (`[]` allowed) — short plain-English reasons; do not restate file counts, change volume, or speculate about bug likelihood |
 | `prologue` | Optional object; omit entirely if not desired |
 | `prologue.motivation` | String or `null` |
+| `prologue.rootCause` | String or `null` — only when the change fixes a bug/regression and the cause is evident |
 | `prologue.outcome` | String or `null` |
 | `prologue.diagram` | Mermaid source string (no code fences) or `null`; omit for most changes |
 | `prologue.keyChanges` | Array of 2–5 objects with `summary` and `description` |
