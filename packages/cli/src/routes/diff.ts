@@ -32,6 +32,8 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 				await execFileAsync(
 					"git",
 					[
+						"-c",
+						"core.quotepath=off",
 						"diff",
 						"--no-index",
 						"--no-color",
@@ -209,7 +211,15 @@ function unquoteGitPath(headerPath: string | undefined): string | null {
 			i += 3;
 			continue;
 		}
-		const shorthand: Record<string, number> = { t: 0x09, n: 0x0a, r: 0x0d };
+		const shorthand: Record<string, number> = {
+			a: 0x07,
+			b: 0x08,
+			t: 0x09,
+			n: 0x0a,
+			v: 0x0b,
+			f: 0x0c,
+			r: 0x0d,
+		};
 		const code = shorthand[next];
 		bytes.push(code ?? Buffer.from(next, "utf8")[0] ?? 0);
 		i += 1;

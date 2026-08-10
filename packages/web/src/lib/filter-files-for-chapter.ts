@@ -1,4 +1,4 @@
-import { getSingularPatch, parseDiffFromFile } from "@pierre/diffs";
+import { type FileDiffMetadata, getSingularPatch, parseDiffFromFile } from "@pierre/diffs";
 import { HEADER_ONLY_OLD_START, type HunkReference } from "@stagereview/types/chapters";
 import type { FileContentsMap } from "@stagereview/types/diff";
 import type { FileDiffEntry } from "./parse-diff";
@@ -26,18 +26,73 @@ function splitPatchByFile(patch: string): FileSegment[] {
 	return segments;
 }
 
+const DIFF_GIT_QUOTED_NAMES_RE = /^diff --git "a\/((?:[^"\\]|\\.)+)" "b\/((?:[^"\\]|\\.)+)"$/m;
 const DIFF_GIT_NAMES_RE = /^diff --git a\/(.+?) b\/(.+?)$/m;
-const PLUS_NAME_RE = /^\+\+\+ (?:b\/)?(.+)$/m;
-const MINUS_NAME_RE = /^--- (?:a\/)?(.+)$/m;
+const PLUS_NAME_RE = /^\+\+\+ (.+)$/m;
+const MINUS_NAME_RE = /^--- (.+)$/m;
+
+/**
+ * Decode the C-style escapes git emits inside quoted diff header paths
+ * (spaces, non-ASCII under core.quotepath): octal byte escapes reassembled
+ * as UTF-8 plus control shorthands. Mirrors the CLI server's decoder.
+ */
+function decodeQuotedPath(raw: string): string {
+	const bytes: number[] = [];
+	const encoder = new TextEncoder();
+	for (let i = 0; i < raw.length; i++) {
+		const ch = raw[i];
+		if (ch !== "\\") {
+			for (const byte of encoder.encode(ch ?? "")) bytes.push(byte);
+			continue;
+		}
+		const next = raw[i + 1];
+		if (next === undefined) break;
+		const octal = raw.slice(i + 1, i + 4);
+		if (/^[0-7]{3}$/.test(octal)) {
+			bytes.push(Number.parseInt(octal, 8));
+			i += 3;
+			continue;
+		}
+		const shorthand: Record<string, number> = {
+			a: 0x07,
+			b: 0x08,
+			t: 0x09,
+			n: 0x0a,
+			v: 0x0b,
+			f: 0x0c,
+			r: 0x0d,
+		};
+		const code = shorthand[next];
+		if (code !== undefined) {
+			bytes.push(code);
+		} else {
+			for (const byte of encoder.encode(next)) bytes.push(byte);
+		}
+		i += 1;
+	}
+	return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+function decodeHeaderName(raw: string | undefined, prefix: "a/" | "b/"): string | undefined {
+	if (!raw) return undefined;
+	let decoded = raw;
+	if (decoded.startsWith('"') && decoded.endsWith('"') && decoded.length >= 2) {
+		decoded = decodeQuotedPath(decoded.slice(1, -1));
+	}
+	if (decoded === "/dev/null") return undefined;
+	if (decoded.startsWith(prefix)) decoded = decoded.slice(prefix.length);
+	return decoded;
+}
 
 function parseFileNames(segment: string): { prevName?: string; name?: string } {
-	const plusMatch = segment.match(PLUS_NAME_RE);
-	const minusMatch = segment.match(MINUS_NAME_RE);
-	const gitMatch = segment.match(DIFF_GIT_NAMES_RE);
-	const name =
-		plusMatch?.[1] && plusMatch[1] !== "/dev/null" ? plusMatch[1] : (gitMatch?.[2] ?? undefined);
-	const prevName =
-		minusMatch?.[1] && minusMatch[1] !== "/dev/null" ? minusMatch[1] : (gitMatch?.[1] ?? undefined);
+	const plusName = decodeHeaderName(segment.match(PLUS_NAME_RE)?.[1], "b/");
+	const minusName = decodeHeaderName(segment.match(MINUS_NAME_RE)?.[1], "a/");
+	const quotedGit = segment.match(DIFF_GIT_QUOTED_NAMES_RE);
+	const gitMatch = quotedGit ?? segment.match(DIFF_GIT_NAMES_RE);
+	const gitOld = quotedGit ? decodeQuotedPath(gitMatch?.[1] ?? "") : gitMatch?.[1];
+	const gitNew = quotedGit ? decodeQuotedPath(gitMatch?.[2] ?? "") : gitMatch?.[2];
+	const name = plusName ?? gitNew ?? undefined;
+	const prevName = minusName ?? gitOld ?? undefined;
 	return { prevName, name };
 }
 
@@ -163,7 +218,8 @@ export function filterFilesForChapter(
 			// sentinel ref — so chapter views can render them through the
 			// image/full-preview branches. Mirrors hosted's filterFilesForChapter,
 			// which passes zero-hunk files straight through.
-			const diff = getSingularPatch(segment.text);
+			const diff = parseSegment(segment.text);
+			if (diff === null) continue;
 			result.push({ file: fileDiffToPullRequestFile(diff), diff });
 			continue;
 		}
@@ -193,10 +249,24 @@ export function filterFilesForChapter(
 				...headerLines,
 				...chapterHunks.flatMap((h) => [h.header, ...h.lines]),
 			].join("\n");
-			const diff = getSingularPatch(filteredText);
+			const diff = parseSegment(filteredText);
+			if (diff === null) continue;
 			result.push({ file: fileDiffToPullRequestFile(diff), diff });
 		}
 	}
 
 	return result;
+}
+
+/**
+ * Parse one file's patch text through Pierre, skipping segments its parser
+ * rejects (e.g. C-quoted header paths from patches generated before the CLI
+ * disabled core.quotepath) instead of crashing the whole chapter view.
+ */
+function parseSegment(text: string): FileDiffMetadata | null {
+	try {
+		return getSingularPatch(text);
+	} catch {
+		return null;
+	}
 }

@@ -65,7 +65,16 @@ export function readGitUserName(repoRoot: string): string | null {
 
 // View-time diffs must force the same a/ b/ prefixes generation-time getRawDiff
 // forces, so users with diff.noprefix=true get consistent patches.
-const DIFF_BASE_ARGS = ["diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/"] as const;
+// `core.quotepath=off` emits paths as raw UTF-8 instead of C-quoted octal —
+// the same format GitHub's API patches use, which the web diff parser expects.
+const DIFF_BASE_ARGS = [
+	"-c",
+	"core.quotepath=off",
+	"diff",
+	"--no-color",
+	"--src-prefix=a/",
+	"--dst-prefix=b/",
+] as const;
 
 export function buildDiffArgs(run: ChapterRunRow): string[] {
 	if (run.scopeKind === SCOPE_KIND.COMMITTED) {
@@ -144,15 +153,11 @@ export function resolveHead(): string {
 }
 
 export function getRawDiff(args: string[]): string {
-	return execFileSync(
-		"git",
-		["diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", ...args],
-		{
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-			maxBuffer: 50 * 1024 * 1024,
-		},
-	);
+	return execFileSync("git", [...DIFF_BASE_ARGS, ...args], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+		maxBuffer: 50 * 1024 * 1024,
+	});
 }
 
 export function getUntrackedFiles(): string[] {
@@ -176,6 +181,8 @@ export function getUntrackedDiff(files: string[]): string {
 			execFileSync(
 				"git",
 				[
+					"-c",
+					"core.quotepath=off",
 					"diff",
 					"--no-index",
 					"--no-color",

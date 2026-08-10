@@ -393,10 +393,14 @@ describe("diff API", () => {
 		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
 		expect(res.status).toBe(200);
 		const data = parseDiffResponse(res.body);
+		// The untracked symlink appears in the patch, so its entry must exist —
+		// with null content rather than the out-of-repo target bytes. Guarding
+		// on presence would let a silent inclusion regression skip the check.
 		const entry = data.fileContents["leak.png"];
-		if (entry !== undefined) {
-			expect(entry.newContent).toBeNull();
-		}
+		expect(entry).toBeDefined();
+		expect(entry?.newContent).toBeNull();
+		const outsideBase64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]).toString("base64");
+		expect(res.body).not.toContain(outsideBase64);
 		await fs.rm(outside, { force: true });
 	});
 
