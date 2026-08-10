@@ -5,7 +5,7 @@ import {
 	SUBJECT_TYPE,
 } from "@stagereview/types/review";
 import { ChevronRight, CornerDownLeft, File, MessageSquarePlus, Trash2 } from "lucide-react";
-import { type KeyboardEvent, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { CommentMarkdownEditor } from "@/components/comments/comment-markdown-editor";
 import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
@@ -183,8 +183,8 @@ export function ReviewPanel() {
 	const submitRef = useRef<() => void>(() => {});
 
 	// Hosted binds these on the pending review panel: mod+j toggles the tray,
-	// mod+enter submits when focus is inside it (the textarea also handles
-	// mod+enter directly for the common case).
+	// mod+enter submits when focus is inside it. The global hotkey is the only
+	// mod+enter path — a textarea-level handler too would double-submit.
 	useHotkeys(
 		KEYBOARD_SHORTCUTS.TOGGLE_REVIEW_PANEL.hotkey,
 		() => setOpen((v) => !v),
@@ -263,13 +263,6 @@ export function ReviewPanel() {
 
 	submitRef.current = () => void handleSubmit();
 
-	function handleKeyDown(e: KeyboardEvent) {
-		if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-			e.preventDefault();
-			void handleSubmit();
-		}
-	}
-
 	return (
 		<>
 			<Popover open={open} onOpenChange={setOpen}>
@@ -334,7 +327,6 @@ export function ReviewPanel() {
 								? "Summarize the requested changes…"
 								: "Leave a summary comment (optional)…"
 						}
-						onKeyDown={handleKeyDown}
 						minRows={3}
 						maxRows={10}
 						className="mt-3 rounded-lg border border-border bg-card transition-shadow has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring/20"
