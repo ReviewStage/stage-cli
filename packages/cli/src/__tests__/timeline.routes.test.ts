@@ -63,6 +63,60 @@ describe("timeline API — assembly", () => {
 		expect(review.comments.map((comment) => comment.id)).toEqual([1, 2]);
 	});
 
+	it("keeps comments and reviews authored by deleted accounts as the ghost user", async () => {
+		const timelineWithGhost = [
+			{
+				event: "commented",
+				id: 90,
+				node_id: "IC_ghost",
+				user: null,
+				body: "Comment from a deleted account",
+				created_at: "2026-05-01T11:00:00Z",
+				html_url: "https://github.com/owner/repo/pull/7#issuecomment-90",
+			},
+			{
+				event: "reviewed",
+				id: 91,
+				node_id: "PRR_ghost",
+				user: null,
+				body: null,
+				state: "approved",
+				html_url: "https://github.com/owner/repo/pull/7#pullrequestreview-91",
+				submitted_at: "2026-05-01T12:00:00Z",
+			},
+		];
+		await harness.writeFakeGh({
+			timeline: JSON.stringify([timelineWithGhost]),
+			reviewComments: "[[]]",
+			threadMetadata: JSON.stringify({
+				data: {
+					repository: {
+						pullRequest: {
+							reactions: { nodes: [] },
+							comments: { nodes: [] },
+							reviewThreads: {
+								pageInfo: { hasNextPage: false, endCursor: null },
+								nodes: [],
+							},
+						},
+					},
+				},
+			}),
+		});
+		const timeline = await fetchTimeline(harness.insertRun());
+
+		const comment = timeline.events.find((e) => e.type === TIMELINE_EVENT_TYPE.ISSUE_COMMENT);
+		const review = timeline.events.find((e) => e.type === TIMELINE_EVENT_TYPE.REVIEW);
+		expect(comment).toBeDefined();
+		expect(review).toBeDefined();
+		if (comment?.type === TIMELINE_EVENT_TYPE.ISSUE_COMMENT) {
+			expect(comment.data.user.login).toBe("ghost");
+		}
+		if (review?.type === TIMELINE_EVENT_TYPE.REVIEW) {
+			expect(review.data.user.login).toBe("ghost");
+		}
+	});
+
 	it("carries dismissal-free review state and drops unknown event types", async () => {
 		await harness.writeFakeGh({
 			timeline: TIMELINE_JSON,

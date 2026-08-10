@@ -15,6 +15,21 @@ export const TimelineUserSchema = z.object({
 });
 export type TimelineUser = z.infer<typeof TimelineUserSchema>;
 
+/**
+ * GitHub returns `user: null` for content authored by deleted accounts and
+ * displays it as the @ghost user; normalize to the same placeholder so the
+ * comment survives validation instead of dropping out of the timeline.
+ */
+export const GHOST_TIMELINE_USER: TimelineUser = {
+	login: "ghost",
+	avatar_url: "https://avatars.githubusercontent.com/u/10137?v=4",
+	type: "User",
+};
+
+export const NullableTimelineUserSchema = TimelineUserSchema.nullable().transform(
+	(user) => user ?? GHOST_TIMELINE_USER,
+);
+
 export const REACTION_CONTENT = {
 	THUMBS_UP: "+1",
 	THUMBS_DOWN: "-1",
@@ -41,7 +56,7 @@ const GitHubAppRefSchema = z.object({
 export const TimelineIssueCommentSchema = z.object({
 	id: z.number(),
 	node_id: z.string(),
-	user: TimelineUserSchema,
+	user: NullableTimelineUserSchema,
 	body: z.string().optional(),
 	/** GitHub's server-rendered HTML (full media type) — resolves @mentions, refs, emoji. */
 	body_html: z.string().optional(),
@@ -63,7 +78,7 @@ const ReviewDismissalSchema = z.object({
 export const TimelineReviewSchema = z.object({
 	id: z.number(),
 	node_id: z.string(),
-	user: TimelineUserSchema,
+	user: NullableTimelineUserSchema,
 	body: z.string().nullable(),
 	body_html: z.string().optional(),
 	state: z.string(),
