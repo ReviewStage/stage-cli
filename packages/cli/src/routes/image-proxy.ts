@@ -142,6 +142,7 @@ export function imageProxyRoutes(): Route[] {
 					});
 				} catch (error) {
 					if (error instanceof DOMException && error.name === "TimeoutError") {
+						console.error(`Image proxy upstream fetch timed out: ${error.message}`);
 						writeJson(res, 502, { error: "Upstream image fetch timed out" });
 						return;
 					}
@@ -170,6 +171,7 @@ export function imageProxyRoutes(): Route[] {
 						return;
 					}
 					if (error instanceof DOMException && error.name === "TimeoutError") {
+						console.error(`Image proxy upstream fetch timed out: ${error.message}`);
 						writeJson(res, 502, { error: "Upstream image fetch timed out" });
 						return;
 					}

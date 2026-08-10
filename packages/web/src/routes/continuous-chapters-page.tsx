@@ -637,28 +637,29 @@ const ContinuousChapterSection = memo(function ContinuousChapterSection({
 	const { focusedKeyChangeId, focusedScrollTarget, focusedLineRefs } = shared;
 	const focusedLineRefsRef = useRef(focusedLineRefs);
 	focusedLineRefsRef.current = focusedLineRefs;
+	// Latest-callback refs keep this a one-shot per focus action: collapse or
+	// viewed-state changes rebuild scrollToLine, and re-running the effect for
+	// that would scroll back to (and re-expand) the old focused line.
+	const scrollToLineRef = useRef(scrollToLine);
+	scrollToLineRef.current = scrollToLine;
+	const cancelPendingLineScrollRef = useRef(cancelPendingLineScroll);
+	cancelPendingLineScrollRef.current = cancelPendingLineScroll;
 	useEffect(() => {
 		if (focusedScrollTarget && isFocusOwner) {
-			scrollToLine(focusedScrollTarget);
+			scrollToLineRef.current(focusedScrollTarget);
 			return;
 		}
 		if (!focusedKeyChangeId || !isFocusOwner) {
 			// Focus cleared or moved to another chapter — invalidate any
 			// in-flight scroll so its pending observers don't align a stale
 			// line after the highlight disappeared.
-			cancelPendingLineScroll();
+			cancelPendingLineScrollRef.current();
 			return;
 		}
 		const target = focusedLineRefsRef.current?.[0];
 		if (!target) return;
-		scrollToLine(target);
-	}, [
-		cancelPendingLineScroll,
-		focusedKeyChangeId,
-		focusedScrollTarget,
-		isFocusOwner,
-		scrollToLine,
-	]);
+		scrollToLineRef.current(target);
+	}, [focusedKeyChangeId, focusedScrollTarget, isFocusOwner]);
 
 	const handleToggleFileViewed = useCallback(
 		(filePath: string) => {

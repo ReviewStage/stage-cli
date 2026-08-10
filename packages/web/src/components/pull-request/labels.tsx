@@ -103,6 +103,17 @@ function useLabelManager({ open, search }: UseLabelManagerOptions) {
 	const [optimisticRemovals, setOptimisticRemovals] = useState<Set<string>>(() => new Set());
 	const [pendingAdditions, setPendingAdditions] = useState<Set<string>>(() => new Set());
 
+	// Stack navigation swaps runs while this header stays mounted; optimistic
+	// state from the previous PR must not bleed into the next one. Render-time
+	// state adjustment per React's derived-state guidance.
+	const [stateOwner, setStateOwner] = useState({ runId, number });
+	if (stateOwner.runId !== runId || stateOwner.number !== number) {
+		setStateOwner({ runId, number });
+		setOptimisticAdditions(new Map());
+		setOptimisticRemovals(new Set());
+		setPendingAdditions(new Set());
+	}
+
 	// Hosted reads current labels off its PR payload; the CLI's PR wire shape has
 	// no labels, so they come from the labels route.
 	const { data: currentLabels } = useQuery({

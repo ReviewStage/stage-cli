@@ -153,8 +153,8 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 		if (!text.startsWith("diff --git ")) continue;
 
 		const isBinary = BINARY_RE.test(text);
-		const headerEnd = text.indexOf("@@");
-		const isSymlink = SYMLINK_MODE_RE.test(headerEnd === -1 ? text : text.slice(0, headerEnd));
+		const hunkStart = text.search(/^@@ /m);
+		const isSymlink = SYMLINK_MODE_RE.test(hunkStart === -1 ? text : text.slice(0, hunkStart));
 
 		let oldPath = decodeHeaderPath(text.match(MINUS_RE)?.[1], "a/");
 		let newPath = decodeHeaderPath(text.match(PLUS_RE)?.[1], "b/");
@@ -237,15 +237,20 @@ function decodeHeaderPath(raw: string | undefined, prefix: "a/" | "b/" | null): 
 function unquoteGitPath(headerPath: string | undefined): string | null {
 	if (headerPath === undefined) return null;
 	const bytes: number[] = [];
-	for (let i = 0; i < headerPath.length; i++) {
-		const ch = headerPath[i];
+	// Iterate code points, not UTF-16 units: a literal non-BMP character (git
+	// emits those unescaped) would otherwise be split into lone surrogates and
+	// decode as replacement characters. Escape sequences are ASCII-only, so
+	// indexing within them stays unit-safe.
+	const chars = Array.from(headerPath);
+	for (let i = 0; i < chars.length; i++) {
+		const ch = chars[i];
 		if (ch !== "\\") {
 			for (const byte of Buffer.from(ch ?? "", "utf8")) bytes.push(byte);
 			continue;
 		}
-		const next = headerPath[i + 1];
+		const next = chars[i + 1];
 		if (next === undefined) break;
-		const octal = headerPath.slice(i + 1, i + 4);
+		const octal = chars.slice(i + 1, i + 4).join("");
 		if (/^[0-7]{3}$/.test(octal)) {
 			bytes.push(Number.parseInt(octal, 8));
 			i += 3;

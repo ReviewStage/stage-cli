@@ -39,15 +39,18 @@ const MINUS_NAME_RE = /^--- (.+)$/m;
 function decodeQuotedPath(raw: string): string {
 	const bytes: number[] = [];
 	const encoder = new TextEncoder();
-	for (let i = 0; i < raw.length; i++) {
-		const ch = raw[i];
+	// Code-point iteration: literal non-BMP characters must not be split into
+	// lone surrogates (escape sequences are ASCII-only, so inner indexing is safe).
+	const chars = Array.from(raw);
+	for (let i = 0; i < chars.length; i++) {
+		const ch = chars[i];
 		if (ch !== "\\") {
 			for (const byte of encoder.encode(ch ?? "")) bytes.push(byte);
 			continue;
 		}
-		const next = raw[i + 1];
+		const next = chars[i + 1];
 		if (next === undefined) break;
-		const octal = raw.slice(i + 1, i + 4);
+		const octal = chars.slice(i + 1, i + 4).join("");
 		if (/^[0-7]{3}$/.test(octal)) {
 			bytes.push(Number.parseInt(octal, 8));
 			i += 3;
