@@ -527,8 +527,16 @@ async function withGitHubViewedPaths(
  * swallowed — the local operation always succeeds regardless.
  */
 class GitHubViewSync {
-	/** runId → resolved mutation target; null caches "skip" (non-PR run or failed lookup). */
-	private readonly targets = new Map<string, { repoRoot: string; nodeId: string } | null>();
+	/**
+	 * runId → resolved mutation target, "no-pr" (branch/non-GitHub run — safe
+	 * to ignore), or "unresolved" (a PR run whose identity lookup failed —
+	 * must poison the whole path, or a fork with unavailable GitHub access
+	 * would make another run's PR look unambiguous).
+	 */
+	private readonly targets = new Map<
+		string,
+		{ repoRoot: string; nodeId: string } | "no-pr" | "unresolved"
+	>();
 
 	constructor(private readonly db: StageDb) {}
 
@@ -551,9 +559,14 @@ class GitHubViewSync {
 		// every run it fanned out to resolves to one PR (node id); same-PR
 		// re-imports dedupe to a single mutation.
 		const targetsByPath = new Map<string, Map<string, { repoRoot: string; nodeId: string }>>();
+		const unresolvedPaths = new Set<string>();
 		for (const { runId, filePath } of paths) {
 			const target = await this.resolveTarget(runId);
-			if (!target) continue;
+			if (target === "no-pr") continue;
+			if (target === "unresolved") {
+				unresolvedPaths.add(filePath);
+				continue;
+			}
 			let byNode = targetsByPath.get(filePath);
 			if (!byNode) {
 				byNode = new Map();
@@ -562,9 +575,9 @@ class GitHubViewSync {
 			byNode.set(target.nodeId, target);
 		}
 		for (const [filePath, byNode] of targetsByPath) {
-			if (byNode.size > 1) {
+			if (byNode.size > 1 || unresolvedPaths.has(filePath)) {
 				console.error(
-					`Skipping GitHub ${verb} sync for ${filePath}: matched runs resolve to ${byNode.size} distinct pull requests`,
+					`Skipping GitHub ${verb} sync for ${filePath}: matched runs do not resolve to a single pull request`,
 				);
 				continue;
 			}
@@ -594,7 +607,7 @@ class GitHubViewSync {
 			.all();
 		const prRun = pullRequestRunTarget(run);
 
-		let target: { repoRoot: string; nodeId: string } | null = null;
+		let target: { repoRoot: string; nodeId: string } | "no-pr" | "unresolved" = "no-pr";
 		if (prRun) {
 			try {
 				const nodeId = await getPullRequestNodeId(prRun.repoRoot, prRun.repo, prRun.prNumber);
@@ -603,6 +616,7 @@ class GitHubViewSync {
 				console.error(
 					`Failed to resolve pull request node id for GitHub view sync: ${errorMessage(err)}`,
 				);
+				target = "unresolved";
 			}
 		}
 		this.targets.set(runId, target);
