@@ -30,4 +30,13 @@ export {
 	resolvePullRequestRefs,
 } from "./pull-request-ref.js";
 export { type GitHubRepo, isGitHubRemote, parseGitHubRepo } from "./repo.js";
+export {
+	FILE_VIEWED_STATE,
+	type FileViewedState,
+	getPullRequestNodeId,
+	getViewedFiles,
+	markFileAsViewed,
+	unmarkFileAsViewed,
+	type ViewedFile,
+} from "./viewed-files.js";
 export { type GitHubViewer, getGitHubViewer } from "./viewer.js";

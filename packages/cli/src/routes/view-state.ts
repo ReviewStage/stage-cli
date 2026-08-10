@@ -11,6 +11,15 @@ import {
 	keyChange,
 	keyChangeView,
 } from "../db/schema/index.js";
+import {
+	FILE_VIEWED_STATE,
+	type GitHubRepo,
+	getPullRequestNodeId,
+	getViewedFiles,
+	markFileAsViewed,
+	parseGitHubRepo,
+	unmarkFileAsViewed,
+} from "../github/index.js";
 import type { Route } from "../server.js";
 import { parseJsonBody, writeJson } from "./json.js";
 
@@ -21,7 +30,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 		{
 			method: "POST",
 			pattern: "/api/chapter-view/:chapterId",
-			handler: (_req, res, params) => {
+			handler: async (_req, res, params) => {
 				const rows = resolveChapterRows(db, params.chapterId);
 				if (rows.length === 0) {
 					writeJson(res, 404, { error: `Chapter ${params.chapterId} not found` });
@@ -29,6 +38,8 @@ export function viewStateRoutes(db: StageDb): Route[] {
 				}
 				// External-id fan-out: re-imports of the same diff produce multiple chapter
 				// rows sharing one externalId, and view-state must survive across them.
+				const cfvInserts = chapterFileViewInserts(rows);
+				let promoted: RunPath[] = [];
 				db.transaction((tx) => {
 					tx.insert(chapterView)
 						.values(rows.map((r) => ({ userId: LOCAL_USER_ID, chapterId: r.id })))
@@ -37,22 +48,21 @@ export function viewStateRoutes(db: StageDb): Route[] {
 
 					// file_view is only promoted once every chapter in the run touching a
 					// path has a chapter_file_view row for it — see promoteFullyCoveredFiles.
-					const cfvInserts = chapterFileViewInserts(rows);
-					if (cfvInserts.length === 0) {
-						writeJson(res, 200, {});
-						return;
-					}
+					if (cfvInserts.length === 0) return;
 					tx.insert(chapterFileView).values(cfvInserts).onConflictDoNothing().run();
 
-					promoteFullyCoveredFiles(tx, touchedRunPaths(rows));
+					promoted = promoteFullyCoveredFiles(tx, touchedRunPaths(rows));
 				});
+				// Hosted's mark rule: a file reaches GitHub only once every chapter
+				// containing it is viewed — exactly the promotion condition above.
+				await new GitHubViewSync(db).mark(promoted);
 				writeJson(res, 200, {});
 			},
 		},
 		{
 			method: "DELETE",
 			pattern: "/api/chapter-view/:chapterId",
-			handler: (_req, res, params) => {
+			handler: async (_req, res, params) => {
 				const rows = resolveChapterRows(db, params.chapterId);
 				if (rows.length === 0) {
 					// Idempotent: if the chapter doesn't exist there's nothing to delete. The SPA
@@ -60,6 +70,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 					writeJson(res, 200, {});
 					return;
 				}
+				const touched = touchedRunPaths(rows);
 				db.transaction((tx) => {
 					const chapterIds = rows.map((r) => r.id);
 					tx.delete(chapterView)
@@ -82,7 +93,6 @@ export function viewStateRoutes(db: StageDb): Route[] {
 					// Unconditional file_view clear for every path the unmarked chapter
 					// touched, even if other chapters still cover the path. A future mark
 					// on any covering chapter re-promotes via promoteFullyCoveredFiles.
-					const touched = touchedRunPaths(rows);
 					if (touched.length === 0) return;
 					const runIds = Array.from(new Set(touched.map((t) => t.runId)));
 					const filePaths = Array.from(new Set(touched.map((t) => t.filePath)));
@@ -96,6 +106,9 @@ export function viewStateRoutes(db: StageDb): Route[] {
 						)
 						.run();
 				});
+				// Hosted's unmark rule: any chapter-file unview unmarks the path on
+				// GitHub unconditionally, mirroring the file_view clear above.
+				await new GitHubViewSync(db).unmark(touched);
 				writeJson(res, 200, {});
 			},
 		},
@@ -157,6 +170,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 					.values({ userId: LOCAL_USER_ID, runId, filePath: parsed.path })
 					.onConflictDoNothing()
 					.run();
+				await new GitHubViewSync(db).mark([{ runId, filePath: parsed.path }]);
 				writeJson(res, 200, {});
 			},
 		},
@@ -209,13 +223,14 @@ export function viewStateRoutes(db: StageDb): Route[] {
 						)
 						.run();
 				});
+				await new GitHubViewSync(db).unmark([{ runId, filePath: parsed.path }]);
 				writeJson(res, 200, {});
 			},
 		},
 		{
 			method: "GET",
 			pattern: "/api/runs/:runId/view-state",
-			handler: (_req, res, params) => {
+			handler: async (_req, res, params) => {
 				const runId = params.runId;
 				if (!runId) {
 					writeJson(res, 400, { error: "Missing runId" });
@@ -253,7 +268,10 @@ export function viewStateRoutes(db: StageDb): Route[] {
 				writeJson(res, 200, {
 					chapterIds: viewedChapters.map((r) => r.externalId),
 					keyChangeIds: checkedKeyChanges.map((r) => r.externalId),
-					filePaths: viewedFiles.map((r) => r.filePath),
+					filePaths: await withGitHubViewedPaths(
+						run,
+						viewedFiles.map((r) => r.filePath),
+					),
 				});
 			},
 		},
@@ -313,9 +331,10 @@ function touchedRunPaths(rows: ResolvedChapterRow[]): RunPath[] {
 /**
  * Promotes file_view for each touched (runId, filePath) iff every chapter in
  * the run whose hunkRefs contain that path has a chapter_file_view row for it.
+ * Returns the promoted paths so callers can propagate the mark to GitHub.
  */
-function promoteFullyCoveredFiles(tx: Tx, touched: RunPath[]): void {
-	if (touched.length === 0) return;
+function promoteFullyCoveredFiles(tx: Tx, touched: RunPath[]): RunPath[] {
+	if (touched.length === 0) return [];
 	const runIds = Array.from(new Set(touched.map((t) => t.runId)));
 	const paths = Array.from(new Set(touched.map((t) => t.filePath)));
 
@@ -350,17 +369,23 @@ function promoteFullyCoveredFiles(tx: Tx, touched: RunPath[]): void {
 	// `marked` is always a subset of `containing` (chapter_file_view rows are
 	// only inserted for files in the chapter's own hunkRefs), so size equality
 	// is enough to detect full coverage.
-	const inserts: Array<{ userId: string; runId: string; filePath: string }> = [];
+	const promoted: RunPath[] = [];
 	for (const t of touched) {
 		const have = marked.get(t.runId)?.get(t.filePath) ?? 0;
 		const need = containing.get(t.runId)?.get(t.filePath) ?? 0;
 		if (need > 0 && have === need) {
-			inserts.push({ userId: LOCAL_USER_ID, runId: t.runId, filePath: t.filePath });
+			promoted.push({ runId: t.runId, filePath: t.filePath });
 		}
 	}
-	if (inserts.length > 0) {
-		tx.insert(fileView).values(inserts).onConflictDoNothing().run();
+	if (promoted.length > 0) {
+		tx.insert(fileView)
+			.values(
+				promoted.map((p) => ({ userId: LOCAL_USER_ID, runId: p.runId, filePath: p.filePath })),
+			)
+			.onConflictDoNothing()
+			.run();
 	}
+	return promoted;
 }
 
 type CountMap = Map<string, Map<string, number>>;
@@ -436,4 +461,121 @@ function runExists(db: StageDb, runId: string): boolean {
 		.limit(1)
 		.all();
 	return rows.length > 0;
+}
+
+// ─── GitHub viewed-state sync (PR runs only, always best-effort) ─────────────────
+
+interface PullRequestRunTarget {
+	repoRoot: string;
+	repo: GitHubRepo;
+	prNumber: number;
+}
+
+/** A run's GitHub PR context, or null for runs without a PR on a GitHub remote. */
+function pullRequestRunTarget(
+	run: { repoRoot: string; originUrl: string | null; prNumber: number | null } | undefined,
+): PullRequestRunTarget | null {
+	if (!run || run.prNumber === null) return null;
+	const repo = parseGitHubRepo(run.originUrl);
+	if (!repo) return null;
+	return { repoRoot: run.repoRoot, repo, prNumber: run.prNumber };
+}
+
+function errorMessage(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Unions GitHub's VIEWED file paths into the local set for GET view-state.
+ * Read-side merge only — we deliberately don't seed file_view rows from GitHub,
+ * so local state stays purely local and offline semantics are unchanged.
+ * GitHub being unreachable degrades to the local paths.
+ */
+async function withGitHubViewedPaths(
+	run: { repoRoot: string; originUrl: string | null; prNumber: number | null },
+	localPaths: string[],
+): Promise<string[]> {
+	const target = pullRequestRunTarget(run);
+	if (!target) return localPaths;
+	try {
+		const { files } = await getViewedFiles(target.repoRoot, target.repo, target.prNumber);
+		const union = new Set(localPaths);
+		for (const file of files) {
+			if (file.viewerViewedState === FILE_VIEWED_STATE.VIEWED) union.add(file.path);
+		}
+		return Array.from(union);
+	} catch (err) {
+		console.error(`Failed to load GitHub viewed files: ${errorMessage(err)}`);
+		return localPaths;
+	}
+}
+
+/**
+ * Best-effort per-request propagation of file view marks to GitHub, mirroring
+ * hosted Stage's chapter-file-view sync rules: mark a file only when every
+ * chapter containing it is viewed (the exact condition under which
+ * promoteFullyCoveredFiles promotes it locally), and unmark unconditionally
+ * whenever any chapter-file view is removed. Every GitHub failure is logged and
+ * swallowed — the local operation always succeeds regardless.
+ */
+class GitHubViewSync {
+	/** runId → resolved mutation target; null caches "skip" (non-PR run or failed lookup). */
+	private readonly targets = new Map<string, { repoRoot: string; nodeId: string } | null>();
+
+	constructor(private readonly db: StageDb) {}
+
+	async mark(paths: RunPath[]): Promise<void> {
+		await this.sync(paths, markFileAsViewed, "viewed");
+	}
+
+	async unmark(paths: RunPath[]): Promise<void> {
+		await this.sync(paths, unmarkFileAsViewed, "unviewed");
+	}
+
+	private async sync(
+		paths: RunPath[],
+		mutate: (repoRoot: string, pullRequestNodeId: string, path: string) => Promise<void>,
+		verb: "viewed" | "unviewed",
+	): Promise<void> {
+		for (const { runId, filePath } of paths) {
+			const target = await this.resolveTarget(runId);
+			if (!target) continue;
+			try {
+				await mutate(target.repoRoot, target.nodeId, filePath);
+			} catch (err) {
+				console.error(`Failed to sync file ${verb} state to GitHub: ${errorMessage(err)}`);
+			}
+		}
+	}
+
+	private async resolveTarget(runId: string): Promise<{ repoRoot: string; nodeId: string } | null> {
+		const cached = this.targets.get(runId);
+		if (cached !== undefined) return cached;
+
+		const [run] = this.db
+			.select({
+				repoRoot: chapterRun.repoRoot,
+				originUrl: chapterRun.originUrl,
+				prNumber: chapterRun.prNumber,
+			})
+			.from(chapterRun)
+			.where(eq(chapterRun.id, runId))
+			.limit(1)
+			.all();
+		const prRun = pullRequestRunTarget(run);
+
+		let target: { repoRoot: string; nodeId: string } | null = null;
+		if (prRun) {
+			try {
+				const nodeId = await getPullRequestNodeId(prRun.repoRoot, prRun.repo, prRun.prNumber);
+				target = { repoRoot: prRun.repoRoot, nodeId };
+			} catch (err) {
+				console.error(
+					`Failed to resolve pull request node id for GitHub view sync: ${errorMessage(err)}`,
+				);
+			}
+		}
+		this.targets.set(runId, target);
+		return target;
+	}
 }
