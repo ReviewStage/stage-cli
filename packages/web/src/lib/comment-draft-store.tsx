@@ -1,4 +1,13 @@
-import { createContext, type ReactNode, use, useCallback, useMemo, useRef, useState } from "react";
+import {
+	createContext,
+	type ReactNode,
+	use,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import type { DraftBodies, DraftState } from "@/lib/comment-drafts";
 
 type DraftsUpdater = (prev: readonly DraftState[]) => readonly DraftState[];
@@ -33,10 +42,12 @@ export function CommentDraftStoreProvider({
 	);
 	// Composer text lives outside React state so typing never re-renders the
 	// diff tree (see DraftBodies) — one bodies map per file, created lazily.
-	// Nested under the reset key so a key change simply reads a fresh inner
-	// map: lazy idempotent inserts are the only render-time mutation, safe to
-	// repeat if a concurrent render is discarded.
-	const bodiesByKeyRef = useRef(new Map<string, Map<string, DraftBodies>>());
+	// Nested under a generation counter that bumps on every committed reset,
+	// so a revisited run gets a FRESH generation and can never resurrect text
+	// discarded with an earlier reset. Lazy idempotent inserts are the only
+	// render-time mutation, safe to repeat if a concurrent render is discarded.
+	const bodiesByGenerationRef = useRef(new Map<number, Map<string, DraftBodies>>());
+	const [generation, setGeneration] = useState(0);
 
 	// React's "adjust state during render" pattern: the previous key lives in
 	// state, not a ref — a ref mutated mid-render leaks when a concurrent
@@ -45,6 +56,7 @@ export function CommentDraftStoreProvider({
 	if (prevResetKey !== resetKey) {
 		setPrevResetKey(resetKey);
 		setDraftsByFile(new Map());
+		setGeneration((current) => current + 1);
 	}
 
 	const updateDrafts = useCallback((filePath: string, updater: DraftsUpdater) => {
@@ -64,10 +76,10 @@ export function CommentDraftStoreProvider({
 
 	const getDraftBodies = useCallback(
 		(filePath: string): DraftBodies => {
-			let byFile = bodiesByKeyRef.current.get(resetKey);
+			let byFile = bodiesByGenerationRef.current.get(generation);
 			if (!byFile) {
 				byFile = new Map();
-				bodiesByKeyRef.current.set(resetKey, byFile);
+				bodiesByGenerationRef.current.set(generation, byFile);
 			}
 			let bodies = byFile.get(filePath);
 			if (!bodies) {
@@ -76,8 +88,18 @@ export function CommentDraftStoreProvider({
 			}
 			return bodies;
 		},
-		[resetKey],
+		[generation],
 	);
+
+	// Post-commit cleanup (never during render, where a discarded concurrent
+	// render could wipe the committed generation's text): superseded
+	// generations are unreachable — drop them so long sessions hopping
+	// between runs don't accumulate dead text.
+	useEffect(() => {
+		for (const staleGeneration of bodiesByGenerationRef.current.keys()) {
+			if (staleGeneration !== generation) bodiesByGenerationRef.current.delete(staleGeneration);
+		}
+	}, [generation]);
 
 	const value = useMemo(
 		() => ({ draftsByFile, updateDrafts, getDraftBodies }),

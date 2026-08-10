@@ -116,10 +116,10 @@ describe("GET /api/runs/:runId/view-state GitHub merge", () => {
 		expect(filePaths(res.body).sort()).toEqual(["gh-viewed.ts", "local.ts"]);
 		// The stored branch is passed positionally so gh resolves that branch's PR
 		// regardless of what the checkout has since moved to.
-		const prViewCalls = (await harness.rawCalls()).filter(
-			(args) => args[0] === "pr" && args[1] === "view",
+		const prListCalls = (await harness.rawCalls()).filter(
+			(args) => args[0] === "pr" && args[1] === "list",
 		);
-		expect(prViewCalls.map((args) => args[2])).toEqual([BRANCH_HEAD_REF, BRANCH_HEAD_REF]);
+		expect(prListCalls.map((args) => args[3])).toEqual([BRANCH_HEAD_REF, BRANCH_HEAD_REF]);
 		const viewedFilesCalls = (await harness.graphqlCalls()).filter(
 			(c) => c.name === "GetPullRequestViewedFiles",
 		);

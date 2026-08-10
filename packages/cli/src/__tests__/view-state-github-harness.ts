@@ -125,7 +125,10 @@ const args = process.argv.slice(2);
 const argvLog = ${JSON.stringify(this.argvLogPath())};
 fs.appendFileSync(argvLog, JSON.stringify(args) + "\\n");
 function emit(o) { process.stdout.write(JSON.stringify(o)); }
-if (args[0] === "pr" && args[1] === "view") {
+if (args[0] === "pr" && args[1] === "list") {
+  const branchPrNumber = ${JSON.stringify(branchPrNumber)};
+  emit(branchPrNumber === null ? [] : [{ number: branchPrNumber }]);
+} else if (args[0] === "pr" && args[1] === "view") {
   const branchPrNumber = ${JSON.stringify(branchPrNumber)};
   if (branchPrNumber === null) {
     process.stderr.write('no pull requests found for branch "feature"\\n');

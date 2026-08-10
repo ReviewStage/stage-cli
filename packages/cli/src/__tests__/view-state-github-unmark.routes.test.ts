@@ -106,11 +106,11 @@ describe("GitHub unmark sync", () => {
 		});
 
 		expect(res.status).toBe(200);
-		const prViewCalls = (await harness.rawCalls()).filter(
-			(args) => args[0] === "pr" && args[1] === "view",
+		const prListCalls = (await harness.rawCalls()).filter(
+			(args) => args[0] === "pr" && args[1] === "list",
 		);
 		// One resolution per mutation, each pinned to the stored branch.
-		expect(prViewCalls.map((args) => args[2])).toEqual([BRANCH_HEAD_REF, BRANCH_HEAD_REF]);
+		expect(prListCalls.map((args) => args[3])).toEqual([BRANCH_HEAD_REF, BRANCH_HEAD_REF]);
 		const calls = await unmarkCalls();
 		expect(calls).toHaveLength(1);
 		expect(calls[0]?.fields).toEqual({ pullRequestId: PR_NODE_ID, path: "src/foo.ts" });

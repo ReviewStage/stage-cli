@@ -109,7 +109,7 @@ describe("GitHub mark sync", () => {
 		expect((await markCalls()).map((c) => c.fields.path).sort()).toEqual(["x.ts", "y.ts"]);
 	});
 
-	it("resolves the run's stored branch via gh pr view <headRef> for runs without a PR number", async () => {
+	it("resolves the run's stored branch via gh pr list --head <headRef> for runs without a PR number", async () => {
 		await harness.writeGhShim();
 		const { runId } = harness.seedRun(undefined, { prNumber: null, headRef: BRANCH_HEAD_REF });
 		const port = await harness.start();
@@ -119,13 +119,14 @@ describe("GitHub mark sync", () => {
 		});
 
 		expect(res.status).toBe(200);
-		const prViewCalls = (await harness.rawCalls()).filter(
-			(args) => args[0] === "pr" && args[1] === "view",
+		const prListCalls = (await harness.rawCalls()).filter(
+			(args) => args[0] === "pr" && args[1] === "list",
 		);
-		expect(prViewCalls).toHaveLength(1);
-		// The stored branch is passed positionally so gh resolves that branch's PR
-		// regardless of what the checkout has since moved to.
-		expect(prViewCalls[0]?.[2]).toBe(BRANCH_HEAD_REF);
+		expect(prListCalls).toHaveLength(1);
+		// The stored branch is addressed via --head so gh resolves that branch's
+		// PR regardless of what the checkout has since moved to — a bare
+		// positional would misread a branch literally named like a PR number.
+		expect(prListCalls[0]?.[3]).toBe(BRANCH_HEAD_REF);
 		const calls = await harness.graphqlCalls();
 		expect(calls.map((c) => c.name)).toEqual(["GetPullRequestIdentity", "MarkFileAsViewed"]);
 		expect(calls[0]?.fields.number).toBe(String(PR_NUMBER));

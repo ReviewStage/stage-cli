@@ -28,6 +28,8 @@ const GhAuthorSchema = z
 	.nullable()
 	.optional();
 
+const GhPullRequestNumberListSchema = z.array(z.object({ number: z.number() }));
+
 const GhPullRequestSchema = z.object({
 	number: z.number(),
 	title: z.string(),
@@ -145,8 +147,33 @@ export async function getPullRequestOrThrow(
 	const repo = parseGitHubRepo(originUrl);
 	if (!repo) return null;
 	const repository = `${repo.owner}/${repo.repo}`;
-	const positional =
-		selector === null ? [] : [typeof selector === "number" ? String(selector) : selector.branch];
+	// A branch positional to `gh pr view` is ambiguous: a branch literally
+	// named "123" would select PR #123. `gh pr list --head` addresses the head
+	// branch unambiguously; the resolved number then takes the normal path.
+	if (selector !== null && typeof selector !== "number") {
+		const listArgs = [
+			"pr",
+			"list",
+			"--head",
+			selector.branch,
+			"--json",
+			"number",
+			"--limit",
+			"1",
+			"--repo",
+			repository,
+		];
+		const listParsed = GhPullRequestNumberListSchema.safeParse(
+			JSON.parse(await ghReadOrThrow(listArgs, repoRoot)),
+		);
+		if (!listParsed.success) {
+			throw new Error("Unexpected response shape from gh pr list");
+		}
+		const first = listParsed.data[0];
+		if (!first) return null;
+		selector = first.number;
+	}
+	const positional = selector === null ? [] : [String(selector)];
 	const viewArgs = [
 		"pr",
 		"view",

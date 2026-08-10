@@ -101,6 +101,20 @@ describe("useFileCommentDrafts", () => {
 		expect(readDraftBody(probe().draftBodies, ANCHOR.side, ANCHOR.endLine)).toBe("");
 	});
 
+	it("does not restore discarded text when a run is revisited", () => {
+		const { rerender } = render(<Harness resetKey="run-1" rowMounted filePath="src/a.ts" />);
+
+		act(() => probe().setDrafts((prev) => upsertDraft(prev, ANCHOR)));
+		writeDraftBody(probe().draftBodies, ANCHOR.side, ANCHOR.endLine, "discarded note");
+
+		// Navigate away (drafts reset) and back — the original run must get a
+		// fresh body-map generation, not the cached pre-reset text.
+		rerender(<Harness resetKey="run-2" rowMounted filePath="src/a.ts" />);
+		rerender(<Harness resetKey="run-1" rowMounted filePath="src/a.ts" />);
+		expect(probe().drafts).toEqual([]);
+		expect(readDraftBody(probe().draftBodies, ANCHOR.side, ANCHOR.endLine)).toBe("");
+	});
+
 	it("keeps drafts local to the instance when no file path is given", () => {
 		const { rerender } = render(<Harness resetKey="run-1" rowMounted />);
 
