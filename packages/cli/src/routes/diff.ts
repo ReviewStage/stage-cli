@@ -116,8 +116,8 @@ export function diffRoutes(db: StageDb): Route[] {
 	];
 }
 
-const MINUS_RE = /^--- (?:a\/)?(.+)$/m;
-const PLUS_RE = /^\+\+\+ (?:b\/)?(.+)$/m;
+const MINUS_RE = /^--- (.+)$/m;
+const PLUS_RE = /^\+\+\+ (.+)$/m;
 const BINARY_RE = /^Binary files|^GIT binary patch/m;
 const RENAME_FROM_RE = /^(?:rename|copy) from (.+)$/m;
 const RENAME_TO_RE = /^(?:rename|copy) to (.+)$/m;
@@ -145,17 +145,14 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 
 		const isBinary = BINARY_RE.test(text);
 
-		const minus = text.match(MINUS_RE);
-		const plus = text.match(PLUS_RE);
-
-		let oldPath = minus?.[1] && minus[1] !== "/dev/null" ? minus[1] : null;
-		let newPath = plus?.[1] && plus[1] !== "/dev/null" ? plus[1] : null;
+		let oldPath = decodeHeaderPath(text.match(MINUS_RE)?.[1], "a/");
+		let newPath = decodeHeaderPath(text.match(PLUS_RE)?.[1], "b/");
 
 		// Pure renames/copies have no ---/+++ headers; fall back to the
 		// rename/copy header lines so their contents can still be served.
 		if (oldPath === null && newPath === null) {
-			oldPath = text.match(RENAME_FROM_RE)?.[1] ?? null;
-			newPath = text.match(RENAME_TO_RE)?.[1] ?? null;
+			oldPath = decodeHeaderPath(text.match(RENAME_FROM_RE)?.[1], null);
+			newPath = decodeHeaderPath(text.match(RENAME_TO_RE)?.[1], null);
 		}
 
 		// Modified binaries emit only `diff --git` + `Binary files ... differ`
@@ -171,6 +168,23 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 	}
 
 	return results;
+}
+
+/**
+ * Decode a raw `---`/`+++`/`rename from`/`rename to` header capture: strip
+ * surrounding quotes and C-style escapes when git quoted the path (spaces,
+ * non-ASCII), then drop the diff prefix (`a/`/`b/`, which sits inside the
+ * quotes) and map `/dev/null` to null.
+ */
+function decodeHeaderPath(raw: string | undefined, prefix: "a/" | "b/" | null): string | null {
+	if (raw === undefined) return null;
+	let decoded = raw;
+	if (decoded.startsWith('"') && decoded.endsWith('"') && decoded.length >= 2) {
+		decoded = unquoteGitPath(decoded.slice(1, -1)) ?? decoded;
+	}
+	if (decoded === "/dev/null") return null;
+	if (prefix !== null && decoded.startsWith(prefix)) decoded = decoded.slice(prefix.length);
+	return decoded;
 }
 
 /**

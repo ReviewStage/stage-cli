@@ -350,6 +350,31 @@ describe("diff API", () => {
 		expect(data.fileContents["logo.png"]?.newContent).toBeNull();
 	});
 
+	it("serves contents for a pure rename whose path git quotes", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		await fs.writeFile(path.join(repoRoot, "ole\u0301 file.txt"), "quoted contents\n");
+		git("add", "-A");
+		git("commit", "-m", "add quoted file");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		git("mv", "ole\u0301 file.txt", "ole\u0301 renamed.txt");
+		git("commit", "-m", "rename quoted file");
+		const headSha = git("rev-parse", "HEAD").trim();
+		const runId = insertCommittedRun(baseSha, headSha);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		const entry = data.fileContents["ole\u0301 renamed.txt"];
+		expect(entry).toBeDefined();
+		expect(entry?.newContent).toBe("quoted contents\n");
+		expect(entry?.oldContent).toBe("quoted contents\n");
+	});
+
 	it("refuses to serve working-tree content through a symlink escaping the repo", async () => {
 		git("init", "--initial-branch=main");
 		git("config", "user.email", "test@example.com");
