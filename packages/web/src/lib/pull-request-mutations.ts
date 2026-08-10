@@ -142,10 +142,11 @@ export function setAutoMergeMutationOptions(runId: string) {
 	};
 }
 
-// Dequeue maps to "disable auto-merge".
+// Dequeue maps to "disable auto-merge" — like hosted since #1052, it is keyed on
+// the PR itself (gh resolves the queue entry), not a mergeQueueEntryId.
 export function dequeueMutationOptions(runId: string) {
 	return {
-		mutationFn: (v: RepoVars & { number: number; mergeQueueEntryId: string }) =>
+		mutationFn: (v: RepoVars & { number: number }) =>
 			write(runId, "/auto-merge", "POST", { number: v.number, enabled: false }),
 	};
 }

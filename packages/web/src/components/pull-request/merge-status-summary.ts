@@ -9,13 +9,12 @@ import { AlertTriangle, Check, Loader2, type LucideIcon, XCircle } from "lucide-
 export const MERGE_STATUS = {
 	CHECKING: "CHECKING",
 	CONFLICTS: "CONFLICTS",
-	IN_MERGE_QUEUE: "IN_MERGE_QUEUE",
 	READY: "READY",
 	BEHIND: "BEHIND",
 	BLOCKED: "BLOCKED",
 } as const;
 
-type MergeStatus = (typeof MERGE_STATUS)[keyof typeof MERGE_STATUS];
+export type MergeStatus = (typeof MERGE_STATUS)[keyof typeof MERGE_STATUS];
 
 export interface MergeStatusSummary {
 	status: MergeStatus;
@@ -35,7 +34,7 @@ function isChecksPending(info: MergeStatusInfo): boolean {
 }
 
 export function getMergeStatusSummary(info: MergeStatusInfo): MergeStatusSummary {
-	const { mergeable, mergeStateStatus, isInMergeQueue, entry } = info;
+	const { mergeable, mergeStateStatus } = info;
 
 	if (mergeable === MERGEABLE_STATE.UNKNOWN || mergeStateStatus === MERGE_STATE_STATUS.UNKNOWN) {
 		return {
@@ -58,18 +57,6 @@ export function getMergeStatusSummary(info: MergeStatusInfo): MergeStatusSummary
 			accentColor: "text-red-500",
 			pillBg: "bg-red-500/10",
 			isTransient: false,
-		};
-	}
-
-	if (isInMergeQueue && entry) {
-		return {
-			status: MERGE_STATUS.IN_MERGE_QUEUE,
-			label: `In merge queue (#${entry.position})`,
-			icon: Loader2,
-			iconColor: "text-blue-500 animate-spin",
-			accentColor: "text-blue-500",
-			pillBg: "bg-blue-500/10",
-			isTransient: true,
 		};
 	}
 

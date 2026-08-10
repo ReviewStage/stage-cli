@@ -91,6 +91,7 @@ export const MERGE_JSON = JSON.stringify({
 				viewerCanEnableAutoMerge: true,
 				viewerCanDisableAutoMerge: false,
 				autoMergeRequest: null,
+				baseRef: { rules: { nodes: [] } },
 				commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
 				mergeQueueEntry: null,
 			},

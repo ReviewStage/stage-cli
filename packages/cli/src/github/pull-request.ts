@@ -8,7 +8,9 @@ import {
 	type GitHubUser,
 	type MergeStatusInfo,
 	PULL_REQUEST_CI_STATUS,
+	PULL_REQUEST_MERGE_METHOD,
 	PULL_REQUEST_REVIEW_STATUS,
+	type PullRequestMergeMethod,
 	type PullRequestReviewSummary,
 	REVIEW_STATE,
 	REVIEWER_STATUS,
@@ -471,11 +473,49 @@ const MERGE_STATUS_QUERY = `query GetMergeStatus($owner: String!, $repo: String!
       viewerCanEnableAutoMerge
       viewerCanDisableAutoMerge
       autoMergeRequest { enabledAt }
+      baseRef {
+        rules(first: 100) {
+          nodes {
+            type
+            parameters {
+              __typename
+              ... on PullRequestParameters {
+                allowedMergeMethods
+              }
+            }
+          }
+        }
+      }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       mergeQueueEntry { id position estimatedTimeToMerge }
     }
   }
 }`;
+
+// GraphQL `Ref.rules` — GitHub returns uppercase rule types and merge-method
+// tokens. `parameters` is a union; only PullRequestParameters carries
+// `allowedMergeMethods`.
+const GhBaseRefSchema = z.object({
+	rules: z
+		.object({
+			nodes: z
+				.array(
+					z
+						.object({
+							type: z.string(),
+							parameters: z
+								.object({
+									__typename: z.string(),
+									allowedMergeMethods: z.array(z.string()).nullable().optional(),
+								})
+								.nullable(),
+						})
+						.nullable(),
+				)
+				.nullable(),
+		})
+		.nullable(),
+});
 
 const GhMergeStatusSchema = z.object({
 	data: z.object({
@@ -492,6 +532,7 @@ const GhMergeStatusSchema = z.object({
 				viewerCanEnableAutoMerge: z.boolean(),
 				viewerCanDisableAutoMerge: z.boolean(),
 				autoMergeRequest: z.object({ enabledAt: z.string().nullable() }).nullable(),
+				baseRef: GhBaseRefSchema.nullable(),
 				commits: z.object({
 					nodes: z.array(
 						z.object({
@@ -521,6 +562,63 @@ function asEnum<T extends Record<string, string>>(
 	return Object.values(obj).includes(value) ? (value as T[keyof T]) : fallback;
 }
 
+function isPullRequestMergeMethod(value: string): value is PullRequestMergeMethod {
+	return value in PULL_REQUEST_MERGE_METHOD;
+}
+
+function deriveRepoMergeMethods(repo: {
+	squashMergeAllowed: boolean;
+	mergeCommitAllowed: boolean;
+	rebaseMergeAllowed: boolean;
+}): PullRequestMergeMethod[] {
+	const methods: PullRequestMergeMethod[] = [];
+	if (repo.mergeCommitAllowed) methods.push(PULL_REQUEST_MERGE_METHOD.MERGE);
+	if (repo.squashMergeAllowed) methods.push(PULL_REQUEST_MERGE_METHOD.SQUASH);
+	if (repo.rebaseMergeAllowed) methods.push(PULL_REQUEST_MERGE_METHOD.REBASE);
+	return methods;
+}
+
+type MergeStatusBaseRef = z.infer<typeof GhBaseRefSchema>;
+
+/**
+ * The merge methods a PR can actually use: the repo-level flags narrowed by the
+ * base branch's rulesets, read from GraphQL `Ref.rules` in the same query as
+ * the rest of the merge status. The repo-level flags don't reflect rulesets,
+ * and GitHub rejects a merge or auto-merge that uses a method the branch
+ * forbids, so we fold in two constraints:
+ *
+ * - a pull-request rule's `allowedMergeMethods` caps the set (GitHub returns
+ *   uppercase tokens; we normalize before matching); multiple rules each intersect;
+ * - a required-linear-history rule forbids merge commits (they break linearity),
+ *   even when a pull-request rule still lists MERGE.
+ *
+ * With no such rule, the repo flags stand.
+ */
+function deriveAllowedMergeMethods(
+	repo: { squashMergeAllowed: boolean; mergeCommitAllowed: boolean; rebaseMergeAllowed: boolean },
+	baseRef: MergeStatusBaseRef | null,
+): PullRequestMergeMethod[] {
+	let methods = deriveRepoMergeMethods(repo);
+	let requiresLinearHistory = false;
+	for (const node of baseRef?.rules?.nodes ?? []) {
+		if (node?.type === "REQUIRED_LINEAR_HISTORY") requiresLinearHistory = true;
+		const parameters = node?.parameters;
+		if (parameters?.__typename !== "PullRequestParameters" || !parameters.allowedMergeMethods) {
+			continue;
+		}
+		const ruleMethods = new Set<PullRequestMergeMethod>();
+		for (const token of parameters.allowedMergeMethods) {
+			const method = token.toUpperCase();
+			if (isPullRequestMergeMethod(method)) ruleMethods.add(method);
+		}
+		methods = methods.filter((m) => ruleMethods.has(m));
+	}
+	if (requiresLinearHistory) {
+		methods = methods.filter((m) => m !== PULL_REQUEST_MERGE_METHOD.MERGE);
+	}
+	return methods;
+}
+
 export async function getMergeStatus(
 	repoRoot: string,
 	repo: GitHubRepo,
@@ -546,10 +644,6 @@ export async function getMergeStatus(
 		if (!parsed.success) return null;
 		const { repository } = parsed.data.data;
 		const pr = repository.pullRequest;
-		const allowedMergeMethods: MergeStatusInfo["allowedMergeMethods"] = [];
-		if (repository.mergeCommitAllowed) allowedMergeMethods.push("MERGE");
-		if (repository.squashMergeAllowed) allowedMergeMethods.push("SQUASH");
-		if (repository.rebaseMergeAllowed) allowedMergeMethods.push("REBASE");
 		const rollupState = pr.commits.nodes[0]?.commit.statusCheckRollup?.state ?? null;
 		return {
 			mergeable: asEnum(
@@ -604,7 +698,7 @@ export async function getMergeStatus(
 			isMergeQueueEnabled: pr.isMergeQueueEnabled,
 			isInMergeQueue: pr.mergeQueueEntry !== null,
 			entry: pr.mergeQueueEntry,
-			allowedMergeMethods,
+			allowedMergeMethods: deriveAllowedMergeMethods(repository, pr.baseRef),
 		};
 	} catch {
 		return null;
