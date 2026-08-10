@@ -190,7 +190,8 @@ export function ReviewPanel() {
 	// state — a dead mod+j must not shadow the browser shortcut, toggle
 	// invisible state, or open a tray whose trigger is disabled.
 	const hotkeysEnabled =
-		review.github === GITHUB_REVIEW_STATUS.AVAILABLE && review.hasPendingReview;
+		review.github === GITHUB_REVIEW_STATUS.AVAILABLE &&
+		(review.canWriteToGitHub || review.hasPendingReview);
 	useHotkeys(
 		KEYBOARD_SHORTCUTS.TOGGLE_REVIEW_PANEL.hotkey,
 		() => setOpen((v) => !v),

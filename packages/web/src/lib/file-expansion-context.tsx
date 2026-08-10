@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, use, useCallback, useMemo, useRef, useState } from "react";
+import { createContext, type ReactNode, use, useCallback, useMemo, useState } from "react";
 
 interface FileExpansionContextValue {
 	/** Files whose unchanged context is expanded (the header's expand toggle). */
@@ -25,9 +25,12 @@ export function FileExpansionProvider({
 }) {
 	const [expandedFiles, setExpandedFiles] = useState<ReadonlySet<string>>(new Set());
 
-	const prevResetKey = useRef(resetKey);
-	if (prevResetKey.current !== resetKey) {
-		prevResetKey.current = resetKey;
+	// React's "adjust state during render" pattern: the previous key lives in
+	// state, not a ref — a ref mutated mid-render leaks when a concurrent
+	// render is discarded, clearing expansion state for the wrong run.
+	const [prevResetKey, setPrevResetKey] = useState(resetKey);
+	if (prevResetKey !== resetKey) {
+		setPrevResetKey(resetKey);
 		setExpandedFiles(new Set());
 	}
 

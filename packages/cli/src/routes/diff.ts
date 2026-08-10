@@ -13,7 +13,15 @@ import { eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import type { ChapterRunRow } from "../db/schema/chapter-run.js";
 import { chapterRun } from "../db/schema/index.js";
-import { buildDiffArgs, hasStringStdout, isMaxBufferError } from "../git.js";
+import {
+	buildDiffArgs,
+	hasStringStdout,
+	isMaxBufferError,
+	logUntrackedFileOverCap,
+	MAX_UNTRACKED_DIFF_BYTES,
+	UntrackedPatchAccumulator,
+	untrackedDiffArgs,
+} from "../git.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
@@ -35,57 +43,26 @@ async function buildUntrackedPatch(cwd: string): Promise<string> {
 
 	// Sequential like git.ts's getUntrackedDiff: one child process per file at
 	// a time, so thousands of untracked files can't exhaust processes/memory.
-	// The aggregate is capped too — per-file buffers bound each child, but the
-	// accumulated response could otherwise still exhaust the heap.
-	const patches: string[] = [];
-	let totalBytes = 0;
+	// Cap policy (per-file buffer, aggregate budget, stop behavior) is the
+	// shared UntrackedPatchAccumulator, so this route and generation-time
+	// getUntrackedDiff omit the same tail by construction.
+	const accumulator = new UntrackedPatchAccumulator();
 	for (const file of files) {
 		try {
-			await execFileAsync(
-				"git",
-				[
-					"-c",
-					"core.quotepath=off",
-					"diff",
-					"--no-index",
-					"--no-color",
-					"--src-prefix=a/",
-					"--dst-prefix=b/",
-					"--",
-					"/dev/null",
-					file,
-				],
-				{ cwd, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES },
-			);
+			await execFileAsync("git", untrackedDiffArgs(file), {
+				cwd,
+				encoding: "utf8",
+				maxBuffer: MAX_UNTRACKED_DIFF_BYTES,
+			});
 		} catch (err: unknown) {
 			if (isMaxBufferError(err)) {
-				console.error(`Untracked file ${file} produced a diff over the buffer cap; omitting it`);
+				logUntrackedFileOverCap(file);
 				continue;
 			}
-			if (hasStringStdout(err)) {
-				// Reject the prospective patch before retaining it so the
-				// aggregate never exceeds the advertised cap.
-				const nextBytes = Buffer.byteLength(err.stdout);
-				if (totalBytes + nextBytes > MAX_DIFF_BYTES) {
-					console.error(
-						`Untracked diff output reached ${MAX_DIFF_BYTES} bytes; omitting remaining untracked files from the response`,
-					);
-					break;
-				}
-				patches.push(err.stdout);
-				totalBytes += nextBytes;
-				// Exact-boundary stop: no point launching another child once the
-				// cap is fully consumed.
-				if (totalBytes >= MAX_DIFF_BYTES) {
-					console.error(
-						`Untracked diff output reached ${MAX_DIFF_BYTES} bytes; omitting remaining untracked files from the response`,
-					);
-					break;
-				}
-			}
+			if (hasStringStdout(err) && !accumulator.add(err.stdout)) break;
 		}
 	}
-	return patches.filter(Boolean).join("\n");
+	return accumulator.join();
 }
 
 export function diffRoutes(db: StageDb): Route[] {
@@ -272,8 +249,12 @@ async function getGitFileContent(
  * rename/copy). An empty ref denotes the index, matching `git show :path`.
  */
 async function getGitFileMode(cwd: string, ref: string, filePath: string): Promise<string | null> {
+	// --literal-pathspecs: the parsed filename must be addressed verbatim —
+	// pathspec magic (`:`, globs) in a real filename would otherwise misresolve.
 	const args =
-		ref === "" ? ["ls-files", "--stage", "--", filePath] : ["ls-tree", ref, "--", filePath];
+		ref === ""
+			? ["--literal-pathspecs", "ls-files", "--stage", "--", filePath]
+			: ["--literal-pathspecs", "ls-tree", ref, "--", filePath];
 	try {
 		const { stdout } = await execFileAsync("git", args, { cwd, encoding: "utf8" });
 		return stdout.match(/^(\d{6}) /)?.[1] ?? null;

@@ -113,6 +113,19 @@ describe("buildChapterCommentCountsMap", () => {
 		);
 	});
 
+	it("does not count a file-level thread for a chapter ref that resolves nothing", () => {
+		// A hunked file referenced only by a stale/invalid oldStart renders
+		// nothing in the chapter, so its whole-file threads don't count either.
+		const index = buildHunkRangeIndex([
+			makeFile("src/app.ts", [{ oldStart: 1, oldLines: 10, newStart: 1, newLines: 12 }]),
+		]);
+		const chapter = { id: "ch-1", hunkRefs: [{ filePath: "src/app.ts", oldStart: 99 }] };
+
+		const counts = buildChapterCommentCountsMap([chapter], index, [fileThread("src/app.ts")]);
+
+		expect(counts.get("ch-1")).toBe(0);
+	});
+
 	it("counts a file-level thread toward a chapter whose only ref for the path is header-only", () => {
 		// Binary changes and pure renames carry the header-only sentinel
 		// (oldStart 0) with no parsed hunk in the index; a whole-file thread

@@ -1,4 +1,4 @@
-import { DIFF_SIDE, type DiffSide } from "@stagereview/types/chapters";
+import { DIFF_SIDE, type DiffSide, HEADER_ONLY_OLD_START } from "@stagereview/types/chapters";
 import { SUBJECT_TYPE, type SubjectType } from "@stagereview/types/review";
 
 /**
@@ -138,10 +138,15 @@ export function buildChapterCommentCountsMap(
 
 	for (const chapter of chapters) {
 		const hunks = resolveChapterHunkRanges(chapter.hunkRefs, index);
-		// FILE threads match by path alone, so header-only refs (binary changes,
-		// pure renames — no parsed hunk to resolve) still attract them; otherwise
-		// the file badge would count a thread its chapter badge ignores.
-		const chapterPaths = new Set(chapter.hunkRefs.map((ref) => ref.filePath));
+		// FILE threads match by path, restricted to what the chapter renders
+		// (mirrors filterFilesForChapter): paths with a resolved hunk, plus
+		// header-only sentinel refs for files the diff parsed with zero hunks
+		// (binary changes, pure renames). Invalid refs stay ignored.
+		const chapterPaths = new Set(hunks.map((resolved) => resolved.filePath));
+		for (const ref of chapter.hunkRefs) {
+			if (ref.oldStart !== HEADER_ONLY_OLD_START) continue;
+			if (index.get(ref.filePath)?.size === 0) chapterPaths.add(ref.filePath);
+		}
 
 		let count = 0;
 		for (const thread of threads) {

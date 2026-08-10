@@ -33,13 +33,18 @@ export function CommentDraftStoreProvider({
 	);
 	// Composer text lives outside React state so typing never re-renders the
 	// diff tree (see DraftBodies) — one bodies map per file, created lazily.
-	const bodiesByFileRef = useRef(new Map<string, DraftBodies>());
+	// Nested under the reset key so a key change simply reads a fresh inner
+	// map: lazy idempotent inserts are the only render-time mutation, safe to
+	// repeat if a concurrent render is discarded.
+	const bodiesByKeyRef = useRef(new Map<string, Map<string, DraftBodies>>());
 
-	const prevResetKey = useRef(resetKey);
-	if (prevResetKey.current !== resetKey) {
-		prevResetKey.current = resetKey;
+	// React's "adjust state during render" pattern: the previous key lives in
+	// state, not a ref — a ref mutated mid-render leaks when a concurrent
+	// render is discarded, clearing drafts for the wrong run.
+	const [prevResetKey, setPrevResetKey] = useState(resetKey);
+	if (prevResetKey !== resetKey) {
+		setPrevResetKey(resetKey);
 		setDraftsByFile(new Map());
-		bodiesByFileRef.current = new Map();
 	}
 
 	const updateDrafts = useCallback((filePath: string, updater: DraftsUpdater) => {
@@ -57,14 +62,22 @@ export function CommentDraftStoreProvider({
 		});
 	}, []);
 
-	const getDraftBodies = useCallback((filePath: string): DraftBodies => {
-		let bodies = bodiesByFileRef.current.get(filePath);
-		if (!bodies) {
-			bodies = new Map();
-			bodiesByFileRef.current.set(filePath, bodies);
-		}
-		return bodies;
-	}, []);
+	const getDraftBodies = useCallback(
+		(filePath: string): DraftBodies => {
+			let byFile = bodiesByKeyRef.current.get(resetKey);
+			if (!byFile) {
+				byFile = new Map();
+				bodiesByKeyRef.current.set(resetKey, byFile);
+			}
+			let bodies = byFile.get(filePath);
+			if (!bodies) {
+				bodies = new Map();
+				byFile.set(filePath, bodies);
+			}
+			return bodies;
+		},
+		[resetKey],
+	);
 
 	const value = useMemo(
 		() => ({ draftsByFile, updateDrafts, getDraftBodies }),

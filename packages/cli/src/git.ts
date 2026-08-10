@@ -208,64 +208,87 @@ export function isMaxBufferError(err: unknown): boolean {
 	);
 }
 
-const MAX_UNTRACKED_DIFF_BYTES = 50 * 1024 * 1024;
+export const MAX_UNTRACKED_DIFF_BYTES = 50 * 1024 * 1024;
+
+/** Args for diffing one untracked file against /dev/null (exit 1 carries the patch). */
+export function untrackedDiffArgs(file: string): string[] {
+	return [
+		"-c",
+		"core.quotepath=off",
+		"diff",
+		"--no-index",
+		"--no-color",
+		"--src-prefix=a/",
+		"--dst-prefix=b/",
+		"--",
+		"/dev/null",
+		file,
+	];
+}
+
+export function logUntrackedFileOverCap(file: string): void {
+	console.error(`Untracked file ${file} produced a diff over the buffer cap; omitting it`);
+}
 
 /**
- * One child process per file, per-file buffers capped, and the aggregate
- * capped to the same 50 MiB budget the diff route enforces at view time — the
- * two must omit the same tail, or chapters would be generated for files the
- * viewer can never serve.
+ * Accumulates per-file untracked patches under one aggregate byte cap.
+ * Generation (sync, here) and the diff route (async) share this single
+ * policy — cap, ordering, and stop behavior — so both omit the same tail:
+ * chapters must never reference untracked files the endpoint can't serve.
  */
+export class UntrackedPatchAccumulator {
+	private readonly patches: string[] = [];
+	private totalBytes = 0;
+
+	/** Retains the patch if the cap allows; returns false once no more should be attempted. */
+	add(patch: string): boolean {
+		if (!patch) return true;
+		const nextBytes = Buffer.byteLength(patch);
+		if (this.totalBytes + nextBytes > MAX_UNTRACKED_DIFF_BYTES) {
+			this.logCapReached();
+			return false;
+		}
+		this.patches.push(patch);
+		this.totalBytes += nextBytes;
+		// Exact-boundary stop: no point launching another child once the cap
+		// is fully consumed.
+		if (this.totalBytes >= MAX_UNTRACKED_DIFF_BYTES) {
+			this.logCapReached();
+			return false;
+		}
+		return true;
+	}
+
+	join(): string {
+		return this.patches.join("\n");
+	}
+
+	private logCapReached(): void {
+		console.error(
+			`Untracked diff output reached ${MAX_UNTRACKED_DIFF_BYTES} bytes; omitting remaining untracked files`,
+		);
+	}
+}
+
+/** One child process per file at a time, so many untracked files can't exhaust memory. */
 export function getUntrackedDiff(files: string[]): string {
-	const patches: string[] = [];
-	let totalBytes = 0;
+	const accumulator = new UntrackedPatchAccumulator();
 	for (const file of files) {
 		try {
-			execFileSync(
-				"git",
-				[
-					"-c",
-					"core.quotepath=off",
-					"diff",
-					"--no-index",
-					"--no-color",
-					"--src-prefix=a/",
-					"--dst-prefix=b/",
-					"--",
-					"/dev/null",
-					file,
-				],
-				{
-					encoding: "utf8",
-					stdio: ["ignore", "pipe", "ignore"],
-					maxBuffer: MAX_UNTRACKED_DIFF_BYTES,
-				},
-			);
+			execFileSync("git", untrackedDiffArgs(file), {
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+				maxBuffer: MAX_UNTRACKED_DIFF_BYTES,
+			});
 		} catch (err: unknown) {
 			if (isMaxBufferError(err)) {
-				console.error(`Untracked file ${file} produced a diff over the buffer cap; omitting it`);
+				logUntrackedFileOverCap(file);
 				continue;
 			}
-			if (hasStringStdout(err)) {
-				const nextBytes = Buffer.byteLength(err.stdout);
-				if (totalBytes + nextBytes > MAX_UNTRACKED_DIFF_BYTES) {
-					console.error(
-						`Untracked diff output reached ${MAX_UNTRACKED_DIFF_BYTES} bytes; omitting remaining untracked files`,
-					);
-					break;
-				}
-				patches.push(err.stdout);
-				totalBytes += nextBytes;
-				if (totalBytes >= MAX_UNTRACKED_DIFF_BYTES) {
-					console.error(
-						`Untracked diff output reached ${MAX_UNTRACKED_DIFF_BYTES} bytes; omitting remaining untracked files`,
-					);
-					break;
-				}
-			}
+			if (hasStringStdout(err) && !accumulator.add(err.stdout)) break;
 		}
 	}
-	return patches.join("\n");
+	return accumulator.join();
 }
 
 export function getCommitMessages(mergeBase: string, head: string): string {
