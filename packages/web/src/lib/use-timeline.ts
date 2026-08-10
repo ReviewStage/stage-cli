@@ -2,6 +2,11 @@ import { type TimelineResponse, TimelineResponseSchema } from "@stagereview/type
 import { skipToken, useQuery } from "@tanstack/react-query";
 import { jsonFetch } from "@/lib/use-view-state";
 
+/** Prefix key for the run's timeline queries — used for mutation invalidation. */
+export function timelineQueryKey(runId: string) {
+	return ["pull-request-timeline", runId] as const;
+}
+
 /**
  * Full pull-request timeline for the Activity tab. Fetched once per run page
  * load and refreshed on demand like the CLI's other GitHub reads — hosted's
@@ -9,7 +14,7 @@ import { jsonFetch } from "@/lib/use-view-state";
  */
 export function useTimeline(runId: string, number: number | null) {
 	return useQuery<TimelineResponse>({
-		queryKey: ["pull-request-timeline", runId, number],
+		queryKey: [...timelineQueryKey(runId), number],
 		queryFn:
 			number === null
 				? skipToken

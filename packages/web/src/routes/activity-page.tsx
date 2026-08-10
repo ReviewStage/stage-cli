@@ -18,9 +18,10 @@ import { useTimeline } from "@/lib/use-timeline";
 // dependency), and local (non-PR) runs get an explicit empty state.
 
 export function ActivityPage({ runId }: { runId: string }) {
-	const { data: prData } = usePullRequest(runId);
+	const { data: prData, error: prError } = usePullRequest(runId);
 	const pullRequest = prData?.pullRequest ?? null;
-	const { data, error } = useTimeline(runId, pullRequest?.number ?? null);
+	const { data, error: timelineError } = useTimeline(runId, pullRequest?.number ?? null);
+	const error = prError ?? timelineError;
 	const timeline = data?.timeline ?? null;
 	const [hideResolved, setHideResolved] = useState(false);
 	const [hideBots, setHideBots] = useState(false);

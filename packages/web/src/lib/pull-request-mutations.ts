@@ -1,6 +1,7 @@
 import type { PullRequestMergeMethod } from "@stagereview/types/pull-request";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
+import { timelineQueryKey } from "@/lib/use-timeline";
 import { jsonFetch } from "@/lib/use-view-state";
 
 function prPath(runId: string, suffix: string): string {
@@ -49,6 +50,7 @@ export function invalidatePullRequestQueries(
 		queryClient.invalidateQueries({ queryKey: ["pull-request-merge-status", runId] }),
 		queryClient.invalidateQueries({ queryKey: ["pull-request-checks", runId] }),
 		queryClient.invalidateQueries({ queryKey: ["pull-request-labels", runId] }),
+		queryClient.invalidateQueries({ queryKey: timelineQueryKey(runId) }),
 	]);
 }
 
