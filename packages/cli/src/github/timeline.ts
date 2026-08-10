@@ -1,4 +1,5 @@
 import {
+	NullableTimelineUserSchema,
 	type PullRequestTimeline,
 	REACTION_CONTENT,
 	type ReactionContentKey,
@@ -15,7 +16,6 @@ import {
 	type TimelineReviewComment,
 	TimelineReviewCommentSchema,
 	TimelineReviewSchema,
-	TimelineUserSchema,
 } from "@stagereview/types";
 import { REVIEW_STATE } from "@stagereview/types/pull-request";
 import { z } from "zod";
@@ -68,7 +68,7 @@ const ReviewDismissedEventSchema = z.object({
 		state: z.string(),
 		dismissal_message: z.string().nullable().optional(),
 	}),
-	actor: TimelineUserSchema,
+	actor: NullableTimelineUserSchema,
 	created_at: z.string(),
 });
 

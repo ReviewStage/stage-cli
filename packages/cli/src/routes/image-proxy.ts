@@ -47,14 +47,22 @@ let tokenPromise: Promise<string | null> | null = null;
 
 /**
  * The user's GitHub token via `gh auth token`, or null when `gh` is missing or
- * unauthenticated. Cached for the lifetime of the server; never logged. Public
- * attachments still proxy fine without it, so failure degrades silently.
+ * unauthenticated. Successful lookups are cached for the lifetime of the
+ * server; failures are reported to stderr and retried on the next request so a
+ * repaired login starts working without a restart. Never logged. Public
+ * attachments still proxy fine without a token.
  */
 function getGitHubToken(): Promise<string | null> {
 	if (!tokenPromise) {
 		tokenPromise = gh(["auth", "token"], process.cwd(), { timeoutMs: GH_TOKEN_TIMEOUT_MS })
 			.then((stdout) => stdout.trim() || null)
-			.catch(() => null);
+			.catch((err) => {
+				console.error(
+					`GitHub token lookup failed; proxying attachments anonymously: ${err instanceof Error ? err.message : String(err)}`,
+				);
+				tokenPromise = null;
+				return null;
+			});
 	}
 	return tokenPromise;
 }

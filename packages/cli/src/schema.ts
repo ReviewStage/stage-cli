@@ -1,6 +1,7 @@
 import { hunkReferenceSchema, lineRefSchema, RISK_LEVEL } from "@stagereview/types/chapters";
 import { PrologueSchema } from "@stagereview/types/prologue";
 import { z } from "zod";
+import { OTHER_CHANGES_CHAPTER_ID } from "./build-other-changes.js";
 
 export type { DiffSide, HunkReference, LineRef, RiskLevel } from "@stagereview/types/chapters";
 export {
@@ -82,7 +83,11 @@ export const ChaptersFileSchema = z.strictObject({
 export type ChaptersFile = z.infer<typeof ChaptersFileSchema>;
 
 export const AgentOutputSchema = z.strictObject({
-	chapters: z.array(chapterSchema),
+	chapters: z
+		.array(chapterSchema)
+		.refine((chapters) => chapters.every((c) => c.id !== OTHER_CHANGES_CHAPTER_ID), {
+			message: `"${OTHER_CHANGES_CHAPTER_ID}" is reserved for the synthetic catch-all chapter appended by \`show\`; use chapter-<n> ids`,
+		}),
 	prologue: PrologueSchema.optional(),
 });
 export type AgentOutput = z.infer<typeof AgentOutputSchema>;

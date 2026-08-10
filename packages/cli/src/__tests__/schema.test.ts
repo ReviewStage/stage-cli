@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ChaptersFileSchema } from "../schema.js";
+import { AgentOutputSchema, ChaptersFileSchema } from "../schema.js";
 
 const SHA = {
 	base: "1111111111111111111111111111111111111111",
@@ -313,5 +313,21 @@ describe("ChaptersFileSchema", () => {
 		expect(result.prologue?.rootCause).toBe(
 			"The reset flow rotated the token before re-issuing the session cookie.",
 		);
+	});
+
+	it("rejects agent chapters that claim the reserved other-changes id", () => {
+		const result = AgentOutputSchema.safeParse({
+			chapters: [
+				{
+					id: "chapter-other-changes",
+					order: 1,
+					title: "Sneaky",
+					summary: "Claims the synthetic id.",
+					hunkRefs: [{ filePath: "src/a.ts", oldStart: 1 }],
+					keyChanges: [],
+				},
+			],
+		});
+		expect(result.success).toBe(false);
 	});
 });
