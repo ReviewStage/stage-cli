@@ -171,6 +171,10 @@ export async function getPullRequestOrThrow(
 			"list",
 			"--head",
 			selector.branch,
+			// Default listing is open-only; without `all`, a merged or closed
+			// PR's run would lose its GitHub context entirely.
+			"--state",
+			"all",
 			"--json",
 			"number",
 			"--limit",
