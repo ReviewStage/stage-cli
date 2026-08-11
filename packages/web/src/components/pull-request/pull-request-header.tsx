@@ -344,7 +344,10 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 						</>
 					)}
 					<Reviewers />
-					<Labels />
+					{/* Keyed by run so stack navigation remounts the label manager —
+					    a sibling's in-flight mutation callbacks then no-op instead of
+					    clobbering this run's optimistic label state. */}
+					<Labels key={runId} />
 				</div>
 			</header>
 
