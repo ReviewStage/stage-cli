@@ -18,10 +18,18 @@ export function usePullRequestStatusActions({ runId, pullRequest }: Options) {
 	const invalidate = useInvalidatePullRequest(runId);
 	const [showCloseDialog, setShowCloseDialog] = useState(false);
 
+	// Stack navigation swaps PRs while the header stays mounted; an open
+	// confirmation must not close the sibling it was never about.
+	const [dialogOwner, setDialogOwner] = useState(pullRequest.number);
+	if (dialogOwner !== pullRequest.number) {
+		setDialogOwner(pullRequest.number);
+		setShowCloseDialog(false);
+	}
+
 	const draftMutation = useMutation({
 		...draftMutationOptions(runId),
-		onSuccess: async () => {
-			await invalidate();
+		onSuccess: async (_data, _variables, ctx) => {
+			await invalidate(ctx);
 			toast.success(pullRequest.draft ? "Marked as ready for review" : "Converted to draft");
 		},
 		onError: (error) =>
@@ -30,8 +38,8 @@ export function usePullRequestStatusActions({ runId, pullRequest }: Options) {
 
 	const closeMutation = useMutation({
 		...closeMutationOptions(runId),
-		onSuccess: async () => {
-			await invalidate();
+		onSuccess: async (_data, _variables, ctx) => {
+			await invalidate(ctx);
 			setShowCloseDialog(false);
 			toast.success("Pull request closed");
 		},
@@ -43,8 +51,8 @@ export function usePullRequestStatusActions({ runId, pullRequest }: Options) {
 
 	const reopenMutation = useMutation({
 		...reopenMutationOptions(runId),
-		onSuccess: async () => {
-			await invalidate();
+		onSuccess: async (_data, _variables, ctx) => {
+			await invalidate(ctx);
 			toast.success("Pull request reopened");
 		},
 		onError: (error) =>

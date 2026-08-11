@@ -8,7 +8,9 @@ import {
 	type GitHubUser,
 	type MergeStatusInfo,
 	PULL_REQUEST_CI_STATUS,
+	PULL_REQUEST_MERGE_METHOD,
 	PULL_REQUEST_REVIEW_STATUS,
+	type PullRequestMergeMethod,
 	type PullRequestReviewSummary,
 	REVIEW_STATE,
 	REVIEWER_STATUS,
@@ -25,6 +27,10 @@ const GhAuthorSchema = z
 	.object({ login: z.string(), is_bot: z.boolean().optional() })
 	.nullable()
 	.optional();
+
+const GhPullRequestNumberListSchema = z.array(
+	z.object({ number: z.number(), state: z.enum(["OPEN", "CLOSED", "MERGED"]) }),
+);
 
 const GhPullRequestSchema = z.object({
 	number: z.number(),
@@ -65,7 +71,7 @@ function avatarUrlForLogin(login: string): string {
 // REST user shape (`.user`, reviewers, etc.). Unlike gh's GraphQL projection, it
 // carries `type` ("Bot" for GitHub Apps), the real `avatar_url`, and the `[bot]`
 // login suffix — everything getUserDisplay needs to render bot chips and the
-// /apps/<slug> profile URL. Sourcing users from REST keeps parity with hosted Stage.
+// /apps/<slug> profile URL.
 const RestUserSchema = z.object({
 	login: z.string(),
 	avatar_url: z.string(),
@@ -106,20 +112,40 @@ async function fetchRestPullRequest(
 }
 
 /**
+ * Which pull request `gh pr view` loads: a PR by number, the PR whose head is
+ * a given branch (independent of what's checked out), or — with null — the PR
+ * of the branch currently checked out in `repoRoot`.
+ */
+export type PullRequestSelector = number | { branch: string } | null;
+
+/**
+ * The selector pinning a run's PR resolution: the stored number for `--pr`
+ * runs, else the branch recorded at import (`headRef`) so historical runs keep
+ * resolving their own PR after the checkout moves on. Null only for legacy
+ * rows that predate `headRef`, which fall back to checkout discovery.
+ */
+export function pullRequestSelectorForRun(run: {
+	prNumber: number | null;
+	headRef: string | null;
+}): PullRequestSelector {
+	if (run.prNumber !== null) return run.prNumber;
+	if (run.headRef !== null) return { branch: run.headRef };
+	return null;
+}
+
+/**
  * Resolve the GitHub PR for a run, mapped onto the REST-shaped
- * `GitHubPullRequest` the UI consumes. When `prNumber` is set (a `--pr` run) it
- * loads that PR; otherwise it detects the PR for the branch currently checked
- * out in `repoRoot`. Returns null whenever resolution isn't possible —
- * non-GitHub remote, `gh` missing or unauthenticated, no PR found, or
- * unparseable output — so PR context never breaks the review UI.
+ * `GitHubPullRequest` the UI consumes. Returns null whenever resolution isn't
+ * possible — non-GitHub remote, `gh` missing or unauthenticated, no PR found,
+ * or unparseable output — so PR context never breaks the review UI.
  */
 export async function getPullRequest(
 	repoRoot: string,
 	originUrl: string | null,
-	prNumber: number | null = null,
+	selector: PullRequestSelector = null,
 ): Promise<GitHubPullRequest | null> {
 	try {
-		return await getPullRequestOrThrow(repoRoot, originUrl, prNumber);
+		return await getPullRequestOrThrow(repoRoot, originUrl, selector);
 	} catch {
 		return null;
 	}
@@ -133,15 +159,54 @@ export async function getPullRequest(
 export async function getPullRequestOrThrow(
 	repoRoot: string,
 	originUrl: string | null,
-	prNumber: number | null = null,
+	selector: PullRequestSelector = null,
 ): Promise<GitHubPullRequest | null> {
 	const repo = parseGitHubRepo(originUrl);
 	if (!repo) return null;
 	const repository = `${repo.owner}/${repo.repo}`;
-	const viewArgs =
-		prNumber === null
-			? ["pr", "view", "--json", PR_FIELDS.join(","), "--repo", repository]
-			: ["pr", "view", String(prNumber), "--json", PR_FIELDS.join(","), "--repo", repository];
+	// A branch positional to `gh pr view` is ambiguous: a branch literally
+	// named "123" would select PR #123. `gh pr list --head` addresses the head
+	// branch unambiguously; the resolved number then takes the normal path.
+	if (selector !== null && typeof selector !== "number") {
+		const listArgs = [
+			"pr",
+			"list",
+			"--head",
+			selector.branch,
+			// Default listing is open-only; without `all`, a merged or closed
+			// PR's run would lose its GitHub context entirely.
+			"--state",
+			"all",
+			"--json",
+			"number,state",
+			"--limit",
+			"20",
+			"--repo",
+			repository,
+		];
+		const listParsed = GhPullRequestNumberListSchema.safeParse(
+			JSON.parse(await ghReadOrThrow(listArgs, repoRoot)),
+		);
+		if (!listParsed.success) {
+			throw new Error("Unexpected response shape from gh pr list");
+		}
+		// Newest-first listing; prefer the open PR (gh pr view <branch>
+		// semantics) so a newer closed PR on a reused branch can't shadow the
+		// one still under review, falling back to the newest closed/merged.
+		const candidate = listParsed.data.find((pr) => pr.state === "OPEN") ?? listParsed.data[0];
+		if (!candidate) return null;
+		selector = candidate.number;
+	}
+	const positional = selector === null ? [] : [String(selector)];
+	const viewArgs = [
+		"pr",
+		"view",
+		...positional,
+		"--json",
+		PR_FIELDS.join(","),
+		"--repo",
+		repository,
+	];
 	let stdout: string;
 	try {
 		stdout = await ghReadOrThrow(viewArgs, repoRoot);
@@ -312,8 +377,8 @@ const GhDeploymentsSchema = z.object({
 
 /**
  * Preview/deployment links for `headSha`: one per environment, keeping the
- * latest successful deployment with an https URL (mirrors hosted Stage's
- * resolveDeploymentLinks). Returns [] on any failure so checks still render.
+ * latest successful deployment with an https URL. Returns [] on any failure
+ * so checks still render.
  */
 async function getDeploymentLinks(
 	repoRoot: string,
@@ -471,11 +536,49 @@ const MERGE_STATUS_QUERY = `query GetMergeStatus($owner: String!, $repo: String!
       viewerCanEnableAutoMerge
       viewerCanDisableAutoMerge
       autoMergeRequest { enabledAt }
+      baseRef {
+        rules(first: 100) {
+          nodes {
+            type
+            parameters {
+              __typename
+              ... on PullRequestParameters {
+                allowedMergeMethods
+              }
+            }
+          }
+        }
+      }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       mergeQueueEntry { id position estimatedTimeToMerge }
     }
   }
 }`;
+
+// GraphQL `Ref.rules` — GitHub returns uppercase rule types and merge-method
+// tokens. `parameters` is a union; only PullRequestParameters carries
+// `allowedMergeMethods`.
+const GhBaseRefSchema = z.object({
+	rules: z
+		.object({
+			nodes: z
+				.array(
+					z
+						.object({
+							type: z.string(),
+							parameters: z
+								.object({
+									__typename: z.string(),
+									allowedMergeMethods: z.array(z.string()).nullable().optional(),
+								})
+								.nullable(),
+						})
+						.nullable(),
+				)
+				.nullable(),
+		})
+		.nullable(),
+});
 
 const GhMergeStatusSchema = z.object({
 	data: z.object({
@@ -492,6 +595,7 @@ const GhMergeStatusSchema = z.object({
 				viewerCanEnableAutoMerge: z.boolean(),
 				viewerCanDisableAutoMerge: z.boolean(),
 				autoMergeRequest: z.object({ enabledAt: z.string().nullable() }).nullable(),
+				baseRef: GhBaseRefSchema.nullable(),
 				commits: z.object({
 					nodes: z.array(
 						z.object({
@@ -521,6 +625,63 @@ function asEnum<T extends Record<string, string>>(
 	return Object.values(obj).includes(value) ? (value as T[keyof T]) : fallback;
 }
 
+function isPullRequestMergeMethod(value: string): value is PullRequestMergeMethod {
+	return value in PULL_REQUEST_MERGE_METHOD;
+}
+
+function deriveRepoMergeMethods(repo: {
+	squashMergeAllowed: boolean;
+	mergeCommitAllowed: boolean;
+	rebaseMergeAllowed: boolean;
+}): PullRequestMergeMethod[] {
+	const methods: PullRequestMergeMethod[] = [];
+	if (repo.mergeCommitAllowed) methods.push(PULL_REQUEST_MERGE_METHOD.MERGE);
+	if (repo.squashMergeAllowed) methods.push(PULL_REQUEST_MERGE_METHOD.SQUASH);
+	if (repo.rebaseMergeAllowed) methods.push(PULL_REQUEST_MERGE_METHOD.REBASE);
+	return methods;
+}
+
+type MergeStatusBaseRef = z.infer<typeof GhBaseRefSchema>;
+
+/**
+ * The merge methods a PR can actually use: the repo-level flags narrowed by the
+ * base branch's rulesets, read from GraphQL `Ref.rules` in the same query as
+ * the rest of the merge status. The repo-level flags don't reflect rulesets,
+ * and GitHub rejects a merge or auto-merge that uses a method the branch
+ * forbids, so we fold in two constraints:
+ *
+ * - a pull-request rule's `allowedMergeMethods` caps the set (GitHub returns
+ *   uppercase tokens; we normalize before matching); multiple rules each intersect;
+ * - a required-linear-history rule forbids merge commits (they break linearity),
+ *   even when a pull-request rule still lists MERGE.
+ *
+ * With no such rule, the repo flags stand.
+ */
+function deriveAllowedMergeMethods(
+	repo: { squashMergeAllowed: boolean; mergeCommitAllowed: boolean; rebaseMergeAllowed: boolean },
+	baseRef: MergeStatusBaseRef | null,
+): PullRequestMergeMethod[] {
+	let methods = deriveRepoMergeMethods(repo);
+	let requiresLinearHistory = false;
+	for (const node of baseRef?.rules?.nodes ?? []) {
+		if (node?.type === "REQUIRED_LINEAR_HISTORY") requiresLinearHistory = true;
+		const parameters = node?.parameters;
+		if (parameters?.__typename !== "PullRequestParameters" || !parameters.allowedMergeMethods) {
+			continue;
+		}
+		const ruleMethods = new Set<PullRequestMergeMethod>();
+		for (const token of parameters.allowedMergeMethods) {
+			const method = token.toUpperCase();
+			if (isPullRequestMergeMethod(method)) ruleMethods.add(method);
+		}
+		methods = methods.filter((m) => ruleMethods.has(m));
+	}
+	if (requiresLinearHistory) {
+		methods = methods.filter((m) => m !== PULL_REQUEST_MERGE_METHOD.MERGE);
+	}
+	return methods;
+}
+
 export async function getMergeStatus(
 	repoRoot: string,
 	repo: GitHubRepo,
@@ -546,10 +707,6 @@ export async function getMergeStatus(
 		if (!parsed.success) return null;
 		const { repository } = parsed.data.data;
 		const pr = repository.pullRequest;
-		const allowedMergeMethods: MergeStatusInfo["allowedMergeMethods"] = [];
-		if (repository.mergeCommitAllowed) allowedMergeMethods.push("MERGE");
-		if (repository.squashMergeAllowed) allowedMergeMethods.push("SQUASH");
-		if (repository.rebaseMergeAllowed) allowedMergeMethods.push("REBASE");
 		const rollupState = pr.commits.nodes[0]?.commit.statusCheckRollup?.state ?? null;
 		return {
 			mergeable: asEnum(
@@ -604,7 +761,7 @@ export async function getMergeStatus(
 			isMergeQueueEnabled: pr.isMergeQueueEnabled,
 			isInMergeQueue: pr.mergeQueueEntry !== null,
 			entry: pr.mergeQueueEntry,
-			allowedMergeMethods,
+			allowedMergeMethods: deriveAllowedMergeMethods(repository, pr.baseRef),
 		};
 	} catch {
 		return null;

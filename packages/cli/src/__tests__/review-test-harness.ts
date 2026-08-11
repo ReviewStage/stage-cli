@@ -31,17 +31,22 @@ const submittedThread = {
 	viewerCanReply: true,
 	path: "src/foo.ts",
 	line: 10,
+	subjectType: "LINE",
 	startLine: null,
 	diffSide: "RIGHT",
 	startDiffSide: null,
+	originalLine: 10,
+	originalStartLine: null,
 	comments: {
 		pageInfo: { hasNextPage: false, endCursor: null },
 		nodes: [
 			{
 				id: "COMMENT_sub",
+				databaseId: 1001,
 				url: "https://github.com/owner/repo/pull/5#discussion_r1",
 				body: "Submitted comment",
 				bodyHTML: "<p>Submitted comment</p>",
+				diffHunk: "@@ -9,3 +9,3 @@\n context\n-old submitted line\n+new submitted line",
 				createdAt: "2026-01-01T00:00:00Z",
 				author: { login: "octocat", avatarUrl: "https://x/o.png" },
 				pullRequestReview: { state: "COMMENTED" },
@@ -58,18 +63,88 @@ const pendingThread = {
 	viewerCanReply: true,
 	path: "src/bar.ts",
 	line: 4,
+	subjectType: "LINE",
 	startLine: null,
 	diffSide: "LEFT",
 	startDiffSide: null,
+	originalLine: 4,
+	originalStartLine: null,
 	comments: {
 		pageInfo: { hasNextPage: false, endCursor: null },
 		nodes: [
 			{
 				id: "COMMENT_pending",
+				databaseId: 1002,
 				url: "https://github.com/owner/repo/pull/5#discussion_r2",
 				body: "Draft comment",
 				bodyHTML: "<p>Draft comment</p>",
+				diffHunk: "@@ -3,3 +3,3 @@\n context\n-removed line\n+added line",
 				createdAt: "2026-01-02T00:00:00Z",
+				author: { login: "octocat", avatarUrl: "https://x/o.png" },
+				pullRequestReview: { state: "PENDING" },
+			},
+		],
+	},
+};
+
+const fileLevelThread = {
+	id: "THREAD_file",
+	isResolved: false,
+	viewerCanResolve: true,
+	viewerCanUnresolve: true,
+	viewerCanReply: true,
+	path: "src/foo.ts",
+	line: null,
+	subjectType: "FILE",
+	startLine: null,
+	diffSide: "RIGHT",
+	startDiffSide: null,
+	originalLine: null,
+	originalStartLine: null,
+	comments: {
+		pageInfo: { hasNextPage: false, endCursor: null },
+		nodes: [
+			{
+				id: "COMMENT_file",
+				databaseId: 1003,
+				url: "https://github.com/owner/repo/pull/5#discussion_r4",
+				body: "Whole-file comment",
+				bodyHTML: "<p>Whole-file comment</p>",
+				diffHunk: "",
+				createdAt: "2026-01-04T00:00:00Z",
+				author: { login: "octocat", avatarUrl: "https://x/o.png" },
+				pullRequestReview: { state: "COMMENTED" },
+			},
+		],
+	},
+};
+
+const outdatedThread = {
+	id: "THREAD_outdated",
+	isResolved: false,
+	viewerCanResolve: true,
+	viewerCanUnresolve: true,
+	viewerCanReply: true,
+	path: "src/foo.ts",
+	line: null,
+	subjectType: "LINE",
+	startLine: null,
+	diffSide: "RIGHT",
+	startDiffSide: null,
+	originalLine: 7,
+	originalStartLine: null,
+	comments: {
+		pageInfo: { hasNextPage: false, endCursor: null },
+		nodes: [
+			{
+				id: "COMMENT_outdated",
+				// GraphQL Int overflow: GitHub nulls `databaseId` for large comment ids.
+				databaseId: null,
+				url: "https://github.com/owner/repo/pull/5#d9",
+				body: "Outdated draft",
+				bodyHTML: "<p>Outdated draft</p>",
+				diffHunk: "@@ -6,2 +6,2 @@\n-stale line\n+fresh line",
+				createdAt: "2026-01-03T00:00:00Z",
 				author: { login: "octocat", avatarUrl: "https://x/o.png" },
 				pullRequestReview: { state: "PENDING" },
 			},
@@ -86,17 +161,22 @@ function makePromotionThread(rootState: "PENDING" | "COMMENTED") {
 		viewerCanReply: true,
 		path: "src/foo.ts",
 		line: 3,
+		subjectType: "LINE",
 		startLine: null,
 		diffSide: "RIGHT",
 		startDiffSide: null,
+		originalLine: 3,
+		originalStartLine: null,
 		comments: {
 			pageInfo: { hasNextPage: false, endCursor: null },
 			nodes: [
 				{
 					id: "COMMENT_new",
+					databaseId: 1004,
 					url: "https://github.com/owner/repo/pull/5#discussion_r3",
 					body: "Local note",
 					bodyHTML: "<p>Local note</p>",
+					diffHunk: "@@ -2,2 +2,2 @@\n-old local line\n+new local line",
 					createdAt: "2026-01-03T00:00:00Z",
 					author: { login: "octocat", avatarUrl: "https://x/o.png" },
 					pullRequestReview: { state: rootState },
@@ -192,6 +272,7 @@ export function makeCrossSideRangeReview(): unknown {
 		[
 			{
 				...submittedThread,
+				subjectType: "LINE",
 				startLine: 8,
 				startDiffSide: "LEFT",
 				diffSide: "RIGHT",
@@ -202,37 +283,11 @@ export function makeCrossSideRangeReview(): unknown {
 }
 
 export function makeAnchorlessPendingReview(): unknown {
-	return makeReview(
-		[
-			{
-				id: "THREAD_outdated",
-				isResolved: false,
-				viewerCanResolve: true,
-				viewerCanUnresolve: true,
-				viewerCanReply: true,
-				path: "src/foo.ts",
-				line: null,
-				startLine: null,
-				diffSide: "RIGHT",
-				startDiffSide: null,
-				comments: {
-					pageInfo: { hasNextPage: false, endCursor: null },
-					nodes: [
-						{
-							id: "COMMENT_outdated",
-							url: "https://github.com/owner/repo/pull/5#d9",
-							body: "Outdated draft",
-							bodyHTML: "<p>Outdated draft</p>",
-							createdAt: "2026-01-03T00:00:00Z",
-							author: { login: "octocat", avatarUrl: "https://x/o.png" },
-							pullRequestReview: { state: "PENDING" },
-						},
-					],
-				},
-			},
-		],
-		"REVIEW_pending",
-	);
+	return makeReview([outdatedThread], "REVIEW_pending");
+}
+
+export function makeFileLevelThreadReview(): unknown {
+	return makeReview([submittedThread, fileLevelThread, outdatedThread], null);
 }
 
 interface GhShimOptions {
@@ -242,9 +297,31 @@ interface GhShimOptions {
 	addConcurrentPendingCommentOnThreadFailure?: boolean;
 	failAddReply?: boolean;
 	failDiscardAfterWrite?: boolean;
+	/**
+	 * The first SubmitReview mutation fails like GitHub rejecting a stale pending
+	 * review, and the pending review (with its draft comments) disappears from the
+	 * review fixture — subsequent submits succeed.
+	 */
+	failSubmitReviewOnce?: boolean;
+	/**
+	 * The first SubmitReview mutation exits 0 but returns a null
+	 * `submitPullRequestReview` payload (GitHub's other-session discard shape),
+	 * and the pending review disappears from the review fixture — subsequent
+	 * submits succeed.
+	 */
+	nullSubmitPayloadOnce?: boolean;
+	/** The REST `pulls/:number/reviews` read fails (e.g. transient gh failure). */
+	failRestReviews?: boolean;
 	mergeBaseOid?: string;
 	noPullRequest?: boolean;
 	persistCreatedReview?: boolean;
+	/**
+	 * GetReviewState's answer for the stale review: a review state string,
+	 * `null` for a deleted node, or omit for `"PENDING"`.
+	 */
+	reviewStateAfterSubmit?: string | null;
+	/** REST `pulls/:number/reviews` pages (`--paginate --slurp` shape: array of pages). */
+	restReviews?: unknown;
 	reviewQueryDelayMs?: number;
 }
 
@@ -253,6 +330,8 @@ interface InsertRunOptions {
 	committed?: boolean;
 	headSha?: string;
 	prNumber?: number | null;
+	/** Import-time branch stored on the run; defaults to null (legacy row). */
+	headRef?: string | null;
 	repoRoot?: string;
 }
 
@@ -312,6 +391,14 @@ export class ReviewRouteHarness {
 		const reviewPath = path.join(this.tmpDir, "review.json");
 		await fs.writeFile(reviewPath, JSON.stringify(reviewResult));
 		const promotionThread = makePromotionThread("PENDING");
+		const reviewStateNode =
+			options.reviewStateAfterSubmit === null
+				? null
+				: {
+						__typename: "PullRequestReview",
+						state: options.reviewStateAfterSubmit ?? "PENDING",
+					};
+		const submitFailMarker = path.join(this.tmpDir, "submit-fail-marker");
 		const shim = `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -332,6 +419,10 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   const mergeBaseOid = ${JSON.stringify(options.mergeBaseOid ?? MERGE_BASE)};
   if (args.includes("--jq")) process.stdout.write(mergeBaseOid + "\\n");
   else emit({ merge_base_commit: { sha: mergeBaseOid } });
+} else if (args[0] === "pr" && args[1] === "list") {
+  // Branch-pinned resolution: the run's import-time branch resolves to the
+  // same PR number the checkout-discovery fixture serves via pr view.
+  emit(${options.noPullRequest ? "[]" : '[{ number: 5, state: "OPEN" }]'});
 } else if (args[0] === "pr" && args[1] === "view") {
   if (${options.noPullRequest ? "true" : "false"}) {
     process.stderr.write("no pull requests found for branch \\"feature\\"\\n");
@@ -344,10 +435,20 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 ) {
   fs.appendFileSync(log, "create-immediate-comment " + fields.replaceAll("\\n", "\\\\n") + "\\n");
   emit({ id: 123, node_id: "COMMENT_immediate" });
+} else if (args.some((arg) => arg.includes("/pulls/") && arg.endsWith("/reviews"))) {
+  fs.appendFileSync(log, "rest-reviews\\n");
+  if (${options.failRestReviews ? "true" : "false"}) {
+    process.stderr.write("gh: connection reset\\n");
+    process.exit(1);
+  }
+  emit(${JSON.stringify(options.restReviews ?? [])});
+} else if (query.includes("query GetReviewState")) {
+  fs.appendFileSync(log, "review-state\\n");
+  emit({ data: { node: ${JSON.stringify(reviewStateNode)} } });
 } else if (query.includes("query GetReview")) {
   sleep(${options.reviewQueryDelayMs ?? 0});
   const commentFields = query.slice(query.indexOf("comments(first:"), query.indexOf("author {"));
-  const illegalCommentField = ["databaseId", "diffSide", "startDiffSide"].find((field) => commentFields.includes(field));
+  const illegalCommentField = ["diffSide", "startDiffSide"].find((field) => commentFields.includes(field));
   if (illegalCommentField) {
     process.stderr.write("gh: PullRequestReviewComment has no field " + illegalCommentField + "\\n");
     process.exit(1);
@@ -410,8 +511,33 @@ if (args.some((arg) => arg.includes("/compare/"))) {
   if (${options.failAddReply ? "true" : "false"}) { process.stderr.write("gh: reply failed\\n"); process.exit(1); }
   emit({ data: { addPullRequestReviewThreadReply: { comment: { id: "C" } } } });
 } else if (query.includes("mutation SubmitReview")) {
-  fs.appendFileSync(log, "submit " + fields + "\\n");
-  emit({ data: { submitPullRequestReview: { pullRequestReview: { id: "R" } } } });
+  const submitFailMarker = ${JSON.stringify(submitFailMarker)};
+  const dropPendingReview = () => {
+    // The stale review (and its drafts) are gone from GitHub's point of view.
+    const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+    review.data.repository.pullRequest.reviews.nodes = [];
+    review.data.repository.pullRequest.reviewThreads.nodes = review.data.repository.pullRequest.reviewThreads.nodes.flatMap((thread) => {
+      thread.comments.nodes = thread.comments.nodes.filter((comment) => comment.pullRequestReview.state !== "PENDING");
+      return thread.comments.nodes.length === 0 ? [] : [thread];
+    });
+    fs.writeFileSync(reviewPath, JSON.stringify(review));
+  };
+  if (${options.failSubmitReviewOnce ? "true" : "false"} && !fs.existsSync(submitFailMarker)) {
+    fs.writeFileSync(submitFailMarker, "1");
+    fs.appendFileSync(log, "submit-fail " + fields + "\\n");
+    dropPendingReview();
+    process.stderr.write("GraphQL: Could not approve pull request review. (submitPullRequestReview)\\n");
+    process.exit(1);
+  }
+  if (${options.nullSubmitPayloadOnce ? "true" : "false"} && !fs.existsSync(submitFailMarker)) {
+    fs.writeFileSync(submitFailMarker, "1");
+    fs.appendFileSync(log, "submit-null " + fields + "\\n");
+    dropPendingReview();
+    emit({ data: { submitPullRequestReview: null } });
+  } else {
+    fs.appendFileSync(log, "submit " + fields + "\\n");
+    emit({ data: { submitPullRequestReview: { pullRequestReview: { id: "R" } } } });
+  }
 } else {
   emit({ data: {} });
 }
@@ -437,6 +563,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 				repoRoot: options.repoRoot ?? this.repoRoot,
 				originUrl,
 				prNumber: options.prNumber === undefined ? this.prNumber : options.prNumber,
+				headRef: options.headRef ?? null,
 				scopeKind: committed ? SCOPE_KIND.COMMITTED : SCOPE_KIND.WORKING_TREE,
 				workingTreeRef: committed ? null : WORKING_TREE_REF.WORK,
 				baseSha: BASE,

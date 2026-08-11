@@ -10,6 +10,8 @@ import { vi } from "vitest";
 interface FetchCall {
 	url: string;
 	method: string;
+	/** Parsed JSON request body, or null when the request had none. */
+	body: unknown;
 }
 
 export interface FetchScript {
@@ -84,7 +86,8 @@ export function installFetch(script: FetchScript): void {
 	const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
 		const url = typeof input === "string" ? input : input.toString();
 		const method = (init?.method ?? "GET").toUpperCase();
-		script.calls.push({ url, method });
+		const body: unknown = init?.body ? JSON.parse(String(init.body)) : null;
+		script.calls.push({ url, method, body });
 
 		const failureKey = `${method} ${url}`;
 		if (script.failures.has(failureKey)) {

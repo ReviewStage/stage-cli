@@ -1,4 +1,6 @@
+import { useMatchRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { Columns2, Rows3 } from "lucide-react";
+import { ShortcutLabel } from "@/components/keyboard/shortcut-label";
 import { SegmentedToggle } from "@/components/shared/segmented-toggle";
 import { Label } from "@/components/ui/label";
 import {
@@ -9,7 +11,17 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { SYNTAX_THEME_OPTIONS } from "@/lib/syntax-themes";
+import { useChapterViewState } from "@/lib/chapter-view-state-context";
+import { DIFF_FONT_OPTIONS, FONT_SIZE_OPTIONS, LINE_HEIGHT_OPTIONS } from "@/lib/diff-typography";
+import { SYNTAX_THEME_OPTIONS_BY_APP_THEME } from "@/lib/syntax-themes";
+import { TEXT_SIZE_OPTIONS } from "@/lib/text-size";
+import { useTheme } from "@/lib/theme";
+import {
+	CHAPTER_VIEW_MODE,
+	CHAPTER_VIEW_MODE_OPTIONS,
+	type ChapterViewMode,
+	useChapterSettings,
+} from "@/lib/use-chapter-settings";
 import {
 	DIFF_INDICATORS,
 	type DiffIndicators,
@@ -19,6 +31,7 @@ import {
 	VIEW_MODE,
 	type ViewMode,
 } from "@/lib/use-diff-settings";
+import { useTextSize } from "@/lib/use-text-size";
 import { cn } from "@/lib/utils";
 
 interface DiffSettingsFormProps {
@@ -51,6 +64,37 @@ const LINE_DIFF_OPTIONS: { value: LineDiffType; label: string; description: stri
 ];
 
 export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
+	const { appTheme } = useTheme();
+	const { textSize, setTextSize } = useTextSize();
+	const { chapterViewMode, setChapterViewMode } = useChapterSettings();
+	const navigate = useNavigate();
+	const matchRoute = useMatchRoute();
+	const params = useParams({ strict: false });
+	const chapterViewState = useChapterViewState();
+
+	// When leaving continuous mode from the chapters reader, land on the
+	// chapter that was active in the stream.
+	const updateChapterViewMode = (value: ChapterViewMode) => {
+		const runId = params.runId;
+		if (
+			chapterViewMode === CHAPTER_VIEW_MODE.CONTINUOUS &&
+			value === CHAPTER_VIEW_MODE.PAGED &&
+			chapterViewState &&
+			typeof runId === "string" &&
+			matchRoute({ to: "/runs/$runId/chapters" })
+		) {
+			void navigate({
+				to: "/runs/$runId/chapters/$chapterNumber",
+				params: {
+					runId,
+					chapterNumber: String(chapterViewState.activeContinuousChapterNumber),
+				},
+				replace: true,
+				resetScroll: false,
+			});
+		}
+		setChapterViewMode(value);
+	};
 	const {
 		viewMode,
 		setViewMode,
@@ -66,17 +110,80 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 		setLineNumbers,
 		syntaxTheme,
 		setSyntaxTheme,
+		diffFontFamily,
+		setDiffFontFamily,
+		diffFontSize,
+		setDiffFontSize,
+		diffLineHeight,
+		setDiffLineHeight,
+		diffLigatures,
+		setDiffLigatures,
+		inlineCommentsMinimized,
+		toggleInlineCommentsMinimized,
 	} = useDiffSettings();
 
 	return (
 		<div className={cn("space-y-4", compact && "space-y-3")}>
-			{/* Syntax theme */}
+			{/* App-wide appearance — the CLI has no settings page, so these
+			    live here in their own small group. */}
+			<GroupLabel>Appearance</GroupLabel>
+
+			{/* Text size — scales the whole app; the diff keeps its own size below */}
+			<SettingRow label="Text size" compact={compact}>
+				<SettingSelect value={textSize} onValueChange={setTextSize} options={TEXT_SIZE_OPTIONS} />
+			</SettingRow>
+
+			<GroupLabel>Diff display</GroupLabel>
+
+			<SettingRow label="Chapter view" compact={compact}>
+				<div className="w-[160px]">
+					<SegmentedToggle<ChapterViewMode>
+						value={chapterViewMode}
+						onChange={updateChapterViewMode}
+						options={CHAPTER_VIEW_MODE_OPTIONS}
+					/>
+				</div>
+			</SettingRow>
+
+			{/* Syntax theme follows the app's resolved light/dark mode */}
 			<SettingRow label="Syntax theme" compact={compact}>
 				<SettingSelect
 					value={syntaxTheme}
 					onValueChange={setSyntaxTheme}
-					options={SYNTAX_THEME_OPTIONS}
+					options={SYNTAX_THEME_OPTIONS_BY_APP_THEME[appTheme]}
 				/>
+			</SettingRow>
+
+			{/* Diff font */}
+			<SettingRow label="Font" compact={compact}>
+				<SettingSelect
+					value={diffFontFamily}
+					onValueChange={setDiffFontFamily}
+					options={DIFF_FONT_OPTIONS}
+				/>
+			</SettingRow>
+
+			{/* Font size */}
+			<SettingRow label="Font size" compact={compact}>
+				<SettingSelect
+					value={diffFontSize}
+					onValueChange={setDiffFontSize}
+					options={FONT_SIZE_OPTIONS}
+				/>
+			</SettingRow>
+
+			{/* Line height — scales with the font size */}
+			<SettingRow label="Line height" compact={compact}>
+				<SettingSelect
+					value={diffLineHeight}
+					onValueChange={setDiffLineHeight}
+					options={LINE_HEIGHT_OPTIONS}
+				/>
+			</SettingRow>
+
+			{/* Ligatures */}
+			<SettingRow label="Ligatures" compact={compact}>
+				<Switch aria-label="Ligatures" checked={diffLigatures} onCheckedChange={setDiffLigatures} />
 			</SettingRow>
 
 			{/* View mode */}
@@ -113,19 +220,43 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 
 			{/* Backgrounds */}
 			<SettingRow label="Backgrounds" compact={compact}>
-				<Switch checked={backgrounds} onCheckedChange={setBackgrounds} />
+				<Switch aria-label="Backgrounds" checked={backgrounds} onCheckedChange={setBackgrounds} />
 			</SettingRow>
 
 			{/* Line wrapping */}
 			<SettingRow label="Wrapping" compact={compact}>
-				<Switch checked={wrap} onCheckedChange={setWrap} />
+				<Switch aria-label="Wrapping" checked={wrap} onCheckedChange={setWrap} />
 			</SettingRow>
 
 			{/* Line numbers */}
 			<SettingRow label="Line numbers" compact={compact}>
-				<Switch checked={lineNumbers} onCheckedChange={setLineNumbers} />
+				<Switch aria-label="Line numbers" checked={lineNumbers} onCheckedChange={setLineNumbers} />
+			</SettingRow>
+
+			{/* Minimize inline comments */}
+			<SettingRow
+				label={
+					<>
+						Minimize inlines <ShortcutLabel label="i" />
+					</>
+				}
+				compact={compact}
+			>
+				<Switch
+					aria-label="Minimize inlines"
+					checked={inlineCommentsMinimized}
+					onCheckedChange={() => toggleInlineCommentsMinimized()}
+				/>
 			</SettingRow>
 		</div>
+	);
+}
+
+function GroupLabel({ children }: { children: React.ReactNode }) {
+	return (
+		<h3 className="pt-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wider first:pt-0">
+			{children}
+		</h3>
 	);
 }
 

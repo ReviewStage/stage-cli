@@ -13,6 +13,11 @@ export interface ImportChaptersResult {
 	keyChangeCount: number;
 }
 
+/**
+ * Parse and insert a chapters file directly. Not wired to any CLI command —
+ * the production ingestion path is `stagereview show`, which additionally
+ * revalidates hunk coverage and sanitizes lineRefs before persisting.
+ */
 export function importChaptersFile(jsonPath: string, db: StageDb = getDb()): ImportChaptersResult {
 	const absolute = path.resolve(jsonPath);
 	const raw = readFileSync(absolute, "utf8");
@@ -32,6 +37,7 @@ export function insertChaptersFile(
 			repoRoot: repo.root,
 			originUrl: repo.originUrl,
 			prNumber,
+			headRef: repo.headRef,
 			scopeKind: file.scope.kind,
 			workingTreeRef: file.scope.kind === SCOPE_KIND.WORKING_TREE ? file.scope.ref : null,
 			baseSha: file.scope.baseSha,
@@ -48,18 +54,25 @@ export function insertChaptersFile(
 		// comment routes derive from a chapter_run row.
 		const scopeKey = deriveScopeKey(runValues);
 
+		// Sort by the agent-supplied
+		// `order`, then assign a dense 0-based chapterIndex from array position so
+		// duplicate or sparse orders can't violate unique(runId, chapterIndex).
+		const sortedChapters = [...file.chapters].sort((a, b) => a.order - b.order);
+
 		let keyChangeCount = 0;
-		for (const c of file.chapters) {
+		for (const [chapterIndex, c] of sortedChapters.entries()) {
 			const [chapterRow] = tx
 				.insert(chapter)
 				.values({
 					runId,
 					externalId: deriveChapterExternalId(scopeKey, c.id),
-					chapterIndex: c.order,
+					chapterIndex,
 					title: c.title,
 					summary: c.summary,
 					hunkRefs: c.hunkRefs,
 					keyChanges: c.keyChanges.map((kc) => kc.content),
+					riskLevel: c.riskLevel,
+					riskReasons: c.riskReasons.length > 0 ? c.riskReasons : null,
 				})
 				.returning({ id: chapter.id })
 				.all();

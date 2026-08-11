@@ -1,3 +1,4 @@
+import { REVIEWER_STATUS } from "@stagereview/types/pull-request";
 import {
 	COMMENT_STATE,
 	GITHUB_REVIEW_STATUS,
@@ -9,6 +10,7 @@ import {
 	type ReviewEvent,
 	type ReviewResponse,
 	type ReviewThread as ReviewThreadDto,
+	SUBJECT_TYPE,
 	THREAD_SOURCE,
 } from "@stagereview/types/review";
 import { asc, eq } from "drizzle-orm";
@@ -19,7 +21,13 @@ import {
 	commentInsertionOrder,
 	commentThread,
 } from "../db/schema/index.js";
-import { type GitHubRepo, getPullRequestOrThrow, parseGitHubRepo } from "../github/index.js";
+import {
+	type GitHubRepo,
+	getPullRequestOrThrow,
+	getReviews,
+	parseGitHubRepo,
+	pullRequestSelectorForRun,
+} from "../github/index.js";
 import {
 	addImmediateReviewComment,
 	addReviewReply,
@@ -28,10 +36,12 @@ import {
 	deleteReviewComment,
 	discardReview,
 	GITHUB_DIFF_SIDE,
+	type LoadedReviewThread as GitHubApiLoadedReviewThread,
 	type ReviewComment as GitHubApiReviewComment,
 	type ReviewThread as GitHubApiReviewThread,
 	type GitHubDiffSide,
 	type GitHubReview,
+	GitHubReviewNotPendingError,
 	getReview,
 	setThreadResolved,
 	submitReview,
@@ -95,8 +105,11 @@ function canWriteToGitHub(run: ChapterRunRow, review: GitHubReview): boolean {
 	return review.state === "OPEN" && runMatchesPrDiff(run, review);
 }
 
-function requireReviewThread(review: GitHubReview, threadNodeId: string): GitHubApiReviewThread {
-	const thread = review.threads.find((candidate) => candidate.threadNodeId === threadNodeId);
+function requireReviewThread(
+	review: GitHubReview,
+	threadNodeId: string,
+): GitHubApiLoadedReviewThread {
+	const thread = review.allThreads.find((candidate) => candidate.threadNodeId === threadNodeId);
 	if (thread) return thread;
 	throw new ReviewError("That GitHub review thread doesn't belong to this pull request.", 400);
 }
@@ -143,9 +156,21 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 	);
 }
 
-function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
-	// `line` is non-null (getReview drops anchorless threads); start defaults to line.
-	const endLine = t.line;
+function toGitHubCommentDto(c: GitHubApiReviewComment): GitHubReviewCommentDto {
+	return {
+		id: c.nodeId,
+		state: c.isPending ? COMMENT_STATE.PENDING : COMMENT_STATE.SUBMITTED,
+		body: c.body,
+		bodyHtml: c.bodyHtml,
+		author: { login: c.authorLogin, avatarUrl: c.authorAvatarUrl || null },
+		nodeId: c.nodeId,
+		htmlUrl: c.htmlUrl,
+		createdAt: c.createdAt,
+	};
+}
+
+// The fields every GitHub thread DTO shares; the callers add the anchor variant.
+function toGitHubThreadDtoCommon(t: GitHubApiLoadedReviewThread) {
 	return {
 		id: t.threadNodeId,
 		source: THREAD_SOURCE.GITHUB,
@@ -153,25 +178,64 @@ function toGitHubThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
 		filePath: t.path,
 		side: fromGitHubSide(t.side),
 		startSide: fromGitHubSide(t.startSide ?? t.side),
-		startLine: t.startLine ?? endLine,
-		endLine,
 		isResolved: t.isResolved,
 		viewerCanResolve: t.viewerCanResolve,
 		viewerCanUnresolve: t.viewerCanUnresolve,
 		viewerCanReply: t.viewerCanReply,
-		comments: t.comments.map(
-			(c): GitHubReviewCommentDto => ({
-				id: c.nodeId,
-				state: c.isPending ? COMMENT_STATE.PENDING : COMMENT_STATE.SUBMITTED,
-				body: c.body,
-				bodyHtml: c.bodyHtml,
-				author: { login: c.authorLogin, avatarUrl: c.authorAvatarUrl || null },
-				nodeId: c.nodeId,
-				htmlUrl: c.htmlUrl,
-				createdAt: c.createdAt,
-			}),
-		),
+		comments: t.comments.map(toGitHubCommentDto),
 	};
+}
+
+function toGitHubLineThreadDto(t: GitHubApiReviewThread): GitHubReviewThreadDto {
+	// Single-line threads have no startLine on GitHub; start defaults to line.
+	const endLine = t.line;
+	return {
+		...toGitHubThreadDtoCommon(t),
+		subjectType: SUBJECT_TYPE.LINE,
+		startLine: t.startLine ?? endLine,
+		endLine,
+	};
+}
+
+function toGitHubFileThreadDto(t: GitHubApiLoadedReviewThread): GitHubReviewThreadDto {
+	return {
+		...toGitHubThreadDtoCommon(t),
+		subjectType: SUBJECT_TYPE.FILE,
+		startLine: null,
+		endLine: null,
+	};
+}
+
+function toGitHubOutdatedThreadDto(
+	t: GitHubApiLoadedReviewThread,
+	originalLine: number,
+): GitHubReviewThreadDto {
+	return {
+		...toGitHubThreadDtoCommon(t),
+		subjectType: SUBJECT_TYPE.LINE,
+		startLine: null,
+		endLine: null,
+		originalLine,
+		originalStartLine: t.originalStartLine,
+	};
+}
+
+/**
+ * The wire threads for the PR: line-anchored threads, plus the anchorless ones
+ * that still count toward file/chapter comment badges — whole-file threads and
+ * outdated line threads (GitHub nulls their `line` once the code moves), the
+ * latter counted via their frozen original coordinates.
+ */
+function toGitHubThreadDtos(review: GitHubReview): GitHubReviewThreadDto[] {
+	const dtos = review.threads.map(toGitHubLineThreadDto);
+	for (const t of review.allThreads) {
+		if (t.subjectType === SUBJECT_TYPE.FILE) {
+			dtos.push(toGitHubFileThreadDto(t));
+		} else if (t.line === null && t.originalLine !== null) {
+			dtos.push(toGitHubOutdatedThreadDto(t, t.originalLine));
+		}
+	}
+	return dtos;
 }
 
 /**
@@ -193,13 +257,19 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 
 	const repo = parseGitHubRepo(run.originUrl);
 	if (!repo) return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
-	const hasStoredPullRequest = run.prNumber !== null;
+	// A stored number or an import-time branch both pin resolution to the run's
+	// own PR; only legacy rows (neither) discover the checkout's PR.
+	const hasPinnedPullRequest = run.prNumber !== null || run.headRef !== null;
 
 	let review: GitHubReview;
 	try {
 		let prNumber = run.prNumber;
 		if (prNumber === null) {
-			const pr = await getPullRequestOrThrow(run.repoRoot, run.originUrl, null);
+			const pr = await getPullRequestOrThrow(
+				run.repoRoot,
+				run.originUrl,
+				pullRequestSelectorForRun(run),
+			);
 			prNumber = pr?.number ?? null;
 		}
 		if (prNumber === null) return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
@@ -215,10 +285,11 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 	// surface only local line threads. Keep the pending-review lifecycle visible so
 	// the viewer can inspect and discard drafts even though this run is read-only.
 	if (!runMatchesPrDiff(run, review)) {
-		// Automatic discovery follows the checkout's current branch, not the branch
+		// Legacy discovery follows the checkout's current branch, not the branch
 		// that created this historical run. A mismatch therefore cannot safely retain
 		// lifecycle controls: they may belong to an entirely different pull request.
-		if (!hasStoredPullRequest) return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
+		// Pinned runs resolved their own PR, so their lifecycle stays visible.
+		if (!hasPinnedPullRequest) return { ...base, github: GITHUB_REVIEW_STATUS.NONE };
 		return {
 			...base,
 			github: GITHUB_REVIEW_STATUS.AVAILABLE,
@@ -229,7 +300,7 @@ export async function getReviewForRun(db: StageDb, run: ChapterRunRow): Promise<
 		};
 	}
 
-	const githubThreads = review.threads.map(toGitHubThreadDto);
+	const githubThreads = toGitHubThreadDtos(review);
 	return {
 		github: GITHUB_REVIEW_STATUS.AVAILABLE,
 		threads: [...localThreads, ...githubThreads],
@@ -260,7 +331,11 @@ async function resolveReviewIdentity(run: ChapterRunRow): Promise<ReviewIdentity
 	if (!repo) throw new ReviewError("This run isn't associated with a GitHub remote.", 404);
 	let prNumber = run.prNumber;
 	if (prNumber === null) {
-		const pr = await getPullRequestOrThrow(run.repoRoot, run.originUrl, null);
+		const pr = await getPullRequestOrThrow(
+			run.repoRoot,
+			run.originUrl,
+			pullRequestSelectorForRun(run),
+		);
 		prNumber = pr?.number ?? null;
 	}
 	if (prNumber === null) {
@@ -517,17 +592,95 @@ export async function submitRunReview(
 				400,
 			);
 		}
-		await withPendingReview(run, target, (reviewNodeId) =>
-			submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
-		);
+		try {
+			await withPendingReview(run, target, (reviewNodeId) =>
+				submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body),
+			);
+		} catch (error) {
+			if (!(error instanceof GitHubReviewNotPendingError)) throw error;
+			await recoverFromStaleReviewAndSubmit(run, target, event, body, error);
+		}
 	});
+}
+
+/**
+ * The pending review died between the fresh read and the submit — it was
+ * submitted or discarded from another session. Re-read review state and retry:
+ * submit a pending review that reappeared, treat a reviewer decision that
+ * already matches the requested event as success (don't duplicate an approval
+ * submitted elsewhere), drop a submit left with no payload, and otherwise open
+ * a fresh review and submit it. When the reviews summary can't be read, the
+ * dedupe check is impossible — rethrow `cause` (surfaced as a 409) instead of
+ * risking a duplicate submission.
+ */
+async function recoverFromStaleReviewAndSubmit(
+	run: ChapterRunRow,
+	target: ReviewTarget,
+	event: ReviewEvent,
+	body: string,
+	cause: GitHubReviewNotPendingError,
+): Promise<void> {
+	try {
+		const review = await getReview(run.repoRoot, target.repo, target.prNumber);
+		assertGitHubWritable(run, review);
+
+		if (review.pendingReviewNodeId !== null) {
+			try {
+				await submitReview(
+					run.repoRoot,
+					review.pullRequestNodeId,
+					review.pendingReviewNodeId,
+					event,
+					body,
+				);
+				return;
+			} catch (error) {
+				if (!(error instanceof GitHubReviewNotPendingError)) throw error;
+			}
+		}
+
+		// `getReviews` swallows failures into null — without bailing here a
+		// transient reviews failure would skip the dedupe check below and duplicate a
+		// decision already submitted from the other session.
+		const reviewsSummary = await getReviews(run.repoRoot, target.repo, target.prNumber);
+		if (reviewsSummary === null) throw cause;
+		const currentReviewer = reviewsSummary.reviewers.find(
+			(reviewer) => reviewer.user.login === review.viewerLogin,
+		);
+		const alreadyMatchesRequestedSubmit =
+			(event === REVIEW_EVENT.APPROVE && currentReviewer?.status === REVIEWER_STATUS.APPROVED) ||
+			(event === REVIEW_EVENT.REQUEST_CHANGES &&
+				currentReviewer?.status === REVIEWER_STATUS.CHANGES_REQUESTED) ||
+			(event === REVIEW_EVENT.COMMENT &&
+				currentReviewer?.status === REVIEWER_STATUS.COMMENTED &&
+				body.trim() !== "");
+		if (alreadyMatchesRequestedSubmit) return;
+
+		// The stale review's drafts died with it; a bare comment submit has nothing left to say.
+		const hasSubmitPayload =
+			review.pendingComments.length > 0 || body.trim() !== "" || event !== REVIEW_EVENT.COMMENT;
+		if (!hasSubmitPayload) return;
+
+		const reviewNodeId = await openPendingReview(run, review);
+		await submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body);
+	} catch (error) {
+		// Recovery exhausted with the review still not pending — surface it as a
+		// conflict so the UI can refresh instead of showing a raw GraphQL failure.
+		if (error instanceof GitHubReviewNotPendingError) {
+			throw new ReviewError(error.message, 409);
+		}
+		throw error;
+	}
 }
 
 /** Discard the viewer's pending review and all its draft comments. */
 export async function discardRunReview(run: ChapterRunRow): Promise<void> {
 	await withLockedReviewTarget(run, async ({ review }) => {
 		if (review.pendingReviewNodeId === null) return;
-		if (run.prNumber === null && !runMatchesPrDiff(run, review)) {
+		// Legacy rows (no stored number, no import-time branch) discover the
+		// checkout's PR, so a diff mismatch may mean the pending review belongs
+		// to an entirely different pull request.
+		if (run.prNumber === null && run.headRef === null && !runMatchesPrDiff(run, review)) {
 			throw new ReviewError(
 				"This run isn't tied to the pull request currently discovered for the checkout. Re-run with --pr before discarding its review.",
 				409,

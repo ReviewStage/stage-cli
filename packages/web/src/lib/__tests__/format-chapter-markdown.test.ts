@@ -18,10 +18,12 @@ describe("formatChapterAsMarkdown", () => {
 			{
 				id: "c1",
 				externalId: "ext-c1",
-				order: 1,
+				order: 0,
 				title: "Wire org ID",
 				summary: "Threads orgId through.",
 				hunkRefs: [],
+				riskLevel: null,
+				riskReasons: [],
 				keyChanges: [
 					{ id: "k1", externalId: "ext-k1", content: "Check the auth path", lineRefs: [] },
 					{ id: "k2", externalId: "ext-k2", content: "Verify the SQL query", lineRefs: [] },
@@ -35,23 +37,24 @@ describe("formatChapterAsMarkdown", () => {
 		expect(md).toContain("## Files\n- src/foo.ts (modified, +5 -2)");
 	});
 
-	it("uses chapter.order rather than array position in the heading", () => {
-		// Regression: previously the heading was `Chapter ${chapterIndex + 1}`,
-		// which disagreed with the navigator display when chapters had gaps
-		// in their order values.
+	it("uses chapter.order + 1 in the heading to match the navigator display", () => {
+		// The wire `order` is the dense 0-based chapter index; the heading shows
+		// the 1-based number the navigator displays.
 		const md = formatChapterAsMarkdown(
 			{
 				id: "c1",
 				externalId: "ext-c1",
 				order: 5,
-				title: "Fifth",
+				title: "Sixth",
 				summary: "",
 				hunkRefs: [],
+				riskLevel: null,
+				riskReasons: [],
 				keyChanges: [],
 			},
 			[],
 		);
-		expect(md).toBe("# Chapter 5: Fifth");
+		expect(md).toBe("# Chapter 6: Sixth");
 	});
 
 	it("renders rename arrows when oldPath differs from path", () => {
@@ -59,10 +62,12 @@ describe("formatChapterAsMarkdown", () => {
 			{
 				id: "c1",
 				externalId: "ext-c1",
-				order: 1,
+				order: 0,
 				title: "Move it",
 				summary: "Renamed.",
 				hunkRefs: [],
+				riskLevel: null,
+				riskReasons: [],
 				keyChanges: [],
 			},
 			[
@@ -86,10 +91,12 @@ describe("formatChapterAsMarkdown", () => {
 			{
 				id: "c1",
 				externalId: "ext-c1",
-				order: 1,
+				order: 0,
 				title: "Empty",
 				summary: "",
 				hunkRefs: [],
+				riskLevel: null,
+				riskReasons: [],
 				keyChanges: [],
 			},
 			[],
@@ -106,11 +113,13 @@ describe("formatAllChaptersAsMarkdown", () => {
 		title,
 		summary: "",
 		hunkRefs: [],
+		riskLevel: null,
+		riskReasons: [],
 		keyChanges: [],
 	});
 
 	it("orders chapters by order and joins them with a horizontal rule", () => {
-		const md = formatAllChaptersAsMarkdown([chapter(2, "Second"), chapter(1, "First")], "");
+		const md = formatAllChaptersAsMarkdown([chapter(1, "Second"), chapter(0, "First")], "");
 		expect(md).toBe("# Chapter 1: First\n\n---\n\n# Chapter 2: Second");
 	});
 });

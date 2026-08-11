@@ -18,6 +18,16 @@ export function useReviewerManager({ open, search }: UseReviewerManagerOptions) 
 	);
 	const [optimisticRemovals, setOptimisticRemovals] = useState<Set<string>>(() => new Set());
 
+	// Stack navigation swaps runs while the header stays mounted; optimistic
+	// reviewer state from the previous PR must not bleed into the next one.
+	// Render-time state adjustment per React's derived-state guidance.
+	const [stateOwner, setStateOwner] = useState({ runId, number });
+	if (stateOwner.runId !== runId || stateOwner.number !== number) {
+		setStateOwner({ runId, number });
+		setOptimisticAdditions(new Map());
+		setOptimisticRemovals(new Set());
+	}
+
 	const { data: collaboratorsData } = usePullRequestCollaborators(runId, open);
 	const collaborators = collaboratorsData?.collaborators ?? null;
 

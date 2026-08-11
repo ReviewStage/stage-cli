@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 
-import type { GitHubReviewThread } from "@stagereview/types/review";
+import type { GitHubLineReviewThread } from "@stagereview/types/review";
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { useThreadHover } from "../use-thread-hover";
 
-const thread: GitHubReviewThread = {
+const thread: GitHubLineReviewThread = {
 	id: "thread",
 	source: "github",
+	subjectType: "LINE",
 	threadNodeId: "THREAD_1",
 	viewerCanResolve: true,
 	viewerCanUnresolve: true,
@@ -24,7 +25,7 @@ const thread: GitHubReviewThread = {
 describe("useThreadHover", () => {
 	it("clears hover state when the hovered thread unmounts", () => {
 		const { result, rerender } = renderHook(
-			({ threads }: { threads: GitHubReviewThread[] }) => useThreadHover(threads),
+			({ threads }: { threads: GitHubLineReviewThread[] }) => useThreadHover(threads),
 			{ initialProps: { threads: [thread] } },
 		);
 		act(() => result.current.enter(thread));

@@ -5,10 +5,23 @@ import type {
 	ReviewsResponse,
 } from "@stagereview/types/pull-request";
 import type { StageDb } from "../db/client.js";
-import { getChecks, getMergeStatus, getPullRequest, getReviews } from "../github/index.js";
+import {
+	getChecks,
+	getMergeStatus,
+	getPullRequest,
+	getPullRequestOrThrow,
+	getReviews,
+	pullRequestSelectorForRun,
+} from "../github/index.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
-import { parseNumber, query, requireRepo, resolveRun } from "./pull-request-shared.js";
+import {
+	enforceSameOrigin,
+	parseNumber,
+	query,
+	requireRepo,
+	resolveRun,
+} from "./pull-request-shared.js";
 
 const SHA_RE = /^[0-9a-f]{40}$/i;
 
@@ -17,10 +30,36 @@ export function pullRequestRoutes(db: StageDb): Route[] {
 		{
 			method: "GET",
 			pattern: "/api/runs/:runId/pull-request",
-			handler: async (_req, res, params) => {
+			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
-				const pullRequest = await getPullRequest(run.repoRoot, run.originUrl, run.prNumber);
+				// Explicit --pr runs must surface lookup failures (auth, offline,
+				// malformed output) instead of degrading to null, which the UI
+				// would misread as "this run has no PR". Branch runs keep the
+				// tolerant lookup so local browsing never breaks; they resolve
+				// the branch recorded at import, so a historical run keeps
+				// showing its own PR after the checkout moves to another branch.
+				if (run.prNumber !== null) {
+					try {
+						const pullRequest = await getPullRequestOrThrow(
+							run.repoRoot,
+							run.originUrl,
+							run.prNumber,
+						);
+						writeJson(res, 200, { pullRequest } satisfies PullRequestResponse);
+					} catch (err) {
+						const message = err instanceof Error ? err.message : "Failed to load pull request";
+						console.error(`Failed to load pull request: ${message}`);
+						writeJson(res, 502, { error: message });
+					}
+					return;
+				}
+				const pullRequest = await getPullRequest(
+					run.repoRoot,
+					run.originUrl,
+					pullRequestSelectorForRun(run),
+				);
 				const body: PullRequestResponse = { pullRequest };
 				writeJson(res, 200, body);
 			},
@@ -29,6 +68,7 @@ export function pullRequestRoutes(db: StageDb): Route[] {
 			method: "GET",
 			pattern: "/api/runs/:runId/pull-request/checks",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const repo = requireRepo(run, res);
@@ -46,6 +86,7 @@ export function pullRequestRoutes(db: StageDb): Route[] {
 			method: "GET",
 			pattern: "/api/runs/:runId/pull-request/reviews",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const repo = requireRepo(run, res);
@@ -64,6 +105,7 @@ export function pullRequestRoutes(db: StageDb): Route[] {
 			method: "GET",
 			pattern: "/api/runs/:runId/pull-request/merge-status",
 			handler: async (req, res, params) => {
+				if (!enforceSameOrigin(req, res)) return;
 				const run = resolveRun(db, params, res);
 				if (!run) return;
 				const repo = requireRepo(run, res);

@@ -103,6 +103,32 @@ describe("review API — GitHub boundaries", () => {
 		expect(JSON.parse(write.body).error).toMatch(/no GitHub pull request/i);
 	});
 
+	it("keeps a stale branch run's pending review lifecycle on its own PR", async () => {
+		// The run's headRef pins resolution to its own PR, so unlike a legacy row
+		// the pending-review lifecycle is safe to surface (and discard) even though
+		// the run's diff no longer matches the PR head.
+		await harness.writeGhShim(REVIEW_QUERY_RESULT, { discoveredPullRequest: true });
+		const runId = harness.insertRun({
+			prNumber: null,
+			headRef: "feature",
+			headSha: "d".repeat(40),
+		});
+		const port = await harness.start();
+
+		const read = await harness.request(port, "GET", `/api/runs/${runId}/review`);
+		const discard = await harness.request(port, "POST", `/api/runs/${runId}/review/discard`);
+		const review = JSON.parse(read.body);
+
+		expect(read.status).toBe(200);
+		expect(review.github).toBe("available");
+		expect(review.threads).toHaveLength(0);
+		expect(review.pendingComments).toHaveLength(1);
+		expect(review.hasPendingReview).toBe(true);
+		expect(review.canWriteToGitHub).toBe(false);
+		expect(discard.status).toBe(200);
+		expect(await harness.logLines()).toContain("discard-review");
+	});
+
 	it("does not expose another branch's discovered pending review to a stale run", async () => {
 		await harness.writeGhShim(REVIEW_QUERY_RESULT, { discoveredPullRequest: true });
 		const runId = harness.insertRun({ prNumber: null, headSha: "d".repeat(40) });

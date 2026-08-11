@@ -12,8 +12,14 @@ type Req = Parameters<RouteHandler>[0];
 export interface RunRepo {
 	repoRoot: string;
 	originUrl: string | null;
-	/** PR this run targets (`--pr`), or null to fall back to the checked-out branch's PR. */
+	/** PR this run targets (`--pr`), or null for branch-detected and legacy runs. */
 	prNumber: number | null;
+	/**
+	 * Branch checked out when the run was imported; pins PR discovery to the
+	 * branch the user actually reviewed. Null on legacy rows, which fall back
+	 * to the checked-out branch's PR.
+	 */
+	headRef: string | null;
 }
 
 /** Resolve a run's repo context, writing the matching error response on failure. */
@@ -35,7 +41,7 @@ export function resolveRun(db: StageDb, params: RouteParams, res: Res): RunRepo 
 		});
 		return null;
 	}
-	return { repoRoot, originUrl: run.originUrl, prNumber: run.prNumber };
+	return { repoRoot, originUrl: run.originUrl, prNumber: run.prNumber, headRef: run.headRef };
 }
 
 export function requireRepo(run: RunRepo, res: Res): GitHubRepo | null {
@@ -100,6 +106,19 @@ export function enforceSameOrigin(req: Req, res: Res): boolean {
 	const host = req.headers.host;
 	const hostname = hostHeaderHostname(host);
 	if (hostname === null || !LOOPBACK_HOSTNAMES.has(hostname)) {
+		writeJson(res, 403, { error: "Cross-origin request rejected" });
+		return false;
+	}
+	// Cross-site subresource loads (e.g. an <img> on a malicious page pointed
+	// at this loopback port) carry no Origin but do carry Sec-Fetch-Site in
+	// every modern browser; same-origin SPA requests send "same-origin" and
+	// non-browser clients omit the header entirely.
+	const secFetchSite = req.headers["sec-fetch-site"];
+	if (
+		typeof secFetchSite === "string" &&
+		secFetchSite !== "same-origin" &&
+		secFetchSite !== "none"
+	) {
 		writeJson(res, 403, { error: "Cross-origin request rejected" });
 		return false;
 	}

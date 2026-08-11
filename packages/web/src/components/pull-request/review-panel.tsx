@@ -2,10 +2,15 @@ import {
 	type PendingReviewComment,
 	REVIEW_EVENT,
 	type ReviewEvent,
+	SUBJECT_TYPE,
 } from "@stagereview/types/review";
 import { ChevronRight, CornerDownLeft, MessageSquarePlus, Trash2 } from "lucide-react";
-import { type KeyboardEvent, useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { CommentMarkdownEditor } from "@/components/comments/comment-markdown-editor";
+import type { Thread } from "@/components/conversation/normalize-threads";
+import { ReviewThreadItem } from "@/components/conversation/review-card";
+import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
 import {
 	AlertDialog,
 	AlertDialogCancel,
@@ -21,6 +26,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import { useReviewContext } from "@/lib/review-context";
 import { canSubmitReview } from "@/lib/review-submission";
 import { useRemoteDraft } from "@/lib/use-remote-draft";
@@ -41,18 +47,46 @@ const ACTION_OPTIONS: { event: ReviewEvent; label: string; description: string }
 	},
 ];
 
-// Flatten the viewer's pending comments, grouped by file, for the "what you're
-// about to submit" list.
-function collectPendingByFile(
-	comments: PendingReviewComment[],
-): Map<string, PendingReviewComment[]> {
-	const byFile = new Map<string, PendingReviewComment[]>();
-	for (const comment of comments) {
-		const list = byFile.get(comment.filePath) ?? [];
-		if (!byFile.has(comment.filePath)) byFile.set(comment.filePath, list);
-		list.push(comment);
-	}
-	return byFile;
+/**
+ * Adapt a pending draft to the Discussion panel's thread shape so the tray
+ * renders it exactly like a review-comment thread there. The diff preview
+ * carries the frozen original coordinates GitHub took the hunk snapshot at
+ * (per the `ThreadDiffPreview` contract); whole-file comments and drafts
+ * returned without a hunk get no preview, which the thread item already
+ * renders gracefully.
+ */
+function toPendingThread(comment: PendingReviewComment): Thread {
+	return {
+		nodeId: comment.id,
+		id: comment.databaseId ?? 0,
+		path: comment.filePath,
+		line: comment.line,
+		startLine: comment.startLine,
+		side: comment.side,
+		startSide: comment.startSide,
+		subjectType: comment.subjectType,
+		body: comment.body,
+		bodyHtml: comment.bodyHtml,
+		diffPreview:
+			comment.diffHunk !== "" && comment.subjectType === SUBJECT_TYPE.LINE
+				? {
+						diffHunk: comment.diffHunk,
+						line: comment.originalLine,
+						startLine: comment.originalStartLine,
+					}
+				: null,
+		htmlUrl: comment.htmlUrl,
+		user: {
+			login: comment.author.login,
+			avatar_url:
+				comment.author.avatarUrl ??
+				`https://github.com/${encodeURIComponent(comment.author.login)}.png`,
+		},
+		createdAt: comment.createdAt,
+		isResolved: false,
+		resolvedBy: null,
+		replies: [],
+	};
 }
 
 function ActionSelector({
@@ -107,41 +141,23 @@ function ActionSelector({
 	);
 }
 
-function PendingCommentsList({
-	byFile,
-	count,
-}: {
-	byFile: Map<string, PendingReviewComment[]>;
-	count: number;
-}) {
+function PendingCommentsList({ comments }: { comments: PendingReviewComment[] }) {
 	const [open, setOpen] = useState(false);
-	if (count === 0) return null;
+	if (comments.length === 0) return null;
 	return (
 		<Collapsible open={open} onOpenChange={setOpen}>
 			<CollapsibleTrigger className="mt-3 flex items-center gap-1.5 font-medium text-muted-foreground text-xs hover:text-foreground">
 				<ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
 				Pending comments
 				<Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] leading-none">
-					{count}
+					{comments.length}
 				</Badge>
 			</CollapsibleTrigger>
 			<CollapsibleContent>
-				<div className="mt-1.5 max-h-[200px] overflow-y-auto rounded-lg border border-border bg-muted/30">
-					<div className="divide-y divide-border/50">
-						{[...byFile.entries()].map(([path, comments]) => (
-							<div key={path} className="px-3 py-2">
-								<p className="min-w-0 truncate font-mono text-foreground text-xs">{path}</p>
-								<div className="mt-1 space-y-1">
-									{comments.map((c) => (
-										<div key={c.id} className="flex items-baseline gap-2 pl-2 text-xs">
-											<span className="inline-block w-10 shrink-0 text-right font-mono text-muted-foreground">
-												{c.line === null ? "Outdated" : `L${c.line}`}
-											</span>
-											<span className="line-clamp-1 text-muted-foreground">{c.body}</span>
-										</div>
-									))}
-								</div>
-							</div>
+				<div className="mt-2 max-h-80 overflow-y-auto scrollbar-thin rounded-xl border border-border bg-muted/30">
+					<div className="space-y-3 p-3">
+						{comments.map((c) => (
+							<ReviewThreadItem key={c.id} thread={toPendingThread(c)} />
 						))}
 					</div>
 				</div>
@@ -169,13 +185,37 @@ export function ReviewPanel() {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [showDiscard, setShowDiscard] = useState(false);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const popoverContentRef = useRef<HTMLDivElement>(null);
+	const submitRef = useRef<() => void>(() => {});
+
+	// Mod+j toggles the tray; mod+enter submits when focus is inside it. The
+	// global hotkey is the only mod+enter path — a textarea-level handler too
+	// would double-submit. This component also renders on runs with no
+	// reachable PR (it returns null below), so the bindings match the
+	// trigger's usable state — a dead mod+j must not shadow the browser
+	// shortcut, toggle invisible state, or open a tray whose trigger is
+	// disabled.
+	const hotkeysEnabled =
+		review.github === GITHUB_REVIEW_STATUS.AVAILABLE &&
+		(review.canWriteToGitHub || review.hasPendingReview);
+	useHotkeys(
+		KEYBOARD_SHORTCUTS.TOGGLE_REVIEW_PANEL.hotkey,
+		() => setOpen((v) => !v),
+		{ preventDefault: true, enableOnFormTags: ["TEXTAREA"], enabled: hotkeysEnabled },
+		[],
+	);
+	useHotkeys(
+		KEYBOARD_SHORTCUTS.SUBMIT_REVIEW.hotkey,
+		() => {
+			if (!popoverContentRef.current?.contains(document.activeElement)) return;
+			submitRef.current();
+		},
+		{ preventDefault: true, enableOnFormTags: ["TEXTAREA"], enabled: hotkeysEnabled },
+		[],
+	);
 
 	const { pendingComments, hasPendingReview, isOwnPullRequest, canWriteToGitHub } = review;
 	const pendingCommentCount = pendingComments.length;
-	const pendingByFile = useMemo(
-		() => collectPendingByFile(review.pendingComments),
-		[review.pendingComments],
-	);
 	if (review.github !== GITHUB_REVIEW_STATUS.AVAILABLE) return null;
 
 	// On your own PR only "Comment" is allowed; coerce the effective event so a stale
@@ -230,41 +270,54 @@ export function ReviewPanel() {
 		}
 	}
 
-	function handleKeyDown(e: KeyboardEvent) {
-		if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-			e.preventDefault();
-			void handleSubmit();
-		}
-	}
+	submitRef.current = () => void handleSubmit();
 
 	return (
 		<>
 			<Popover open={open} onOpenChange={setOpen}>
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<span className="inline-flex">
-							<PopoverTrigger asChild>
-								<Button
-									size="sm"
-									className="h-7 cursor-pointer px-2"
-									disabled={!canWriteToGitHub && !hasPendingReview}
-								>
-									<MessageSquarePlus className="size-3.5" />
-									<span className="ml-1 hidden text-xs @7xl:inline">Review</span>
-									{pendingCommentCount > 0 && (
-										<Badge className="ml-1 h-4 min-w-4 border-0 bg-primary-foreground/20 px-1 text-[10px] leading-none text-primary-foreground">
-											{pendingCommentCount}
-										</Badge>
-									)}
-								</Button>
-							</PopoverTrigger>
-						</span>
-					</TooltipTrigger>
-					<TooltipContent>
-						{canWriteToGitHub ? "Submit your review" : "This GitHub review is read-only"}
-					</TooltipContent>
-				</Tooltip>
-				<PopoverContent align="end" className="w-96">
+				{canWriteToGitHub ? (
+					<ShortcutTooltip
+						shortcutKey="TOGGLE_REVIEW_PANEL"
+						label={isOwnPullRequest ? "Comment" : "Review"}
+						side="bottom"
+					>
+						<PopoverTrigger asChild>
+							<Button size="sm" className="h-7 cursor-pointer px-2">
+								<MessageSquarePlus className="size-3.5" />
+								<span className="ml-1 hidden text-xs @7xl:inline">Review</span>
+								{pendingCommentCount > 0 && (
+									<Badge className="ml-1 h-4 min-w-4 border-0 bg-primary-foreground/20 px-1 text-[10px] leading-none text-primary-foreground">
+										{pendingCommentCount}
+									</Badge>
+								)}
+							</Button>
+						</PopoverTrigger>
+					</ShortcutTooltip>
+				) : (
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<span className="inline-flex">
+								<PopoverTrigger asChild>
+									<Button
+										size="sm"
+										className="h-7 cursor-pointer px-2"
+										disabled={!hasPendingReview}
+									>
+										<MessageSquarePlus className="size-3.5" />
+										<span className="ml-1 hidden text-xs @7xl:inline">Review</span>
+										{pendingCommentCount > 0 && (
+											<Badge className="ml-1 h-4 min-w-4 border-0 bg-primary-foreground/20 px-1 text-[10px] leading-none text-primary-foreground">
+												{pendingCommentCount}
+											</Badge>
+										)}
+									</Button>
+								</PopoverTrigger>
+							</span>
+						</TooltipTrigger>
+						<TooltipContent>This GitHub review is read-only</TooltipContent>
+					</Tooltip>
+				)}
+				<PopoverContent ref={popoverContentRef} align="end" className="w-[520px] p-4">
 					<p className="font-medium text-sm">Finish your review</p>
 					<p className="mt-0.5 text-muted-foreground text-xs">
 						{!canWriteToGitHub
@@ -283,12 +336,11 @@ export function ReviewPanel() {
 								? "Summarize the requested changes…"
 								: "Leave a summary comment (optional)…"
 						}
-						onKeyDown={handleKeyDown}
 						minRows={3}
 						maxRows={10}
 						className="mt-3 rounded-lg border border-border bg-card transition-shadow has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring/20"
 					/>
-					<PendingCommentsList byFile={pendingByFile} count={pendingCommentCount} />
+					<PendingCommentsList comments={pendingComments} />
 					<ActionSelector
 						selected={effectiveEvent}
 						onSelect={selectAction}

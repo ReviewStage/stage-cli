@@ -13,6 +13,9 @@ import { Route as IndexRouteImport } from "./app/index";
 import { Route as RunsRunIdRouteImport } from "./app/runs.$runId";
 import { Route as RunsRunIdIndexRouteImport } from "./app/runs.$runId.index";
 import { Route as RunsRunIdFilesRouteImport } from "./app/runs.$runId.files";
+import { Route as RunsRunIdChaptersRouteImport } from "./app/runs.$runId.chapters";
+import { Route as RunsRunIdActivityRouteImport } from "./app/runs.$runId.activity";
+import { Route as RunsRunIdChaptersIndexRouteImport } from "./app/runs.$runId.chapters.index";
 import { Route as RunsRunIdChaptersChapterNumberRouteImport } from "./app/runs.$runId.chapters.$chapterNumber";
 
 const IndexRoute = IndexRouteImport.update({
@@ -35,55 +38,86 @@ const RunsRunIdFilesRoute = RunsRunIdFilesRouteImport.update({
   path: "/files",
   getParentRoute: () => RunsRunIdRoute,
 } as any);
+const RunsRunIdChaptersRoute = RunsRunIdChaptersRouteImport.update({
+  id: "/chapters",
+  path: "/chapters",
+  getParentRoute: () => RunsRunIdRoute,
+} as any);
+const RunsRunIdActivityRoute = RunsRunIdActivityRouteImport.update({
+  id: "/activity",
+  path: "/activity",
+  getParentRoute: () => RunsRunIdRoute,
+} as any);
+const RunsRunIdChaptersIndexRoute = RunsRunIdChaptersIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => RunsRunIdChaptersRoute,
+} as any);
 const RunsRunIdChaptersChapterNumberRoute =
   RunsRunIdChaptersChapterNumberRouteImport.update({
-    id: "/chapters/$chapterNumber",
-    path: "/chapters/$chapterNumber",
-    getParentRoute: () => RunsRunIdRoute,
+    id: "/$chapterNumber",
+    path: "/$chapterNumber",
+    getParentRoute: () => RunsRunIdChaptersRoute,
   } as any);
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute;
   "/runs/$runId": typeof RunsRunIdRouteWithChildren;
+  "/runs/$runId/activity": typeof RunsRunIdActivityRoute;
+  "/runs/$runId/chapters": typeof RunsRunIdChaptersRouteWithChildren;
   "/runs/$runId/files": typeof RunsRunIdFilesRoute;
   "/runs/$runId/": typeof RunsRunIdIndexRoute;
   "/runs/$runId/chapters/$chapterNumber": typeof RunsRunIdChaptersChapterNumberRoute;
+  "/runs/$runId/chapters/": typeof RunsRunIdChaptersIndexRoute;
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute;
+  "/runs/$runId/activity": typeof RunsRunIdActivityRoute;
   "/runs/$runId/files": typeof RunsRunIdFilesRoute;
   "/runs/$runId": typeof RunsRunIdIndexRoute;
   "/runs/$runId/chapters/$chapterNumber": typeof RunsRunIdChaptersChapterNumberRoute;
+  "/runs/$runId/chapters": typeof RunsRunIdChaptersIndexRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof IndexRoute;
   "/runs/$runId": typeof RunsRunIdRouteWithChildren;
+  "/runs/$runId/activity": typeof RunsRunIdActivityRoute;
+  "/runs/$runId/chapters": typeof RunsRunIdChaptersRouteWithChildren;
   "/runs/$runId/files": typeof RunsRunIdFilesRoute;
   "/runs/$runId/": typeof RunsRunIdIndexRoute;
   "/runs/$runId/chapters/$chapterNumber": typeof RunsRunIdChaptersChapterNumberRoute;
+  "/runs/$runId/chapters/": typeof RunsRunIdChaptersIndexRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
     | "/"
     | "/runs/$runId"
+    | "/runs/$runId/activity"
+    | "/runs/$runId/chapters"
     | "/runs/$runId/files"
     | "/runs/$runId/"
-    | "/runs/$runId/chapters/$chapterNumber";
+    | "/runs/$runId/chapters/$chapterNumber"
+    | "/runs/$runId/chapters/";
   fileRoutesByTo: FileRoutesByTo;
   to:
     | "/"
+    | "/runs/$runId/activity"
     | "/runs/$runId/files"
     | "/runs/$runId"
-    | "/runs/$runId/chapters/$chapterNumber";
+    | "/runs/$runId/chapters/$chapterNumber"
+    | "/runs/$runId/chapters";
   id:
     | "__root__"
     | "/"
     | "/runs/$runId"
+    | "/runs/$runId/activity"
+    | "/runs/$runId/chapters"
     | "/runs/$runId/files"
     | "/runs/$runId/"
-    | "/runs/$runId/chapters/$chapterNumber";
+    | "/runs/$runId/chapters/$chapterNumber"
+    | "/runs/$runId/chapters/";
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
@@ -121,26 +155,62 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof RunsRunIdFilesRouteImport;
       parentRoute: typeof RunsRunIdRoute;
     };
+    "/runs/$runId/chapters": {
+      id: "/runs/$runId/chapters";
+      path: "/chapters";
+      fullPath: "/runs/$runId/chapters";
+      preLoaderRoute: typeof RunsRunIdChaptersRouteImport;
+      parentRoute: typeof RunsRunIdRoute;
+    };
+    "/runs/$runId/activity": {
+      id: "/runs/$runId/activity";
+      path: "/activity";
+      fullPath: "/runs/$runId/activity";
+      preLoaderRoute: typeof RunsRunIdActivityRouteImport;
+      parentRoute: typeof RunsRunIdRoute;
+    };
+    "/runs/$runId/chapters/": {
+      id: "/runs/$runId/chapters/";
+      path: "/";
+      fullPath: "/runs/$runId/chapters/";
+      preLoaderRoute: typeof RunsRunIdChaptersIndexRouteImport;
+      parentRoute: typeof RunsRunIdChaptersRoute;
+    };
     "/runs/$runId/chapters/$chapterNumber": {
       id: "/runs/$runId/chapters/$chapterNumber";
-      path: "/chapters/$chapterNumber";
+      path: "/$chapterNumber";
       fullPath: "/runs/$runId/chapters/$chapterNumber";
       preLoaderRoute: typeof RunsRunIdChaptersChapterNumberRouteImport;
-      parentRoute: typeof RunsRunIdRoute;
+      parentRoute: typeof RunsRunIdChaptersRoute;
     };
   }
 }
 
+interface RunsRunIdChaptersRouteChildren {
+  RunsRunIdChaptersChapterNumberRoute: typeof RunsRunIdChaptersChapterNumberRoute;
+  RunsRunIdChaptersIndexRoute: typeof RunsRunIdChaptersIndexRoute;
+}
+
+const RunsRunIdChaptersRouteChildren: RunsRunIdChaptersRouteChildren = {
+  RunsRunIdChaptersChapterNumberRoute: RunsRunIdChaptersChapterNumberRoute,
+  RunsRunIdChaptersIndexRoute: RunsRunIdChaptersIndexRoute,
+};
+
+const RunsRunIdChaptersRouteWithChildren =
+  RunsRunIdChaptersRoute._addFileChildren(RunsRunIdChaptersRouteChildren);
+
 interface RunsRunIdRouteChildren {
+  RunsRunIdActivityRoute: typeof RunsRunIdActivityRoute;
+  RunsRunIdChaptersRoute: typeof RunsRunIdChaptersRouteWithChildren;
   RunsRunIdFilesRoute: typeof RunsRunIdFilesRoute;
   RunsRunIdIndexRoute: typeof RunsRunIdIndexRoute;
-  RunsRunIdChaptersChapterNumberRoute: typeof RunsRunIdChaptersChapterNumberRoute;
 }
 
 const RunsRunIdRouteChildren: RunsRunIdRouteChildren = {
+  RunsRunIdActivityRoute: RunsRunIdActivityRoute,
+  RunsRunIdChaptersRoute: RunsRunIdChaptersRouteWithChildren,
   RunsRunIdFilesRoute: RunsRunIdFilesRoute,
   RunsRunIdIndexRoute: RunsRunIdIndexRoute,
-  RunsRunIdChaptersChapterNumberRoute: RunsRunIdChaptersChapterNumberRoute,
 };
 
 const RunsRunIdRouteWithChildren = RunsRunIdRoute._addFileChildren(

@@ -8,10 +8,12 @@ import {
 } from "@stagereview/types/pull-request";
 import { useMutation } from "@tanstack/react-query";
 import { Check, GitBranch, Github, Pencil, ScanSearch, X } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { CIChecks } from "@/components/pull-request/ci-checks";
+import { Labels } from "@/components/pull-request/labels";
 import { MergeStatus } from "@/components/pull-request/merge-status";
+import { PullRequestStackNav } from "@/components/pull-request/pull-request-stack-nav";
 import { PullRequestStatus } from "@/components/pull-request/pull-request-status";
 import { Reviewers } from "@/components/pull-request/reviewers";
 import { DeploymentLinkList } from "@/components/shared/deployment-link-list";
@@ -95,12 +97,22 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 	const [isEditing, setIsEditing] = useState(false);
 	const [editValue, setEditValue] = useState(pullRequest.title);
 	const inputRef = useRef<HTMLInputElement>(null);
+
+	// Stack navigation swaps PRs while this header stays mounted; an open
+	// editor must not carry the previous PR's title into the sibling. Same
+	// render-time adjustment as the labels/reviewers state.
+	const [editorOwner, setEditorOwner] = useState(pullRequest.number);
+	if (editorOwner !== pullRequest.number) {
+		setEditorOwner(pullRequest.number);
+		setIsEditing(false);
+		setEditValue(pullRequest.title);
+	}
 	const invalidate = useInvalidatePullRequest(runId);
 
 	const updateMutation = useMutation({
 		...titleMutationOptions(runId),
-		onSuccess: async () => {
-			await invalidate();
+		onSuccess: async (_data, _variables, ctx) => {
+			await invalidate(ctx);
 			setIsEditing(false);
 			toast.success("Title updated");
 		},
@@ -267,6 +279,9 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 
 				{/* Row 2: Metadata */}
 				<div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-muted-foreground text-sm">
+					{/* Stacks are an open-PR concept; hide the nav once this PR is
+					    closed or merged so it can't render a stale, pre-close stack. */}
+					{isOpenOrDraft && <PullRequestStackNav />}
 					{pullRequest.user && authorProfileUrl && (
 						<>
 							<a
@@ -328,7 +343,13 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 							{hasChecks && <CIChecks state={checksData.state} items={checksData.items} />}
 						</>
 					)}
-					<Reviewers />
+					{/* Keyed by run so stack navigation remounts both managers — a
+					    sibling's in-flight mutation callbacks then no-op instead of
+					    clobbering this run's optimistic state. */}
+					<Fragment key={runId}>
+						<Reviewers />
+						<Labels />
+					</Fragment>
 				</div>
 			</header>
 

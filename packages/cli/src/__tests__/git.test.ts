@@ -1,9 +1,10 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseRepoName, resolveScope } from "../git.js";
+import { isMaxBufferError, parseRepoName, readRepoContext, resolveScope } from "../git.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 
 let tmpDir: string;
@@ -61,6 +62,35 @@ async function initDivergedRepo(): Promise<{
 	return { commonSha, mainSha, featureSha };
 }
 
+describe("isMaxBufferError", () => {
+	it("recognizes both maxBuffer overflow codes with real child processes", async () => {
+		const opts = { encoding: "utf8", maxBuffer: 1000 } as const;
+		const args = ["-c", "dd if=/dev/zero bs=1000 count=100 2>/dev/null"];
+		let syncErr: unknown;
+		try {
+			execFileSync("sh", args, opts);
+		} catch (err: unknown) {
+			syncErr = err;
+		}
+		expect(isMaxBufferError(syncErr)).toBe(true);
+		const asyncErr: unknown = await promisify(execFile)("sh", args, opts).then(
+			() => undefined,
+			(err: unknown) => err,
+		);
+		expect(isMaxBufferError(asyncErr)).toBe(true);
+	});
+
+	it("does not match git's normal differences-found exit", () => {
+		let exitErr: unknown;
+		try {
+			execFileSync("sh", ["-c", "echo diff-output; exit 1"], { encoding: "utf8" });
+		} catch (err: unknown) {
+			exitErr = err;
+		}
+		expect(isMaxBufferError(exitErr)).toBe(false);
+	});
+});
+
 describe("parseRepoName", () => {
 	const FALLBACK_ROOT = "/Users/dev/conductor/workspaces/stage-cli/monterrey-v3";
 
@@ -95,6 +125,22 @@ describe("parseRepoName", () => {
 	it("falls back to the worktree basename for an empty/garbage URL", () => {
 		expect(parseRepoName("", FALLBACK_ROOT)).toBe("monterrey-v3");
 		expect(parseRepoName(".git", FALLBACK_ROOT)).toBe("monterrey-v3");
+	});
+});
+
+describe("readRepoContext", () => {
+	it("captures the checked-out branch as headRef", async () => {
+		await initDivergedRepo();
+		git("checkout", "feature");
+
+		expect(readRepoContext().headRef).toBe("feature");
+	});
+
+	it("records a null headRef for a detached HEAD", async () => {
+		const { commonSha } = await initDivergedRepo();
+		git("checkout", "--detach", commonSha);
+
+		expect(readRepoContext().headRef).toBeNull();
 	});
 });
 

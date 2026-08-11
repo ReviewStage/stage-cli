@@ -1,10 +1,14 @@
 import type { Chapter, LineRef } from "@stagereview/types/chapters";
 import type { FileContentsMap } from "@stagereview/types/diff";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { ChapterSidePanel } from "@/components/chapter";
-import { type ChapterOverlayProps, FileDiffList, SidebarLayout } from "@/components/files";
+import {
+	type ChapterOverlayProps,
+	CONTENT_COLUMN_MIN_HEIGHT,
+	FileDiffList,
+} from "@/components/files";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChapterContext } from "@/lib/chapter-context";
@@ -20,11 +24,13 @@ import {
 	type NavigationDirection,
 	useChapterNavigationKeys,
 } from "@/lib/use-chapter-navigation-keys";
+import { PANEL_POSITION, type PanelPosition, useChapterSettings } from "@/lib/use-chapter-settings";
 import { useChapters } from "@/lib/use-chapters";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useFileCollapseState } from "@/lib/use-file-collapse-state";
 import { useFileDiffNavigation } from "@/lib/use-file-diff-navigation";
 import { useViewState } from "@/lib/use-view-state";
+import { cn } from "@/lib/utils";
 
 interface ChapterDetailPageProps {
 	runId: string;
@@ -37,7 +43,7 @@ export function ChapterDetailPage({ runId, chapterNumber }: ChapterDetailPagePro
 	const { data: diffData, isLoading: patchLoading, error: patchError } = useDiffPatch(runId);
 
 	const chapter =
-		chapterNumber === null ? undefined : chapters.find((c) => c.order === chapterNumber);
+		chapterNumber === null ? undefined : chapters.find((c) => c.order === chapterNumber - 1);
 	const chapterIndex = chapter ? chapters.indexOf(chapter) : -1;
 
 	const isLoading = chaptersLoading || patchLoading;
@@ -77,6 +83,7 @@ function ChapterDetailContent({
 }: ChapterDetailContentProps) {
 	const { runId, chapters: allChapters } = useChapterContext();
 	const view = useViewState(runId);
+	const { panelPosition } = useChapterSettings();
 	const [focusedKeyChangeId, setFocusedKeyChangeId] = useState<string | null>(null);
 
 	// Reset focus when the chapter changes — focus is "currently selected"
@@ -115,8 +122,7 @@ function ChapterDetailContent({
 	const navigate = useNavigate();
 
 	// After a chapter is marked viewed, advance to the next chapter — or, once
-	// every chapter is viewed, return to the run's chapter list. Mirrors the
-	// hosted app's mark-complete flow (minus the confetti the CLI omits).
+	// every chapter is viewed, return to the run's chapter list.
 	const advanceAfterChapterComplete = useCallback(() => {
 		// markChapterViewed patches the cache on a later tick, so this snapshot
 		// still excludes the chapter just marked — treat it as about-to-be-viewed.
@@ -131,9 +137,9 @@ function ChapterDetailContent({
 		if (next) {
 			void navigate({
 				to: "/runs/$runId/chapters/$chapterNumber",
-				params: { runId, chapterNumber: String(next.order) },
+				params: { runId, chapterNumber: String(next.order + 1) },
 				// Preserve scroll position when moving between chapters on the detail
-				// page (matches the hosted app); resetting would jump to the top.
+				// page; resetting would jump to the top.
 				resetScroll: false,
 			});
 		}
@@ -151,13 +157,21 @@ function ChapterDetailContent({
 		(externalId: string) => {
 			if (view.chapterIdSet.has(externalId)) {
 				view.unmarkChapterViewed(externalId);
+				// A chapter can read as viewed purely because all of its files are
+				// viewed, so unmarking must also clear those file views (mirrors the
+				// chapters index toggle) or the unmark is a no-op.
+				if (externalId === chapter.externalId) {
+					for (const path of new Set(chapter.hunkRefs.map((h) => h.filePath))) {
+						if (view.isFileViewed(path)) view.unmarkFileViewed(path);
+					}
+				}
 				return;
 			}
 			view.markChapterViewed(externalId);
 			// Advance only when completing the chapter currently on screen.
 			if (externalId === chapter.externalId) advanceAfterChapterComplete();
 		},
-		[view, chapter.externalId, advanceAfterChapterComplete],
+		[view, chapter, advanceAfterChapterComplete],
 	);
 
 	const handleToggleFileViewed = useCallback(
@@ -213,8 +227,8 @@ function ChapterDetailContent({
 		collapse: collapseState,
 	});
 
-	// On chapter change, realign the diff column to the new chapter's first file
-	// (matches the hosted app). `resetScroll: false` keeps the prior scroll
+	// On chapter change, realign the diff column to the new chapter's first
+	// file. `resetScroll: false` keeps the prior scroll
 	// offset, so when the user had scrolled down into the previous chapter the
 	// new first file lands above the sticky header — snap it back under the
 	// header. When already near the top (first file still below the header), the
@@ -259,9 +273,9 @@ function ChapterDetailContent({
 			if (!target) return;
 			void navigate({
 				to: "/runs/$runId/chapters/$chapterNumber",
-				params: { runId, chapterNumber: String(target.order) },
-				// Keep scroll position when stepping chapters via the keyboard
-				// (matches the hosted app); the default would jump to the top.
+				params: { runId, chapterNumber: String(target.order + 1) },
+				// Keep scroll position when stepping chapters via the keyboard;
+				// the default would jump to the top.
 				resetScroll: false,
 			});
 		},
@@ -306,7 +320,8 @@ function ChapterDetailContent({
 	);
 
 	return (
-		<SidebarLayout
+		<ChapterSidebarLayout
+			position={panelPosition}
 			sidebar={
 				<ChapterSidePanel
 					chapter={chapter}
@@ -317,6 +332,7 @@ function ChapterDetailContent({
 					checkedKeyChangeIds={view.keyChangeIdSet}
 					viewedFilePathSet={view.filePathSet}
 					focusedKeyChangeId={focusedKeyChangeId}
+					position={panelPosition}
 					onToggleChapterViewed={handleToggleChapterViewed}
 					onToggleKeyChangeChecked={handleToggleKeyChangeChecked}
 					onToggleFileViewed={handleToggleFileViewed}
@@ -330,6 +346,7 @@ function ChapterDetailContent({
 				key={chapter.id}
 				ref={diffListRef}
 				entries={chapterEntries}
+				fileContents={fileContents}
 				emptyMessage="No changes in this chapter"
 				viewedPathSet={view.filePathSet}
 				onToggleViewed={handleToggleFileViewed}
@@ -337,7 +354,64 @@ function ChapterDetailContent({
 				chapterOverlay={chapterOverlay}
 				focusedFilePath={keyboardFocusedFilePath}
 			/>
-		</SidebarLayout>
+		</ChapterSidebarLayout>
+	);
+}
+
+// Only the left/right layouts have a sticky, viewport-height sidebar to mirror
+// with CONTENT_COLUMN_MIN_HEIGHT. The top layout stacks the panel ABOVE the
+// content, so this floor would reserve a full extra viewport below the panel
+// and reintroduce the same blank space on short chapters — so it is applied to
+// the side layouts only.
+
+/**
+ * Position-aware variant of the shared SidebarLayout: the chapter panel can
+ * dock left, right, or stack above the diff list. The side layouts pull the
+ * panel to the page edge
+ * (counter to the route's `px-6 lg:px-8`); the main column needs `min-w-0` so
+ * its children overflow within the column instead of pushing it wider.
+ */
+function ChapterSidebarLayout({
+	children,
+	sidebar,
+	position,
+}: {
+	children: ReactNode;
+	sidebar: ReactNode;
+	position: PanelPosition;
+}) {
+	if (position === PANEL_POSITION.TOP) {
+		return (
+			<div className="flex flex-col">
+				<div className="shrink-0">{sidebar}</div>
+				<main className="min-w-0 flex-1 py-4">{children}</main>
+			</div>
+		);
+	}
+
+	const isRight = position === PANEL_POSITION.RIGHT;
+
+	return (
+		<div className="flex flex-col">
+			<div className="-mx-6 lg:-mx-8 sticky top-[var(--content-top)] z-10 border-border border-t" />
+			<div className={cn("flex items-start", isRight ? "-mr-6 lg:-mr-8" : "-ml-6 lg:-ml-8")}>
+				{isRight ? (
+					<>
+						<main className={cn("min-w-0 flex-1 py-4 pr-4", CONTENT_COLUMN_MIN_HEIGHT)}>
+							{children}
+						</main>
+						<div className="flex shrink-0 items-start self-stretch">{sidebar}</div>
+					</>
+				) : (
+					<>
+						<div className="flex shrink-0 items-start self-stretch">{sidebar}</div>
+						<main className={cn("min-w-0 flex-1 py-4 pl-4", CONTENT_COLUMN_MIN_HEIGHT)}>
+							{children}
+						</main>
+					</>
+				)}
+			</div>
+		</div>
 	);
 }
 

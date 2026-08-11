@@ -21,8 +21,8 @@ function formatFileEntry(file: PullRequestFile): string {
 
 /**
  * Renders a chapter as portable Markdown for the "Copy chapter summary" action.
- * Uses `chapter.order` (not array index) so the heading matches what the
- * navigator displays, even when chapters have gaps in their `order` values.
+ * Uses `chapter.order + 1` (the 0-based wire order) so the heading matches
+ * what the navigator displays.
  */
 export function formatChapterAsMarkdown(
 	chapter: Chapter,
@@ -30,7 +30,7 @@ export function formatChapterAsMarkdown(
 ): string {
 	const sections: string[] = [];
 
-	sections.push(`# Chapter ${chapter.order}: ${chapter.title}`);
+	sections.push(`# Chapter ${chapter.order + 1}: ${chapter.title}`);
 
 	if (chapter.summary) sections.push(chapter.summary);
 

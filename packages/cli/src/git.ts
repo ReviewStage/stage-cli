@@ -20,11 +20,13 @@ export interface RepoContext {
 	root: string;
 	/** `origin` remote URL, or null when no `origin` is configured. */
 	originUrl: string | null;
+	/** Checked-out branch (`git rev-parse --abbrev-ref HEAD`), or null when detached. */
+	headRef: string | null;
 }
 
 export function readRepoContext(): RepoContext {
 	const root = readRepoRoot();
-	return { root, originUrl: readOriginUrl(root) };
+	return { root, originUrl: readOriginUrl(root), headRef: readHeadRef(root) };
 }
 
 export function readRepoRoot(): string {
@@ -50,6 +52,21 @@ function readOriginUrl(repoRoot: string): string | null {
 	}
 }
 
+/** `--abbrev-ref HEAD` prints the literal string "HEAD" for a detached checkout. */
+const DETACHED_HEAD = "HEAD";
+
+function readHeadRef(repoRoot: string): string | null {
+	try {
+		const out = execFileSync("git", ["-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD"], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+		return out === "" || out === DETACHED_HEAD ? null : out;
+	} catch {
+		return null;
+	}
+}
+
 /** Configured `user.name` for the repo, or null when unset. Used as a viewer-identity fallback. */
 export function readGitUserName(repoRoot: string): string | null {
 	try {
@@ -63,20 +80,33 @@ export function readGitUserName(repoRoot: string): string | null {
 	}
 }
 
+// View-time diffs must force the same a/ b/ prefixes generation-time getRawDiff
+// forces, so users with diff.noprefix=true get consistent patches.
+// `core.quotepath=off` emits paths as raw UTF-8 instead of C-quoted octal —
+// the same format GitHub's API patches use, which the web diff parser expects.
+const DIFF_BASE_ARGS = [
+	"-c",
+	"core.quotepath=off",
+	"diff",
+	"--no-color",
+	"--src-prefix=a/",
+	"--dst-prefix=b/",
+] as const;
+
 export function buildDiffArgs(run: ChapterRunRow): string[] {
 	if (run.scopeKind === SCOPE_KIND.COMMITTED) {
-		return ["diff", "--no-color", `${run.baseSha}..${run.headSha}`];
+		return [...DIFF_BASE_ARGS, `${run.baseSha}..${run.headSha}`];
 	}
 	if (run.workingTreeRef === null) {
 		throw new Error("workingTree run is missing workingTreeRef");
 	}
 	switch (run.workingTreeRef) {
 		case WORKING_TREE_REF.UNSTAGED:
-			return ["diff", "--no-color"];
+			return [...DIFF_BASE_ARGS];
 		case WORKING_TREE_REF.STAGED:
-			return ["diff", "--no-color", "--cached"];
+			return [...DIFF_BASE_ARGS, "--cached"];
 		case WORKING_TREE_REF.WORK:
-			return ["diff", "--no-color", run.baseSha];
+			return [...DIFF_BASE_ARGS, run.baseSha];
 	}
 }
 
@@ -140,23 +170,21 @@ export function resolveHead(): string {
 }
 
 export function getRawDiff(args: string[]): string {
-	return execFileSync(
-		"git",
-		["diff", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", ...args],
-		{
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-			maxBuffer: 50 * 1024 * 1024,
-		},
-	);
+	return execFileSync("git", [...DIFF_BASE_ARGS, ...args], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+		maxBuffer: 50 * 1024 * 1024,
+	});
 }
 
 export function getUntrackedFiles(): string[] {
-	const out = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
+	// `-z` NUL-delimits and never C-quotes, so non-ASCII names stay literal
+	// paths that the follow-up `git diff --no-index` call can read.
+	const out = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
 		encoding: "utf8",
 		stdio: ["ignore", "pipe", "ignore"],
-	}).trim();
-	return out ? out.split("\n") : [];
+	});
+	return out.split("\0").filter(Boolean);
 }
 
 export function hasStringStdout(err: unknown): err is { stdout: string } {
@@ -165,35 +193,102 @@ export function hasStringStdout(err: unknown): err is { stdout: string } {
 	);
 }
 
+/**
+ * A maxBuffer overflow still attaches the truncated output to `err.stdout`,
+ * making it indistinguishable from git's normal "differences found" exit
+ * without this check. Node uses ENOBUFS for execFileSync and
+ * ERR_CHILD_PROCESS_STDIO_MAXBUFFER for the async execFile.
+ */
+export function isMaxBufferError(err: unknown): boolean {
+	return (
+		typeof err === "object" &&
+		err !== null &&
+		"code" in err &&
+		(err.code === "ENOBUFS" || err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER")
+	);
+}
+
+export const MAX_UNTRACKED_DIFF_BYTES = 50 * 1024 * 1024;
+
+/** Args for diffing one untracked file against /dev/null (exit 1 carries the patch). */
+export function untrackedDiffArgs(file: string): string[] {
+	return [
+		"-c",
+		"core.quotepath=off",
+		"diff",
+		"--no-index",
+		"--no-color",
+		"--src-prefix=a/",
+		"--dst-prefix=b/",
+		"--",
+		"/dev/null",
+		file,
+	];
+}
+
+export function logUntrackedFileOverCap(file: string): void {
+	console.error(`Untracked file ${file} produced a diff over the buffer cap; omitting it`);
+}
+
+/**
+ * Accumulates per-file untracked patches under one aggregate byte cap.
+ * Generation (sync, here) and the diff route (async) share this single
+ * policy — cap, ordering, and stop behavior — so both omit the same tail:
+ * chapters must never reference untracked files the endpoint can't serve.
+ */
+export class UntrackedPatchAccumulator {
+	private readonly patches: string[] = [];
+	private totalBytes = 0;
+
+	/** Retains the patch if the cap allows; returns false once no more should be attempted. */
+	add(patch: string): boolean {
+		if (!patch) return true;
+		const nextBytes = Buffer.byteLength(patch);
+		if (this.totalBytes + nextBytes > MAX_UNTRACKED_DIFF_BYTES) {
+			this.logCapReached();
+			return false;
+		}
+		this.patches.push(patch);
+		this.totalBytes += nextBytes;
+		// Exact-boundary stop: no point launching another child once the cap
+		// is fully consumed.
+		if (this.totalBytes >= MAX_UNTRACKED_DIFF_BYTES) {
+			this.logCapReached();
+			return false;
+		}
+		return true;
+	}
+
+	join(): string {
+		return this.patches.join("\n");
+	}
+
+	private logCapReached(): void {
+		console.error(
+			`Untracked diff output reached ${MAX_UNTRACKED_DIFF_BYTES} bytes; omitting remaining untracked files`,
+		);
+	}
+}
+
+/** One child process per file at a time, so many untracked files can't exhaust memory. */
 export function getUntrackedDiff(files: string[]): string {
-	const patches: string[] = [];
+	const accumulator = new UntrackedPatchAccumulator();
 	for (const file of files) {
 		try {
-			execFileSync(
-				"git",
-				[
-					"diff",
-					"--no-index",
-					"--no-color",
-					"--src-prefix=a/",
-					"--dst-prefix=b/",
-					"--",
-					"/dev/null",
-					file,
-				],
-				{
-					encoding: "utf8",
-					stdio: ["ignore", "pipe", "ignore"],
-					maxBuffer: 50 * 1024 * 1024,
-				},
-			);
+			execFileSync("git", untrackedDiffArgs(file), {
+				encoding: "utf8",
+				stdio: ["ignore", "pipe", "ignore"],
+				maxBuffer: MAX_UNTRACKED_DIFF_BYTES,
+			});
 		} catch (err: unknown) {
-			if (hasStringStdout(err)) {
-				patches.push(err.stdout);
+			if (isMaxBufferError(err)) {
+				logUntrackedFileOverCap(file);
+				continue;
 			}
+			if (hasStringStdout(err) && !accumulator.add(err.stdout)) break;
 		}
 	}
-	return patches.join("\n");
+	return accumulator.join();
 }
 
 export function getCommitMessages(mergeBase: string, head: string): string {
@@ -247,6 +342,17 @@ function workingTreeDiffArgs(ref: WorkingTreeRef, mergeBaseSha: string): string[
 
 function includesUntrackedFiles(ref: WorkingTreeRef): boolean {
 	return ref === WORKING_TREE_REF.WORK;
+}
+
+/**
+ * Recompute the raw diff a scope describes. Used to validate pre-assembled
+ * chapters files (which carry their own scope) against the actual diff.
+ */
+export function getRawDiffForScope(scope: Scope): string {
+	if (scope.kind === SCOPE_KIND.COMMITTED) {
+		return getRawDiff([`${scope.baseSha}..${scope.headSha}`]);
+	}
+	return buildWorkingTreeDiff(scope.ref, scope.mergeBaseSha);
 }
 
 function buildWorkingTreeDiff(ref: WorkingTreeRef, mergeBaseSha: string): string {

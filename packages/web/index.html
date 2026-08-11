@@ -7,13 +7,19 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <title>Stage CLI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Cascadia+Code:wght@400;500&family=Fira+Code:wght@400;500&family=IBM+Plex+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
     <script>
       // Apply the persisted theme before paint to avoid a flash of the wrong
       // theme. Mirrors the runtime logic in src/lib/theme.tsx.
       (function () {
         try {
           var stored = localStorage.getItem("ui-theme");
-          var theme = stored && ["light", "dark", "system"].indexOf(stored) !== -1 ? stored : "system";
+          var theme = stored && ["light", "dark", "system"].indexOf(stored) !== -1 ? stored : "dark";
           var resolved =
             theme === "system"
               ? window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -22,8 +28,7 @@
               : theme;
           document.documentElement.classList.add(resolved);
         } catch (e) {
-          var fallback = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-          document.documentElement.classList.add(fallback);
+          document.documentElement.classList.add("dark");
         }
       })();
     </script>

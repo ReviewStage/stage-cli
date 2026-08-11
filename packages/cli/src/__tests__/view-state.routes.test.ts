@@ -264,7 +264,7 @@ describe("view-state API", () => {
 					id: "ch-a",
 					order: 1,
 					title: "A",
-					summary: "",
+					summary: "chapter summary",
 					hunkRefs: [{ filePath: "x.ts", oldStart: 1 }],
 					keyChanges: [],
 				},
@@ -272,7 +272,7 @@ describe("view-state API", () => {
 					id: "ch-b",
 					order: 2,
 					title: "B",
-					summary: "",
+					summary: "chapter summary",
 					hunkRefs: [{ filePath: "y.ts", oldStart: 1 }],
 					keyChanges: [],
 				},
@@ -280,8 +280,8 @@ describe("view-state API", () => {
 		});
 		insertChaptersFile(db, fixture, makeRepoContext());
 		const chapters = db.select().from(chapter).all();
-		const chapterA = chapters.find((c) => c.chapterIndex === 1);
-		const chapterB = chapters.find((c) => c.chapterIndex === 2);
+		const chapterA = chapters.find((c) => c.chapterIndex === 0);
+		const chapterB = chapters.find((c) => c.chapterIndex === 1);
 		if (!chapterA || !chapterB) throw new Error("seed: missing chapters");
 
 		const { port } = await startWithRoutes();
@@ -300,7 +300,7 @@ describe("view-state API", () => {
 	it("POST /api/chapter-view/:chapterId only promotes file_view once every chapter containing the file is marked", async () => {
 		// Two chapters share file `shared.ts`. Marking the first should leave file_view
 		// empty for it (only one of two containing chapters covered); marking the second
-		// promotes it. Mirrors hosted's "all chapters covered → file viewed" rule.
+		// promotes it — the "all chapters covered → file viewed" rule.
 		const db = getDb({ dbPath });
 		const fixture = makeFixture({
 			chapters: [
@@ -308,7 +308,7 @@ describe("view-state API", () => {
 					id: "ch-a",
 					order: 1,
 					title: "A",
-					summary: "",
+					summary: "chapter summary",
 					hunkRefs: [
 						{ filePath: "shared.ts", oldStart: 1 },
 						{ filePath: "only-a.ts", oldStart: 1 },
@@ -319,7 +319,7 @@ describe("view-state API", () => {
 					id: "ch-b",
 					order: 2,
 					title: "B",
-					summary: "",
+					summary: "chapter summary",
 					hunkRefs: [{ filePath: "shared.ts", oldStart: 50 }],
 					keyChanges: [],
 				},
@@ -327,8 +327,8 @@ describe("view-state API", () => {
 		});
 		insertChaptersFile(db, fixture, makeRepoContext());
 		const chapters = db.select().from(chapter).all();
-		const chapterA = chapters.find((c) => c.chapterIndex === 1);
-		const chapterB = chapters.find((c) => c.chapterIndex === 2);
+		const chapterA = chapters.find((c) => c.chapterIndex === 0);
+		const chapterB = chapters.find((c) => c.chapterIndex === 1);
 		if (!chapterA || !chapterB) throw new Error("seed: missing chapters");
 
 		const { port } = await startWithRoutes();
@@ -378,7 +378,7 @@ describe("view-state API", () => {
 					id: "ch-a",
 					order: 1,
 					title: "A",
-					summary: "",
+					summary: "chapter summary",
 					hunkRefs: [{ filePath: "shared.ts", oldStart: 1 }],
 					keyChanges: [],
 				},
@@ -386,7 +386,7 @@ describe("view-state API", () => {
 					id: "ch-b",
 					order: 2,
 					title: "B",
-					summary: "",
+					summary: "chapter summary",
 					hunkRefs: [{ filePath: "shared.ts", oldStart: 50 }],
 					keyChanges: [],
 				},
@@ -394,8 +394,8 @@ describe("view-state API", () => {
 		});
 		insertChaptersFile(db, fixture, makeRepoContext());
 		const chapters = db.select().from(chapter).all();
-		const chapterA = chapters.find((c) => c.chapterIndex === 1);
-		const chapterB = chapters.find((c) => c.chapterIndex === 2);
+		const chapterA = chapters.find((c) => c.chapterIndex === 0);
+		const chapterB = chapters.find((c) => c.chapterIndex === 1);
 		if (!chapterA || !chapterB) throw new Error("seed: missing chapters");
 
 		const { port } = await startWithRoutes();
@@ -441,7 +441,7 @@ describe("view-state API", () => {
 					id: "ch-a",
 					order: 1,
 					title: "A",
-					summary: "",
+					summary: "chapter summary",
 					hunkRefs: [{ filePath: "x.ts", oldStart: 1 }],
 					keyChanges: [],
 				},
@@ -449,7 +449,7 @@ describe("view-state API", () => {
 					id: "ch-b",
 					order: 2,
 					title: "B",
-					summary: "",
+					summary: "chapter summary",
 					hunkRefs: [{ filePath: "y.ts", oldStart: 1 }],
 					keyChanges: [],
 				},
@@ -457,8 +457,8 @@ describe("view-state API", () => {
 		});
 		insertChaptersFile(db, fixture, makeRepoContext());
 		const chapters = db.select().from(chapter).all();
-		const chapterA = chapters.find((c) => c.chapterIndex === 1);
-		const chapterB = chapters.find((c) => c.chapterIndex === 2);
+		const chapterA = chapters.find((c) => c.chapterIndex === 0);
+		const chapterB = chapters.find((c) => c.chapterIndex === 1);
 		if (!chapterA || !chapterB) throw new Error("seed: missing chapters");
 		const { port } = await startWithRoutes();
 

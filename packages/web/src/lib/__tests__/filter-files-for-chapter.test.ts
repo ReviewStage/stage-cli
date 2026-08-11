@@ -1,4 +1,6 @@
+import { HEADER_ONLY_OLD_START } from "@stagereview/types/chapters";
 import { describe, expect, it } from "vitest";
+import { FILE_STATUS } from "../diff-types";
 import { filterFilesForChapter } from "../filter-files-for-chapter";
 
 const TWO_FILE_PATCH = `diff --git a/src/foo.ts b/src/foo.ts
@@ -88,5 +90,94 @@ describe("filterFilesForChapter", () => {
 		]);
 		expect(result[0]?.file.additions).toBe(1);
 		expect(result[0]?.file.deletions).toBe(1);
+	});
+
+	describe("header-only files (zero-hunk segments)", () => {
+		const HEADER_ONLY_PATCH = `diff --git a/assets/logo.png b/assets/logo.png
+index 1111111..2222222 100644
+Binary files a/assets/logo.png and b/assets/logo.png differ
+diff --git a/src/old-name.ts b/src/new-name.ts
+similarity index 100%
+rename from src/old-name.ts
+rename to src/new-name.ts
+`;
+
+		it("includes a binary file matched by a header-only sentinel ref", () => {
+			const result = filterFilesForChapter(HEADER_ONLY_PATCH, [
+				{ filePath: "assets/logo.png", oldStart: HEADER_ONLY_OLD_START },
+			]);
+			expect(result).toHaveLength(1);
+			expect(result[0]?.file.path).toBe("assets/logo.png");
+			expect(result[0]?.diff.hunks).toHaveLength(0);
+		});
+
+		it("includes a pure rename matched by a header-only sentinel ref", () => {
+			const result = filterFilesForChapter(HEADER_ONLY_PATCH, [
+				{ filePath: "src/new-name.ts", oldStart: HEADER_ONLY_OLD_START },
+			]);
+			expect(result).toHaveLength(1);
+			expect(result[0]?.file.path).toBe("src/new-name.ts");
+			expect(result[0]?.file.oldPath).toBe("src/old-name.ts");
+			expect(result[0]?.file.status).toBe(FILE_STATUS.MOVED);
+			expect(result[0]?.diff.hunks).toHaveLength(0);
+		});
+
+		it("includes header-only files even when file contents are provided", () => {
+			const result = filterFilesForChapter(
+				HEADER_ONLY_PATCH,
+				[{ filePath: "src/new-name.ts", oldStart: HEADER_ONLY_OLD_START }],
+				{ "src/new-name.ts": { oldContent: "same\n", newContent: "same\n" } },
+			);
+			expect(result).toHaveLength(1);
+			expect(result[0]?.diff.hunks).toHaveLength(0);
+		});
+	});
+
+	it("matches hunk refs against raw UTF-8 file names (quotepath=off output)", () => {
+		const decodedPath = "src/ol\u00e9 file.ts";
+		const patch = `diff --git a/${decodedPath} b/${decodedPath}
+index 1111111..2222222 100644
+--- a/${decodedPath}
++++ b/${decodedPath}
+@@ -10,3 +10,3 @@
+ line a
+-line b
++line B
+ line c
+`;
+		const entries = filterFilesForChapter(patch, [{ filePath: decodedPath, oldStart: 10 }]);
+		expect(entries).toHaveLength(1);
+		expect(entries[0]?.file.path).toBe(decodedPath);
+	});
+
+	it("skips C-quoted segments (legacy patches) without crashing the chapter view", () => {
+		const quoted = `diff --git "a/src/ol\\303\\251 file.ts" "b/src/ol\\303\\251 file.ts"
+index 1111111..2222222 100644
+--- "a/src/ol\\303\\251 file.ts"
++++ "b/src/ol\\303\\251 file.ts"
+@@ -10,3 +10,3 @@
+ line a
+-line b
++line B
+ line c
+`;
+		const patch = `${quoted}${TWO_FILE_PATCH}`;
+		const decodedPath = "src/ol\u00e9 file.ts";
+		const entries = filterFilesForChapter(patch, [
+			{ filePath: decodedPath, oldStart: 10 },
+			{ filePath: "src/foo.ts", oldStart: 10 },
+		]);
+		expect(entries.map((e) => e.file.path)).toEqual(["src/foo.ts"]);
+	});
+
+	it("uses rename lines to name segments when the git header is ambiguous", () => {
+		const patch = `diff --git a/old b/name.png b/new b/name.png
+similarity index 100%
+rename from old b/name.png
+rename to new b/name.png
+`;
+		const entries = filterFilesForChapter(patch, [{ filePath: "new b/name.png", oldStart: 0 }]);
+		expect(entries).toHaveLength(1);
+		expect(entries[0]?.file.path).toBe("new b/name.png");
 	});
 });

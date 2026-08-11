@@ -2,12 +2,26 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import type { DiffResponse, FileContentsMap } from "@stagereview/types/diff";
+import type { DiffResponse, FileContent, FileContentsMap } from "@stagereview/types/diff";
+import {
+	decodeGitHeaderPath,
+	decodeQuotedGitPath,
+	splitEqualGitHeader,
+} from "@stagereview/types/git-paths";
+import { isImageFile } from "@stagereview/types/image";
 import { eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
 import type { ChapterRunRow } from "../db/schema/chapter-run.js";
 import { chapterRun } from "../db/schema/index.js";
-import { buildDiffArgs, hasStringStdout } from "../git.js";
+import {
+	buildDiffArgs,
+	hasStringStdout,
+	isMaxBufferError,
+	logUntrackedFileOverCap,
+	MAX_UNTRACKED_DIFF_BYTES,
+	UntrackedPatchAccumulator,
+	untrackedDiffArgs,
+} from "../git.js";
 import { SCOPE_KIND, WORKING_TREE_REF } from "../schema.js";
 import type { Route } from "../server.js";
 import { writeJson } from "./json.js";
@@ -18,37 +32,37 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_DIFF_BYTES = 50 * 1024 * 1024;
 
 async function buildUntrackedPatch(cwd: string): Promise<string> {
-	const { stdout } = await execFileAsync("git", ["ls-files", "--others", "--exclude-standard"], {
-		cwd,
-		encoding: "utf8",
-	});
-	const files = stdout.trim() ? stdout.trim().split("\n") : [];
+	// `-z` NUL-delimits and never C-quotes, so non-ASCII names stay literal paths.
+	const { stdout } = await execFileAsync(
+		"git",
+		["ls-files", "--others", "--exclude-standard", "-z"],
+		{ cwd, encoding: "utf8" },
+	);
+	const files = stdout.split("\0").filter(Boolean);
 	if (files.length === 0) return "";
 
-	const patches = await Promise.all(
-		files.map(async (file) => {
-			try {
-				await execFileAsync(
-					"git",
-					[
-						"diff",
-						"--no-index",
-						"--no-color",
-						"--src-prefix=a/",
-						"--dst-prefix=b/",
-						"--",
-						"/dev/null",
-						file,
-					],
-					{ cwd, encoding: "utf8", maxBuffer: MAX_DIFF_BYTES },
-				);
-				return "";
-			} catch (err: unknown) {
-				return hasStringStdout(err) ? err.stdout : "";
+	// Sequential like git.ts's getUntrackedDiff: one child process per file at
+	// a time, so thousands of untracked files can't exhaust processes/memory.
+	// Cap policy (per-file buffer, aggregate budget, stop behavior) is the
+	// shared UntrackedPatchAccumulator, so this route and generation-time
+	// getUntrackedDiff omit the same tail by construction.
+	const accumulator = new UntrackedPatchAccumulator();
+	for (const file of files) {
+		try {
+			await execFileAsync("git", untrackedDiffArgs(file), {
+				cwd,
+				encoding: "utf8",
+				maxBuffer: MAX_UNTRACKED_DIFF_BYTES,
+			});
+		} catch (err: unknown) {
+			if (isMaxBufferError(err)) {
+				logUntrackedFileOverCap(file);
+				continue;
 			}
-		}),
-	);
-	return patches.filter(Boolean).join("\n");
+			if (hasStringStdout(err) && !accumulator.add(err.stdout)) break;
+		}
+	}
+	return accumulator.join();
 }
 
 export function diffRoutes(db: StageDb): Route[] {
@@ -115,14 +129,34 @@ export function diffRoutes(db: StageDb): Route[] {
 	];
 }
 
-const MINUS_RE = /^--- (?:a\/)?(.+)$/m;
-const PLUS_RE = /^\+\+\+ (?:b\/)?(.+)$/m;
-const BINARY_RE = /^Binary files/m;
+const MINUS_RE = /^--- (.+)$/m;
+const PLUS_RE = /^\+\+\+ (.+)$/m;
+const BINARY_RE = /^Binary files|^GIT binary patch/m;
+// Mode 120000 marks a symlink. Old and new sides are detected separately so a
+// symlink<->regular transition (old mode/new mode pairs) fetches each side with
+// the right reader instead of treating both as links.
+const OLD_MODE_RE = /^(?:old mode|deleted file mode) (\d{6})$/m;
+const NEW_MODE_RE = /^(?:new mode|new file mode) (\d{6})$/m;
+const INDEX_MODE_RE = /^index [0-9a-f]+\.\.[0-9a-f]+ (\d{6})$/m;
+const SYMLINK_MODE = "120000";
+const RENAME_FROM_RE = /^(?:rename|copy) from (.+)$/m;
+const RENAME_TO_RE = /^(?:rename|copy) to (.+)$/m;
+// `diff --git "a/x y" "b/x y"` — git quotes paths containing spaces or specials.
+const DIFF_GIT_QUOTED_RE = /^diff --git "a\/((?:[^"\\]|\\.)+)" "b\/((?:[^"\\]|\\.)+)"$/m;
+const DIFF_GIT_RE = /^diff --git a\/(.+) b\/(.+)$/m;
 
 interface ParsedFilePaths {
 	oldPath: string | null;
 	newPath: string | null;
 	isBinary: boolean;
+	oldIsSymlink: boolean;
+	newIsSymlink: boolean;
+	/**
+	 * A pure rename/copy (100% similarity) emits only `similarity index` +
+	 * `rename from`/`rename to` — no mode or index lines — so the sides' mode
+	 * cannot be read from the patch and must be resolved from git.
+	 */
+	modeUnknown: boolean;
 }
 
 function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
@@ -138,17 +172,59 @@ function parseFilePathsFromPatch(patch: string): ParsedFilePaths[] {
 		if (!text.startsWith("diff --git ")) continue;
 
 		const isBinary = BINARY_RE.test(text);
+		const hunkStart = text.search(/^@@ /m);
+		const header = hunkStart === -1 ? text : text.slice(0, hunkStart);
+		// `index ... <mode>` covers unchanged-mode diffs (both sides identical);
+		// old/new (or deleted/new file) mode lines cover transitions.
+		const sharedMode = header.match(INDEX_MODE_RE)?.[1];
+		const oldMode = header.match(OLD_MODE_RE)?.[1] ?? sharedMode;
+		const newMode = header.match(NEW_MODE_RE)?.[1] ?? sharedMode;
+		const oldIsSymlink = oldMode === SYMLINK_MODE;
+		const newIsSymlink = newMode === SYMLINK_MODE;
+		const modeUnknown =
+			oldMode === undefined && newMode === undefined && RENAME_FROM_RE.test(header);
 
-		const minus = text.match(MINUS_RE);
-		const plus = text.match(PLUS_RE);
+		let oldPath = decodeGitHeaderPath(text.match(MINUS_RE)?.[1], "a/");
+		let newPath = decodeGitHeaderPath(text.match(PLUS_RE)?.[1], "b/");
 
-		const oldPath = minus?.[1] && minus[1] !== "/dev/null" ? minus[1] : null;
-		const newPath = plus?.[1] && plus[1] !== "/dev/null" ? plus[1] : null;
+		// Pure renames/copies have no ---/+++ headers; fall back to the
+		// rename/copy header lines so their contents can still be served.
+		if (oldPath === null && newPath === null) {
+			oldPath = decodeGitHeaderPath(text.match(RENAME_FROM_RE)?.[1], null);
+			newPath = decodeGitHeaderPath(text.match(RENAME_TO_RE)?.[1], null);
+		}
 
-		results.push({ oldPath, newPath, isBinary });
+		// Modified binaries emit only `diff --git` + `Binary files ... differ`
+		// (no ---/+++, no rename lines); parse the header itself so images can
+		// still reach the image diff viewer.
+		if (oldPath === null && newPath === null) {
+			const quoted = text.match(DIFF_GIT_QUOTED_RE);
+			if (quoted) {
+				oldPath = decodeQuotedGitPathCapture(quoted[1]);
+				newPath = decodeQuotedGitPathCapture(quoted[2]);
+			} else {
+				const firstLine = text.slice(0, text.indexOf("\n") === -1 ? undefined : text.indexOf("\n"));
+				const halves = splitEqualGitHeader(firstLine);
+				if (halves) {
+					[oldPath, newPath] = halves;
+				} else {
+					const header = text.match(DIFF_GIT_RE);
+					oldPath = header?.[1] ?? null;
+					newPath = header?.[2] ?? null;
+				}
+			}
+		}
+
+		results.push({ oldPath, newPath, isBinary, oldIsSymlink, newIsSymlink, modeUnknown });
 	}
 
 	return results;
+}
+
+/** Adapter: decode an already-unwrapped quoted capture, tolerating absence. */
+function decodeQuotedGitPathCapture(capture: string | undefined): string | null {
+	if (capture === undefined) return null;
+	return decodeQuotedGitPath(capture);
 }
 
 async function getGitFileContent(
@@ -168,12 +244,80 @@ async function getGitFileContent(
 	}
 }
 
-async function readFileContent(repoRoot: string, filePath: string): Promise<string | null> {
+/**
+ * Resolve a path's git mode when the patch header carries none (pure
+ * rename/copy). An empty ref denotes the index, matching `git show :path`.
+ */
+async function getGitFileMode(cwd: string, ref: string, filePath: string): Promise<string | null> {
+	// --literal-pathspecs: the parsed filename must be addressed verbatim —
+	// pathspec magic (`:`, globs) in a real filename would otherwise misresolve.
+	const args =
+		ref === ""
+			? ["--literal-pathspecs", "ls-files", "--stage", "--", filePath]
+			: ["--literal-pathspecs", "ls-tree", ref, "--", filePath];
+	try {
+		const { stdout } = await execFileAsync("git", args, { cwd, encoding: "utf8" });
+		return stdout.match(/^(\d{6}) /)?.[1] ?? null;
+	} catch {
+		return null;
+	}
+}
+
+async function getGitFileContentBase64(
+	cwd: string,
+	ref: string,
+	filePath: string,
+): Promise<string | null> {
+	try {
+		const { stdout } = await execFileAsync("git", ["show", `${ref}:${filePath}`], {
+			cwd,
+			encoding: "buffer",
+			maxBuffer: MAX_FILE_BYTES,
+		});
+		return stdout.toString("base64");
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Resolve a working-tree path for reading, or null when it escapes the repo or
+ * exceeds MAX_FILE_BYTES — mirroring the maxBuffer cap on committed-side reads.
+ */
+async function resolveReadablePath(repoRoot: string, filePath: string): Promise<string | null> {
 	const resolved = path.resolve(repoRoot, filePath);
 	const rel = path.relative(repoRoot, resolved);
-	if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
+	if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+	try {
+		// fs reads follow symlinks, so a checked-out branch could commit a link
+		// pointing outside the repo; re-check containment on the real path.
+		const [real, realRoot] = await Promise.all([fs.realpath(resolved), fs.realpath(repoRoot)]);
+		const realRel = path.relative(realRoot, real);
+		if (realRel === ".." || realRel.startsWith(`..${path.sep}`) || path.isAbsolute(realRel))
+			return null;
+		const { size } = await fs.stat(real);
+		return size > MAX_FILE_BYTES ? null : real;
+	} catch {
+		return null;
+	}
+}
+
+async function readFileContent(repoRoot: string, filePath: string): Promise<string | null> {
+	const resolved = await resolveReadablePath(repoRoot, filePath);
+	if (resolved === null) return null;
 	try {
 		return await fs.readFile(resolved, "utf8");
+	} catch {
+		return null;
+	}
+}
+
+async function readFileContentBase64(repoRoot: string, filePath: string): Promise<string | null> {
+	const resolved = await resolveReadablePath(repoRoot, filePath);
+	if (resolved === null) return null;
+	try {
+		const buffer = await fs.readFile(resolved);
+		return buffer.toString("base64");
 	} catch {
 		return null;
 	}
@@ -204,6 +348,48 @@ function fetchContent(
 	return getGitFileContent(repoRoot, ref, filePath);
 }
 
+/**
+ * A symlink's git content is its target path: `git show` prints it for
+ * committed refs; on disk the link itself must be read, not followed.
+ */
+async function fetchSymlinkTarget(
+	repoRoot: string,
+	ref: string | "DISK",
+	filePath: string,
+): Promise<string | null> {
+	if (ref !== "DISK") return getGitFileContent(repoRoot, ref, filePath);
+	const resolved = path.resolve(repoRoot, filePath);
+	const rel = path.relative(repoRoot, resolved);
+	if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+	try {
+		return await fs.readlink(resolved);
+	} catch {
+		return null;
+	}
+}
+
+function fetchContentBase64(
+	repoRoot: string,
+	ref: string | "DISK",
+	filePath: string,
+): Promise<string | null> {
+	if (ref === "DISK") return readFileContentBase64(repoRoot, filePath);
+	return getGitFileContentBase64(repoRoot, ref, filePath);
+}
+
+/** Git's binary heuristic: a NUL byte within the first 8000 bytes. */
+const BINARY_SNIFF_BYTES = 8000;
+
+/**
+ * Null out content that is actually binary. Pure renames of binary non-image
+ * files (pdf/zip/wasm) carry no `Binary files` marker in the patch, so they
+ * reach the text path — serving their bytes as UTF-8 would render mojibake.
+ */
+function dropBinaryContent(content: string | null): string | null {
+	if (content?.slice(0, BINARY_SNIFF_BYTES).includes("\0")) return null;
+	return content;
+}
+
 async function buildFileContents(
 	run: ChapterRunRow,
 	repoRoot: string,
@@ -212,23 +398,137 @@ async function buildFileContents(
 	const files = parseFilePathsFromPatch(patch);
 	const { oldRef, newRef } = getContentRefs(run);
 
-	const entries = await Promise.all(
-		files.map(async ({ oldPath, newPath, isBinary }) => {
+	// Sequential per file (each file's two sides fetch in parallel): hundreds
+	// of changed files must not fan out unbounded git child processes, matching
+	// the untracked-diff path's bound.
+	const entries: Array<readonly [string, FileContent] | null> = [];
+	// Response-wide content budget: per-file reads are capped, but an
+	// image-heavy change could otherwise accumulate an unbounded payload.
+	let contentBudget = MAX_DIFF_BYTES;
+	for (const file of files) {
+		if (contentBudget <= 0) {
+			console.error(
+				`File contents exceeded ${MAX_DIFF_BYTES} bytes; remaining files omitted from context expansion and previews`,
+			);
+			break;
+		}
+		const entry = await (async (): Promise<readonly [string, FileContent] | null> => {
+			const { oldPath, newPath, isBinary } = file;
+			let { oldIsSymlink, newIsSymlink } = file;
 			const key = newPath ?? oldPath;
-			if (!key || isBinary) return null;
+			if (!key) return null;
+
+			// A pure rename/copy of a symlink carries no mode lines, so both
+			// symlink flags parse false and an image-named link would ship its
+			// target string as base64 "image" bytes. No mode lines also means the
+			// mode did not change, so one old-side lookup settles both sides.
+			if (file.modeUnknown && oldPath !== null) {
+				const mode = await getGitFileMode(repoRoot, oldRef, oldPath);
+				if (mode === SYMLINK_MODE) {
+					oldIsSymlink = true;
+					newIsSymlink = true;
+				}
+			}
+
+			// A symlink side's content is its target path (git blob semantics) —
+			// text, even when the link is named like an image. Sides are handled
+			// independently so a symlink<->regular transition reads each with the
+			// right fetcher.
+			// An absent side (added/deleted file) is vacuous — the existing side's
+			// mode decides. Only a genuine symlink<->regular transition is mixed.
+			const oldSideSymlink = oldPath === null || oldIsSymlink;
+			const newSideSymlink = newPath === null || newIsSymlink;
+			if (oldSideSymlink && newSideSymlink && (oldIsSymlink || newIsSymlink)) {
+				const [oldContent, newContent] = await Promise.all([
+					oldPath ? fetchSymlinkTarget(repoRoot, oldRef, oldPath) : Promise.resolve(null),
+					newPath ? fetchSymlinkTarget(repoRoot, newRef, newPath) : Promise.resolve(null),
+				]);
+				return [key, { oldContent, newContent }] as const;
+			}
+
+			// Images ship base64-encoded (whether or not git marked the diff as
+			// binary — pure renames carry no marker) so the image diff viewer
+			// can render them; other binary files carry no usable content. In a
+			// symlink<->image transition only the real-file side ships (a single
+			// encoding covers both sides of the wire entry); the link side shows
+			// as unavailable, which beats serving image bytes as a fake target.
+			if (isImageFile(key)) {
+				const [oldContent, newContent] = await Promise.all([
+					oldPath && !oldIsSymlink
+						? fetchContentBase64(repoRoot, oldRef, oldPath)
+						: Promise.resolve(null),
+					newPath && !newIsSymlink
+						? fetchContentBase64(repoRoot, newRef, newPath)
+						: Promise.resolve(null),
+				]);
+				return [key, { oldContent, newContent, encoding: "base64" as const }] as const;
+			}
+			if (isBinary) return null;
+			if (oldIsSymlink || newIsSymlink) {
+				// Mixed text transition: target path on the link side, file text on
+				// the other — both plain text, so one entry represents both sides.
+				const [oldContent, newContent] = await Promise.all([
+					oldPath
+						? oldIsSymlink
+							? fetchSymlinkTarget(repoRoot, oldRef, oldPath)
+							: fetchContent(repoRoot, oldRef, oldPath)
+						: Promise.resolve(null),
+					newPath
+						? newIsSymlink
+							? fetchSymlinkTarget(repoRoot, newRef, newPath)
+							: fetchContent(repoRoot, newRef, newPath)
+						: Promise.resolve(null),
+				]);
+				return [key, { oldContent, newContent }] as const;
+			}
 
 			const [oldContent, newContent] = await Promise.all([
 				oldPath ? fetchContent(repoRoot, oldRef, oldPath) : Promise.resolve(null),
 				newPath ? fetchContent(repoRoot, newRef, newPath) : Promise.resolve(null),
 			]);
 
-			return [key, { oldContent, newContent }] as const;
-		}),
-	);
+			return [
+				key,
+				{ oldContent: dropBinaryContent(oldContent), newContent: dropBinaryContent(newContent) },
+			] as const;
+		})();
+		if (entry) {
+			const entryBytes =
+				Buffer.byteLength(entry[1].oldContent ?? "") + Buffer.byteLength(entry[1].newContent ?? "");
+			// Enforce before retaining: an over-budget entry is dropped, not kept.
+			if (entryBytes > contentBudget) {
+				console.error(
+					`File contents exceeded ${MAX_DIFF_BYTES} bytes; remaining files omitted from context expansion and previews`,
+				);
+				break;
+			}
+			contentBudget -= entryBytes;
+		}
+		entries.push(entry);
+	}
 
 	const map: FileContentsMap = {};
 	for (const entry of entries) {
-		if (entry) map[entry[0]] = entry[1];
+		if (!entry) continue;
+		const [key, content] = entry;
+		const existing = map[key];
+		if (!existing) {
+			map[key] = content;
+			continue;
+		}
+		// git emits some typechanges (regular<->symlink) as same-path delete/add
+		// pairs; merge the sides so neither is lost. Mixed encodings can't share
+		// one entry — prefer the base64 (image) entry, whose side would otherwise
+		// render nothing, over the text side.
+		if ((existing.encoding ?? "utf8") === (content.encoding ?? "utf8")) {
+			map[key] = {
+				oldContent: existing.oldContent ?? content.oldContent,
+				newContent: existing.newContent ?? content.newContent,
+				...(content.encoding ? { encoding: content.encoding } : {}),
+			};
+		} else if (content.encoding === "base64") {
+			map[key] = content;
+		}
 	}
 	return map;
 }

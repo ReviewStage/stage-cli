@@ -174,6 +174,46 @@ index abc123..def456 100644
 		expect(firstLine?.content).toBe("export function hello() {");
 		expect(firstLine?.content).not.toMatch(/^\+/);
 	});
+
+	it("excludes 'No newline at end of file' markers from hunk lines", () => {
+		const noNewlineDiff = `diff --git a/migration.sql b/migration.sql
+new file mode 100644
+index 0000000..abc1234
+--- /dev/null
++++ b/migration.sql
+@@ -0,0 +1 @@
++ALTER TABLE foo ADD COLUMN bar text;
+\\ No newline at end of file`;
+
+		const result = parseGitDiff(noNewlineDiff);
+		expect(result[0]?.additions).toBe(1);
+		expect(result[0]?.hunks[0]?.lines).toHaveLength(1);
+		expect(result[0]?.hunks[0]?.lines[0]).toEqual({
+			type: "addition",
+			content: "ALTER TABLE foo ADD COLUMN bar text;",
+			oldLineNumber: undefined,
+			newLineNumber: 1,
+		});
+	});
+
+	it("excludes no-newline markers on both sides of a modified file", () => {
+		const bothSidesDiff = `diff --git a/file.txt b/file.txt
+index abc1234..def5678 100644
+--- a/file.txt
++++ b/file.txt
+@@ -1 +1 @@
+-old content
+\\ No newline at end of file
++new content
+\\ No newline at end of file`;
+
+		const result = parseGitDiff(bothSidesDiff);
+		expect(result[0]?.additions).toBe(1);
+		expect(result[0]?.deletions).toBe(1);
+		const lines = result[0]?.hunks[0]?.lines;
+		expect(lines).toHaveLength(2);
+		expect(lines?.map((l) => l.type)).toEqual(["deletion", "addition"]);
+	});
 });
 
 describe("parseGitDiff — embedded diff headers", () => {

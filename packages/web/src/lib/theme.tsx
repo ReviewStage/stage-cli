@@ -22,6 +22,7 @@ export const APP_THEME = {
 export type AppTheme = (typeof APP_THEME)[keyof typeof APP_THEME];
 
 const STORAGE_KEY = "ui-theme";
+const DEFAULT_USER_THEME: UserTheme = USER_THEME.DARK;
 
 const VALID_THEMES: ReadonlySet<string> = new Set<string>(Object.values(USER_THEME));
 
@@ -29,14 +30,18 @@ function isValidUserTheme(value: string): value is UserTheme {
 	return VALID_THEMES.has(value);
 }
 
+export function resolveStoredUserTheme(stored: string | null): UserTheme {
+	if (stored && isValidUserTheme(stored)) return stored;
+	return DEFAULT_USER_THEME;
+}
+
 function getStoredUserTheme(): UserTheme {
 	try {
-		const stored = localStorage.getItem(STORAGE_KEY);
-		if (stored && isValidUserTheme(stored)) return stored;
+		return resolveStoredUserTheme(localStorage.getItem(STORAGE_KEY));
 	} catch {
 		// localStorage unavailable
 	}
-	return USER_THEME.SYSTEM;
+	return DEFAULT_USER_THEME;
 }
 
 function getSystemTheme(): AppTheme {

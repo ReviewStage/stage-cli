@@ -44,7 +44,7 @@ export function getPullRequestStatusInfo(
 	if (options?.inMergeQueue) {
 		return {
 			icon: GitMerge,
-			label: "Queued",
+			label: options.mergeQueuePosition ? `Queued (#${options.mergeQueuePosition})` : "Queued",
 			color: "text-yellow-600",
 			bgColor: "bg-yellow-500/10",
 		};

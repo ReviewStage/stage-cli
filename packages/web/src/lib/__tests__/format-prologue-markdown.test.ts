@@ -9,6 +9,7 @@ import { formatPrologueAsMarkdown } from "../format-prologue-markdown";
 
 const basePrologue: Prologue = {
 	motivation: "Reviews were hard to follow.",
+	rootCause: null,
 	outcome: "Reviews read like a story now.",
 	diagram: null,
 	keyChanges: [
@@ -57,6 +58,18 @@ describe("formatPrologueAsMarkdown", () => {
 		const md = formatPrologueAsMarkdown({ ...basePrologue, motivation: null, outcome: null });
 		expect(md).not.toContain("## Why this change?");
 		expect(md).not.toContain("## What it does");
+	});
+
+	it("renders the root cause between motivation and outcome when present", () => {
+		const md = formatPrologueAsMarkdown({ ...basePrologue, rootCause: "A stale cache entry." });
+		expect(md).toContain("## Root cause\nA stale cache entry.");
+		expect(md.indexOf("## Root cause")).toBeGreaterThan(md.indexOf("## Why this change?"));
+		expect(md.indexOf("## Root cause")).toBeLessThan(md.indexOf("## What it does"));
+	});
+
+	it("omits the Root cause section when rootCause is null", () => {
+		const md = formatPrologueAsMarkdown(basePrologue);
+		expect(md).not.toContain("## Root cause");
 	});
 
 	it("renders the diagram as a fenced mermaid block when present", () => {

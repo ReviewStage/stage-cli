@@ -11,12 +11,16 @@ import { useCallback, useMemo, useRef, useState } from "react";
 export function useFileCollapseState(
 	defaultCollapsedIds: ReadonlySet<string>,
 	allFilePaths: readonly string[],
-	resetKey: string,
+	resetKey: string | readonly string[],
 ) {
 	const [overrides, setOverrides] = useState<Set<string>>(new Set());
-	const prevResetKey = useRef(resetKey);
-	if (prevResetKey.current !== resetKey) {
-		prevResetKey.current = resetKey;
+	const keyParts = typeof resetKey === "string" ? [resetKey] : resetKey;
+	const prevResetKey = useRef(keyParts);
+	const changed =
+		prevResetKey.current.length !== keyParts.length ||
+		prevResetKey.current.some((part, i) => part !== keyParts[i]);
+	if (changed) {
+		prevResetKey.current = keyParts;
 		setOverrides(new Set());
 	}
 

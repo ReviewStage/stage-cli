@@ -64,7 +64,7 @@ interface ReviewerRowProps {
 	pullNumber: number;
 	onRemoveMutate: (login: string) => void;
 	onRemoveError: (login: string) => void;
-	invalidatePullRequestQueries: () => void;
+	invalidatePullRequestQueries: (context?: { mutatedRunId: string }) => void;
 }
 
 function ReviewerRow({
@@ -79,9 +79,12 @@ function ReviewerRow({
 	const { runId } = usePullRequestContext();
 	const removeMutation = useMutation({
 		...removeReviewerMutationOptions(runId),
-		onMutate: () => onRemoveMutate(reviewer.user.login),
-		onSuccess: () => {
-			invalidatePullRequestQueries();
+		onMutate: () => {
+			onRemoveMutate(reviewer.user.login);
+			return { mutatedRunId: runId };
+		},
+		onSuccess: (_data, _variables, ctx) => {
+			invalidatePullRequestQueries(ctx);
 			toast.success("Reviewer removed");
 		},
 		onError: (error) => {
@@ -92,8 +95,8 @@ function ReviewerRow({
 
 	const rerequestMutation = useMutation({
 		...addReviewerMutationOptions(runId),
-		onSuccess: () => {
-			invalidatePullRequestQueries();
+		onSuccess: (_data, _variables, ctx) => {
+			invalidatePullRequestQueries(ctx);
 			toast.success("Review re-requested");
 		},
 		onError: (error) => {
@@ -206,7 +209,7 @@ interface CollaboratorRowProps {
 	onSuccess: () => void;
 	onAddMutate: (user: ReviewUser) => void;
 	onAddError: (login: string) => void;
-	invalidatePullRequestQueries: () => void;
+	invalidatePullRequestQueries: (context?: { mutatedRunId: string }) => void;
 }
 
 function CollaboratorRow({
@@ -222,10 +225,13 @@ function CollaboratorRow({
 	const { runId } = usePullRequestContext();
 	const addMutation = useMutation({
 		...addReviewerMutationOptions(runId),
-		onMutate: () => onAddMutate(user),
-		onSuccess: () => {
+		onMutate: () => {
+			onAddMutate(user);
+			return { mutatedRunId: runId };
+		},
+		onSuccess: (_data, _variables, ctx) => {
 			onSuccess();
-			invalidatePullRequestQueries();
+			invalidatePullRequestQueries(ctx);
 			toast.success("Reviewer requested");
 		},
 		onError: (error) => {

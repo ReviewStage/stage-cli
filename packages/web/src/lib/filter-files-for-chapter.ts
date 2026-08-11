@@ -1,6 +1,11 @@
-import { getSingularPatch, parseDiffFromFile } from "@pierre/diffs";
-import type { HunkReference } from "@stagereview/types/chapters";
+import { type FileDiffMetadata, getSingularPatch, parseDiffFromFile } from "@pierre/diffs";
+import { HEADER_ONLY_OLD_START, type HunkReference } from "@stagereview/types/chapters";
 import type { FileContentsMap } from "@stagereview/types/diff";
+import {
+	decodeGitHeaderPath,
+	decodeQuotedGitPath,
+	splitEqualGitHeader,
+} from "@stagereview/types/git-paths";
 import type { FileDiffEntry } from "./parse-diff";
 import { fileDiffToPullRequestFile } from "./parse-diff";
 
@@ -26,18 +31,43 @@ function splitPatchByFile(patch: string): FileSegment[] {
 	return segments;
 }
 
+const DIFF_GIT_QUOTED_NAMES_RE = /^diff --git "a\/((?:[^"\\]|\\.)+)" "b\/((?:[^"\\]|\\.)+)"$/m;
 const DIFF_GIT_NAMES_RE = /^diff --git a\/(.+?) b\/(.+?)$/m;
-const PLUS_NAME_RE = /^\+\+\+ (?:b\/)?(.+)$/m;
-const MINUS_NAME_RE = /^--- (?:a\/)?(.+)$/m;
+const PLUS_NAME_RE = /^\+\+\+ (.+)$/m;
+const MINUS_NAME_RE = /^--- (.+)$/m;
+
+const RENAME_FROM_NAME_RE = /^(?:rename|copy) from (.+)$/m;
+const RENAME_TO_NAME_RE = /^(?:rename|copy) to (.+)$/m;
 
 function parseFileNames(segment: string): { prevName?: string; name?: string } {
-	const plusMatch = segment.match(PLUS_NAME_RE);
-	const minusMatch = segment.match(MINUS_NAME_RE);
-	const gitMatch = segment.match(DIFF_GIT_NAMES_RE);
-	const name =
-		plusMatch?.[1] && plusMatch[1] !== "/dev/null" ? plusMatch[1] : (gitMatch?.[2] ?? undefined);
-	const prevName =
-		minusMatch?.[1] && minusMatch[1] !== "/dev/null" ? minusMatch[1] : (gitMatch?.[1] ?? undefined);
+	// rename/copy lines are authoritative and unambiguous — unlike the
+	// `diff --git` header, whose unquoted form can't be split reliably when a
+	// path itself contains " b/".
+	const renameFrom =
+		decodeGitHeaderPath(segment.match(RENAME_FROM_NAME_RE)?.[1], null) ?? undefined;
+	const renameTo = decodeGitHeaderPath(segment.match(RENAME_TO_NAME_RE)?.[1], null) ?? undefined;
+	if (renameFrom !== undefined && renameTo !== undefined) {
+		return { prevName: renameFrom, name: renameTo };
+	}
+	const plusName = decodeGitHeaderPath(segment.match(PLUS_NAME_RE)?.[1], "b/") ?? undefined;
+	const minusName = decodeGitHeaderPath(segment.match(MINUS_NAME_RE)?.[1], "a/") ?? undefined;
+	const quotedGit = segment.match(DIFF_GIT_QUOTED_NAMES_RE);
+	// Unquoted headers are ambiguous when the path contains " b/"; for
+	// non-renames both halves are identical, so prefer the equal split.
+	const firstLine = segment.slice(
+		0,
+		segment.indexOf("\n") === -1 ? undefined : segment.indexOf("\n"),
+	);
+	const equalHalves = quotedGit ? null : splitEqualGitHeader(firstLine);
+	const gitMatch = quotedGit ?? segment.match(DIFF_GIT_NAMES_RE);
+	const gitOld = quotedGit
+		? decodeQuotedGitPath(gitMatch?.[1] ?? "")
+		: (equalHalves?.[0] ?? gitMatch?.[1]);
+	const gitNew = quotedGit
+		? decodeQuotedGitPath(gitMatch?.[2] ?? "")
+		: (equalHalves?.[1] ?? gitMatch?.[2]);
+	const name = plusName ?? gitNew ?? undefined;
+	const prevName = minusName ?? gitOld ?? undefined;
 	return { prevName, name };
 }
 
@@ -154,11 +184,31 @@ export function filterFilesForChapter(
 		if (!segment) continue;
 
 		const allHunks = parseHunksFromSegment(segment.text);
+		if (allHunks.length === 0) {
+			// Only the header-only sentinel selects a zero-hunk file; a ref with a
+			// real oldStart that matches nothing is simply invalid and stays ignored.
+			if (!chapterOldStarts.has(HEADER_ONLY_OLD_START)) continue;
+			// Header-only files (binary contents, pure renames) have no hunks to
+			// filter; include them whole — matched via the HEADER_ONLY_OLD_START
+			// sentinel ref — so chapter views can render them through the
+			// image/full-preview branches.
+			const diff = parseSegment(segment.text);
+			if (diff === null) continue;
+			result.push({ file: fileDiffToPullRequestFile(diff), diff });
+			continue;
+		}
+
 		const chapterHunks = allHunks.filter((h) => chapterOldStarts.has(h.oldStart));
 		if (chapterHunks.length === 0) continue;
 
 		const contents = fileContents?.[segment.name ?? filePath];
-		if (contents?.oldContent != null && contents?.newContent != null) {
+		// base64 entries are image bytes; applying text hunks to them would
+		// corrupt the reconstruction, so enrichment only uses UTF-8 entries.
+		if (
+			contents?.encoding !== "base64" &&
+			contents?.oldContent != null &&
+			contents?.newContent != null
+		) {
 			const nonChapterHunks = allHunks.filter((h) => !chapterOldStarts.has(h.oldStart));
 			const intermediateContent = applyHunksToContent(contents.oldContent, nonChapterHunks);
 			const oldPath = segment.prevName ?? segment.name ?? filePath;
@@ -179,10 +229,24 @@ export function filterFilesForChapter(
 				...headerLines,
 				...chapterHunks.flatMap((h) => [h.header, ...h.lines]),
 			].join("\n");
-			const diff = getSingularPatch(filteredText);
+			const diff = parseSegment(filteredText);
+			if (diff === null) continue;
 			result.push({ file: fileDiffToPullRequestFile(diff), diff });
 		}
 	}
 
 	return result;
+}
+
+/**
+ * Parse one file's patch text through Pierre, skipping segments its parser
+ * rejects (e.g. C-quoted header paths from patches generated before the CLI
+ * disabled core.quotepath) instead of crashing the whole chapter view.
+ */
+function parseSegment(text: string): FileDiffMetadata | null {
+	try {
+		return getSingularPatch(text);
+	} catch {
+		return null;
+	}
 }

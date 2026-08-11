@@ -37,6 +37,7 @@ const reviewWithLocalThread = (): ReviewResponse => ({
 const REMOTE_THREAD: ReviewThread = {
 	id: "THREAD_remote",
 	source: "github",
+	subjectType: "LINE",
 	threadNodeId: "THREAD_remote",
 	viewerCanResolve: true,
 	viewerCanUnresolve: true,
@@ -65,7 +66,26 @@ const review = (promoted: boolean): ReviewResponse => ({
 	github: "available",
 	threads: promoted ? [REMOTE_THREAD] : [],
 	pendingComments: promoted
-		? [{ id: "COMMENT_remote", filePath: "src/foo.ts", line: 3, body: "Promote me" }]
+		? [
+				{
+					id: "COMMENT_remote",
+					databaseId: 123,
+					filePath: "src/foo.ts",
+					line: 3,
+					startLine: null,
+					side: "RIGHT" as const,
+					startSide: null,
+					subjectType: "LINE" as const,
+					diffHunk: "@@ -2,2 +2,2 @@\n-old line\n+new line",
+					originalLine: 3,
+					originalStartLine: null,
+					bodyHtml: "<p>Promote me</p>",
+					htmlUrl: "https://github.com/o/r/pull/1#discussion_r1",
+					createdAt: "2026-01-01T00:00:00Z",
+					author: { login: "reviewer", avatarUrl: null },
+					body: "Promote me",
+				},
+			]
 		: [],
 	hasPendingReview: promoted,
 	pendingReviewBody: "",

@@ -1,17 +1,11 @@
-import type { ReviewEvent } from "@stagereview/types/review";
+import type { GitHubDiffSide, ReviewEvent } from "@stagereview/types/review";
+import { GITHUB_DIFF_SIDE, SUBJECT_TYPE, type SubjectType } from "@stagereview/types/review";
 import { z } from "zod";
 import { ghReadOrThrow, ghWriteOrThrow } from "./exec.js";
 import type { GitHubRepo } from "./repo.js";
 
-/**
- * GitHub's diff sides. `LEFT` is the base/deletion side, `RIGHT` the head/addition
- * side; they map onto the local `DIFF_SIDE` (deletions/additions) in the review layer.
- */
-export const GITHUB_DIFF_SIDE = {
-	LEFT: "LEFT",
-	RIGHT: "RIGHT",
-} as const;
-export type GitHubDiffSide = (typeof GITHUB_DIFF_SIDE)[keyof typeof GITHUB_DIFF_SIDE];
+export type { GitHubDiffSide };
+export { GITHUB_DIFF_SIDE };
 
 // ─── Read: the PR's review state in one paginated query ─────────────────────────
 
@@ -44,15 +38,20 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
 		  viewerCanReply
           path
           line
+          subjectType
           startLine
           diffSide
           startDiffSide
+          originalLine
+          originalStartLine
 		  comments(first: ${EMBEDDED_COMMENT_PAGE_SIZE}) {
             nodes {
               id
+              databaseId
               url
               body
               bodyHTML
+              diffHunk
               createdAt
               author { login avatarUrl }
               pullRequestReview { state }
@@ -68,9 +67,12 @@ const GqlActorSchema = z.object({ login: z.string(), avatarUrl: z.string() }).nu
 
 const GqlReviewCommentSchema = z.object({
 	id: z.string(),
+	// GraphQL's Int-typed `databaseId` is null when the numeric id overflows it.
+	databaseId: z.number().nullable(),
 	url: z.string(),
 	body: z.string(),
 	bodyHTML: z.string(),
+	diffHunk: z.string(),
 	createdAt: z.string(),
 	author: GqlActorSchema,
 	pullRequestReview: z.object({ state: z.string() }).nullable(),
@@ -93,9 +95,12 @@ const GqlReviewThreadSchema = z.object({
 	viewerCanReply: z.boolean(),
 	path: z.string(),
 	line: z.number().nullable(),
+	subjectType: z.enum(SUBJECT_TYPE),
 	startLine: z.number().nullable(),
 	diffSide: z.enum(GITHUB_DIFF_SIDE),
 	startDiffSide: z.enum(GITHUB_DIFF_SIDE).nullable(),
+	originalLine: z.number().nullable(),
+	originalStartLine: z.number().nullable(),
 	comments: GqlReviewCommentsPageSchema,
 });
 
@@ -145,24 +150,29 @@ export interface ReviewComment {
 	isPending: boolean;
 }
 
-/** A line-anchored review thread on the PR, with its comments oldest-first. */
-export interface ReviewThread {
+/** A rooted review thread as loaded from GitHub; outdated/whole-file threads have no line. */
+export interface LoadedReviewThread {
 	threadNodeId: string;
 	isResolved: boolean;
 	viewerCanResolve: boolean;
 	viewerCanUnresolve: boolean;
 	viewerCanReply: boolean;
 	path: string;
-	line: number;
+	subjectType: SubjectType;
+	line: number | null;
 	startLine: number | null;
 	side: GitHubDiffSide;
 	startSide: GitHubDiffSide | null;
+	/** The anchor frozen at thread creation — all an outdated thread has left. */
+	originalLine: number | null;
+	originalStartLine: number | null;
 	comments: ReviewComment[];
 }
 
-/** A rooted review thread as loaded from GitHub; outdated/whole-file threads have no line. */
-export interface LoadedReviewThread extends Omit<ReviewThread, "line"> {
-	line: number | null;
+/** A line-anchored review thread on the PR, with its comments oldest-first. */
+export interface ReviewThread extends LoadedReviewThread {
+	subjectType: typeof SUBJECT_TYPE.LINE;
+	line: number;
 }
 
 export interface GitHubReview {
@@ -184,24 +194,43 @@ export interface GitHubReview {
 	pendingReviewBody: string;
 	/** Viewer's pending (draft) comments across all threads, including anchorless ones. */
 	pendingComments: PendingReviewComment[];
-	/** All rooted threads, including outdated/anchorless ones hidden from the line-based UI. */
+	/** All rooted threads, including whole-file and outdated ones absent from `threads`. */
 	allThreads: LoadedReviewThread[];
+	/** Line-anchored threads only — the ones the line-based diff UI can place. */
 	threads: ReviewThread[];
 }
 
 export interface PendingReviewComment {
 	id: string;
+	/** GraphQL's Int-typed `databaseId`; null when the numeric id overflows it. */
+	databaseId: number | null;
 	filePath: string;
 	line: number | null;
+	startLine: number | null;
+	side: GitHubDiffSide;
+	startSide: GitHubDiffSide | null;
+	subjectType: SubjectType;
+	/**
+	 * GitHub freezes `diffHunk` at comment creation; slice it with the original
+	 * coordinates below, never the thread's current `line`/`startLine`. Empty for
+	 * whole-file comments.
+	 */
+	diffHunk: string;
+	originalLine: number | null;
+	originalStartLine: number | null;
 	body: string;
+	bodyHtml: string;
+	htmlUrl: string;
+	createdAt: string;
+	author: { login: string; avatarUrl: string | null };
 }
 
 const PENDING_STATE = "PENDING";
 
 /**
  * The PR's review threads (pending + submitted) as the viewer sees them, plus the
- * ids the write mutations need. Threads with no anchorable line (outdated or
- * whole-file) are dropped — the review UI is line-anchored.
+ * ids the write mutations need. `threads` holds only line-anchored threads;
+ * whole-file and outdated (line-less) threads stay in `allThreads`.
  */
 export async function getReview(
 	repoRoot: string,
@@ -249,9 +278,21 @@ export async function getReview(
 				if (c.pullRequestReview?.state !== PENDING_STATE) continue;
 				pendingComments.push({
 					id: c.id,
+					databaseId: c.databaseId,
 					filePath: node.path,
 					line: node.line,
+					startLine: node.startLine,
+					side: node.diffSide,
+					startSide: node.startDiffSide,
+					subjectType: node.subjectType,
+					diffHunk: c.diffHunk,
+					originalLine: node.originalLine,
+					originalStartLine: node.originalStartLine,
 					body: c.body,
+					bodyHtml: c.bodyHTML,
+					htmlUrl: c.url,
+					createdAt: c.createdAt,
+					author: { login: c.author?.login ?? "ghost", avatarUrl: c.author?.avatarUrl || null },
 				});
 			}
 			const root = comments[0];
@@ -263,15 +304,18 @@ export async function getReview(
 				viewerCanUnresolve: node.viewerCanUnresolve,
 				viewerCanReply: node.viewerCanReply,
 				path: node.path,
+				subjectType: node.subjectType,
 				line: node.line,
 				startLine: node.startLine,
 				side: node.diffSide,
 				startSide: node.startDiffSide,
+				originalLine: node.originalLine,
+				originalStartLine: node.originalStartLine,
 				comments: comments.map(toReviewComment),
 			};
 			allThreads.push(loadedThread);
-			if (node.line === null) continue;
-			threads.push({ ...loadedThread, line: node.line });
+			if (node.subjectType !== SUBJECT_TYPE.LINE || node.line === null) continue;
+			threads.push({ ...loadedThread, subjectType: node.subjectType, line: node.line });
 		}
 		cursor = nextCursor(pr.reviewThreads.pageInfo);
 	} while (cursor !== null);
@@ -385,6 +429,15 @@ const SUBMIT_REVIEW = `mutation SubmitReview($pullRequestId: ID!, $reviewId: ID!
 const DISCARD_REVIEW = `mutation DiscardReview($reviewId: ID!) {
   deletePullRequestReview(input: { pullRequestReviewId: $reviewId }) {
     pullRequestReview { id }
+  }
+}`;
+
+const GET_REVIEW_STATE = `query GetReviewState($reviewId: ID!) {
+  node(id: $reviewId) {
+    __typename
+    ... on PullRequestReview {
+      state
+    }
   }
 }`;
 
@@ -561,7 +614,79 @@ export async function deleteReviewComment(repoRoot: string, commentNodeId: strin
 	await writeGraphql(repoRoot, DELETE_REVIEW_COMMENT, { commentId: commentNodeId });
 }
 
-/** Submit the pending review with the chosen event (Comment / Approve / Request changes). */
+/**
+ * The review being submitted no longer exists or is no longer PENDING on GitHub —
+ * it was submitted or discarded from another session. Recoverable: the caller can
+ * re-read review state and retry against a live pending review.
+ */
+export class GitHubReviewNotPendingError extends Error {
+	constructor(message: string, cause: Error) {
+		super(message, { cause });
+		this.name = "GitHubReviewNotPendingError";
+	}
+}
+
+const ReviewStateSchema = z.object({
+	data: z.object({
+		node: z.object({ __typename: z.string(), state: z.string().optional() }).nullable(),
+	}),
+});
+
+const SubmittedReviewSchema = z.object({
+	data: z.object({
+		submitPullRequestReview: z
+			.object({ pullRequestReview: z.object({ id: z.string() }).nullable() })
+			.nullable(),
+	}),
+});
+
+/**
+ * A submit failed; check whether it failed because the review is no longer
+ * pending. Throws `GitHubReviewNotPendingError` when the review node is gone or
+ * has left the PENDING state, otherwise rethrows the original failure (including
+ * when the state lookup itself fails).
+ */
+async function rethrowIfReviewNotPending(
+	repoRoot: string,
+	reviewNodeId: string,
+	cause: Error,
+): Promise<never> {
+	let reviewState: z.infer<typeof ReviewStateSchema>;
+	try {
+		const stdout = await ghReadOrThrow(
+			["api", "graphql", "-f", `query=${GET_REVIEW_STATE}`, "-f", `reviewId=${reviewNodeId}`],
+			repoRoot,
+		);
+		reviewState = ReviewStateSchema.parse(JSON.parse(stdout));
+	} catch {
+		throw cause;
+	}
+
+	const node = reviewState.data.node;
+	if (node === null || node.__typename !== "PullRequestReview") {
+		throw new GitHubReviewNotPendingError(
+			`Review ${reviewNodeId} is no longer pending. ` +
+				"It was likely submitted or discarded from another session.",
+			cause,
+		);
+	}
+	if (node.state !== PENDING_STATE) {
+		throw new GitHubReviewNotPendingError(
+			`Review ${reviewNodeId} is no longer pending (state: ${node.state}). ` +
+				"It was likely submitted or discarded from another session.",
+			cause,
+		);
+	}
+	throw cause;
+}
+
+/**
+ * Submit the pending review with the chosen event (Comment / Approve / Request
+ * changes). When GitHub rejects the mutation (or returns a null review) because
+ * the pending review was submitted or discarded from another session, this
+ * throws `GitHubReviewNotPendingError` so callers can recover instead of
+ * surfacing the raw GraphQL failure.
+ */
 export async function submitReview(
 	repoRoot: string,
 	pullRequestNodeId: string,
@@ -569,12 +694,45 @@ export async function submitReview(
 	event: ReviewEvent,
 	body: string,
 ): Promise<void> {
-	await writeGraphql(repoRoot, SUBMIT_REVIEW, {
-		pullRequestId: pullRequestNodeId,
-		reviewId: reviewNodeId,
-		event,
-		body,
-	});
+	let stdout: string;
+	try {
+		stdout = await writeGraphql(repoRoot, SUBMIT_REVIEW, {
+			pullRequestId: pullRequestNodeId,
+			reviewId: reviewNodeId,
+			event,
+			body,
+		});
+	} catch (error) {
+		// gh exits non-zero when GitHub rejects the mutation (e.g. "Could not approve
+		// pull request review." for a review submitted elsewhere) — check whether the
+		// review is still pending before surfacing the raw failure.
+		if (error instanceof Error) {
+			return await rethrowIfReviewNotPending(repoRoot, reviewNodeId, error);
+		}
+		throw error;
+	}
+	const parsed = SubmittedReviewSchema.safeParse(JSON.parse(stdout));
+	if (!parsed.success) {
+		throw new Error(
+			`Unexpected response shape from submitPullRequestReview: ${parsed.error.message}`,
+		);
+	}
+	if (
+		parsed.data.data.submitPullRequestReview === null ||
+		parsed.data.data.submitPullRequestReview.pullRequestReview === null
+	) {
+		const nulledField =
+			parsed.data.data.submitPullRequestReview === null
+				? "null submitPullRequestReview"
+				: "null pullRequestReview";
+		return await rethrowIfReviewNotPending(
+			repoRoot,
+			reviewNodeId,
+			new Error(
+				`submitPullRequestReview returned ${nulledField} (pull request: ${pullRequestNodeId})`,
+			),
+		);
+	}
 }
 
 /** Throw away the pending review and all its draft comments. */

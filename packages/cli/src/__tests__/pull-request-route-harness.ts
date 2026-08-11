@@ -5,6 +5,7 @@ import path from "node:path";
 import { closeDb, getDb } from "../db/client.js";
 import { chapterRun } from "../db/schema/index.js";
 import { pullRequestRoutes } from "../routes/pull-request.js";
+import { stackRoutes } from "../routes/stack.js";
 import { SCOPE_KIND } from "../schema.js";
 import { LOOPBACK_HOST, type ServerHandle, startServer } from "../server.js";
 
@@ -91,6 +92,7 @@ export const MERGE_JSON = JSON.stringify({
 				viewerCanEnableAutoMerge: true,
 				viewerCanDisableAutoMerge: false,
 				autoMergeRequest: null,
+				baseRef: { rules: { nodes: [] } },
 				commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] },
 				mergeQueueEntry: null,
 			},
@@ -136,11 +138,15 @@ export const DEPLOYMENTS_JSON = JSON.stringify({
 
 interface GhFixtures {
 	pr?: string;
+	/** `gh pr list --head <branch>` result (`[{ number, state }]`) for branch-pinned resolution. */
+	prList?: string;
 	restPr?: string;
 	reviews?: string;
 	checks?: string;
 	merge?: string;
 	deployments?: string;
+	/** REST `pulls?state=open` pages (`--paginate --slurp` shape) for the stack route. */
+	pulls?: string;
 }
 
 export class PullRequestRouteHarness {
@@ -185,11 +191,13 @@ export class PullRequestRouteHarness {
 		};
 		await Promise.all([
 			write("pr.json", fixtures.pr),
+			write("pr-list.json", fixtures.prList),
 			write("rest-pr.json", fixtures.restPr),
 			write("reviews.json", fixtures.reviews),
 			write("checks.json", fixtures.checks),
 			write("merge.json", fixtures.merge),
 			write("deployments.json", fixtures.deployments),
+			write("pulls.json", fixtures.pulls),
 		]);
 		const script = `#!/bin/sh
 dir="${fixtureDir}"
@@ -197,12 +205,14 @@ echo "$@" >> "${this.binDir}/gh-argv.log"
 emit() { [ -f "$dir/$1" ] && cat "$dir/$1" || exit 1; }
 all="$*"
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then emit pr.json
+elif [ "$1" = "pr" ] && [ "$2" = "list" ]; then emit pr-list.json
 elif [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
   case "$all" in *deployments*) emit deployments.json ;; *) emit merge.json ;; esac
 elif [ "$1" = "api" ]; then
   case "$all" in
     *check-runs*) emit checks.json ;;
     */reviews*) emit reviews.json ;;
+    *pulls?state=open*) emit pulls.json ;;
     *) emit rest-pr.json ;;
   esac
 else exit 1; fi
@@ -212,7 +222,11 @@ else exit 1; fi
 		await fs.chmod(executable, 0o755);
 	}
 
-	insertRun(originUrl: string | null = GITHUB_ORIGIN, prNumber: number | null = null): string {
+	insertRun(
+		originUrl: string | null = GITHUB_ORIGIN,
+		prNumber: number | null = null,
+		headRef: string | null = null,
+	): string {
 		const db = getDb({ dbPath: this.dbPath });
 		const [row] = db
 			.insert(chapterRun)
@@ -220,6 +234,7 @@ else exit 1; fi
 				repoRoot: this.repoRoot,
 				originUrl,
 				prNumber,
+				headRef,
 				scopeKind: SCOPE_KIND.COMMITTED,
 				workingTreeRef: null,
 				baseSha: SHA,
@@ -235,7 +250,10 @@ else exit 1; fi
 
 	async start(): Promise<number> {
 		const db = getDb({ dbPath: this.dbPath });
-		const handle = await startServer({ webDistPath: this.webDist, routes: pullRequestRoutes(db) });
+		const handle = await startServer({
+			webDistPath: this.webDist,
+			routes: [...pullRequestRoutes(db), ...stackRoutes(db)],
+		});
 		this.handles.push(handle);
 		return handle.port;
 	}

@@ -1,7 +1,15 @@
 import type { Chapter } from "@stagereview/types/chapters";
-import { Link } from "@tanstack/react-router";
-import { ArrowRight, ChevronRight, Circle, CircleCheck, FileCode } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import {
+	ArrowRight,
+	ChevronRight,
+	Circle,
+	CircleCheck,
+	FileCode,
+	MessageSquare,
+} from "lucide-react";
 import { useCallback, useMemo } from "react";
+import { RiskBadge } from "@/components/chapter/risk-badge";
 import { OverviewColumnHeader } from "@/components/pull-request/overview-column-header";
 import { SectionLabel } from "@/components/pull-request/section-label";
 import { CopyMarkdownButton } from "@/components/shared/copy-markdown-button";
@@ -11,6 +19,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChapterContext } from "@/lib/chapter-context";
 import { formatAllChaptersAsMarkdown } from "@/lib/format-chapter-markdown";
+import {
+	NAVIGATION_DIRECTION,
+	type NavigationDirection,
+	useChapterNavigationKeys,
+} from "@/lib/use-chapter-navigation-keys";
 import { useDiffPatch } from "@/lib/use-diff-patch";
 import { useViewState } from "@/lib/use-view-state";
 import { cn } from "@/lib/utils";
@@ -26,7 +39,7 @@ function ChapterLoadingSkeleton() {
 }
 
 function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string }) {
-	const { chapterLineCountsMap } = useChapterContext();
+	const { chapterLineCountsMap, chapterCommentCounts } = useChapterContext();
 	const view = useViewState(runId);
 
 	const sorted = useMemo(() => [...chapters].sort((a, b) => a.order - b.order), [chapters]);
@@ -44,6 +57,7 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 			{sorted.map((ch, index) => {
 				const isViewed = view.isChapterViewed(ch.externalId);
 				const counts = chapterLineCountsMap.get(ch.id);
+				const commentCount = chapterCommentCounts.get(ch.id) ?? 0;
 				const fileCount = new Set(ch.hunkRefs.map((h) => h.filePath)).size;
 				const isNextToReview = index === firstUnviewedIndex;
 
@@ -54,8 +68,8 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 					>
 						<Link
 							to="/runs/$runId/chapters/$chapterNumber"
-							params={{ runId, chapterNumber: String(ch.order) }}
-							aria-label={`Go to chapter ${ch.order}: ${ch.title}`}
+							params={{ runId, chapterNumber: String(ch.order + 1) }}
+							aria-label={`Go to chapter ${ch.order + 1}: ${ch.title}`}
 							className={cn(
 								"absolute inset-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring",
 								index === 0 && "rounded-t-lg",
@@ -67,11 +81,19 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 							<TooltipTrigger asChild>
 								<button
 									type="button"
-									onClick={() =>
-										isViewed
-											? view.unmarkChapterViewed(ch.externalId)
-											: view.markChapterViewed(ch.externalId)
-									}
+									onClick={() => {
+										if (isViewed) {
+											// A chapter can read as viewed purely because all of its
+											// files are viewed, so unmarking must also clear those
+											// file views or the unmark is a no-op.
+											view.unmarkChapterViewed(ch.externalId);
+											for (const path of new Set(ch.hunkRefs.map((h) => h.filePath))) {
+												if (view.isFileViewed(path)) view.unmarkFileViewed(path);
+											}
+										} else {
+											view.markChapterViewed(ch.externalId);
+										}
+									}}
 									className={cn(
 										"relative z-10 shrink-0 cursor-pointer rounded-sm p-0.5 transition-colors hover:bg-accent",
 										isViewed
@@ -91,7 +113,7 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 						<div className="flex min-w-0 flex-1 items-center gap-3">
 							<div className="min-w-0 flex-1">
 								<div className="flex items-center gap-2">
-									<span className="shrink-0 text-muted-foreground text-xs">{ch.order}</span>
+									<span className="shrink-0 text-muted-foreground text-xs">{ch.order + 1}</span>
 									<span
 										className={cn(
 											"truncate font-medium text-foreground text-sm group-hover:text-primary",
@@ -102,6 +124,7 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 									</span>
 								</div>
 								<div className="mt-0.5 flex items-center gap-1.5 text-muted-foreground text-xs">
+									{ch.riskLevel !== null && <RiskBadge level={ch.riskLevel} />}
 									{counts && (
 										<LineCounts
 											additions={counts.linesAdded}
@@ -117,6 +140,13 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 									)}
 								</div>
 							</div>
+
+							{commentCount > 0 && (
+								<span className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
+									<MessageSquare className="size-3" />
+									{commentCount}
+								</span>
+							)}
 
 							{isNextToReview ? (
 								<Button size="sm" asChild className="pointer-events-none shrink-0 gap-1.5">
@@ -134,6 +164,33 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 			})}
 		</div>
 	);
+}
+
+/**
+ * With no chapter selected, "next" navigates into the first chapter and "prev"
+ * is a no-op.
+ */
+function ChapterNavigationShortcuts({ chapters, runId }: { chapters: Chapter[]; runId: string }) {
+	const navigate = useNavigate();
+	const firstChapter = useMemo(
+		() => [...chapters].sort((a, b) => a.order - b.order)[0],
+		[chapters],
+	);
+
+	const handleNavigate = useCallback(
+		(direction: NavigationDirection) => {
+			if (direction !== NAVIGATION_DIRECTION.NEXT || !firstChapter) return;
+			void navigate({
+				to: "/runs/$runId/chapters/$chapterNumber",
+				params: { runId, chapterNumber: String(firstChapter.order + 1) },
+			});
+		},
+		[firstChapter, navigate, runId],
+	);
+
+	useChapterNavigationKeys(handleNavigate, chapters.length > 0);
+
+	return null;
 }
 
 interface ChaptersIndexPageProps {
@@ -155,10 +212,11 @@ export function ChaptersIndexPage({ chapters, runId, isLoading }: ChaptersIndexP
 
 	return (
 		<div>
+			{chapters && <ChapterNavigationShortcuts chapters={chapters} runId={runId} />}
 			<OverviewColumnHeader>
 				<SectionLabel>Chapters</SectionLabel>
 				{/* Shown once the diff has loaded so a copy includes the per-chapter
-				    file lists (the patch drives them). Mirrors hosted's onCopy gate. */}
+				    file lists (the patch drives them). */}
 				{hasChapters && diffLoaded && (
 					<CopyMarkdownButton getMarkdown={copyChapters} label="chapters" />
 				)}

@@ -175,6 +175,16 @@
   --content-top: 6rem;
 }
 
+/* Registered as a typed <length> because scroll code reads this var with
+   parseFloat(getComputedStyle(...)): an untyped custom property computes to
+   its raw token stream ("calc(3rem + 57px)" → NaN), while a registered one
+   computes to resolved pixels ("105px"). */
+@property --content-top {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 /* Dark theme - Veil: slightly warmer, lighter than pure black */
 .dark {
   /* Surface hierarchy - faint warm tint */

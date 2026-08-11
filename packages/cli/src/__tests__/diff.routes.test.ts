@@ -269,6 +269,278 @@ describe("diff API", () => {
 		expect(data.fileContents["doomed.txt"]?.newContent).toBeNull();
 	});
 
+	it("serves both sides of a modified binary image base64-encoded", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+
+		const oldBytes = Buffer.concat([Buffer.from("PNG"), Buffer.alloc(32, 0), Buffer.from("v1")]);
+		const newBytes = Buffer.concat([Buffer.from("PNG"), Buffer.alloc(32, 0), Buffer.from("v2")]);
+		await fs.writeFile(path.join(repoRoot, "logo.png"), oldBytes);
+		git("add", "logo.png");
+		git("commit", "-m", "add image");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		await fs.writeFile(path.join(repoRoot, "logo.png"), newBytes);
+		git("commit", "-am", "modify image");
+		const headSha = git("rev-parse", "HEAD").trim();
+
+		const runId = insertCommittedRun(baseSha, headSha);
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+
+		const data = parseDiffResponse(res.body);
+		// The patch is only `diff --git` + `Binary files ... differ` — paths come
+		// from the header fallback.
+		expect(data.patch).toContain("Binary files");
+		expect(data.fileContents["logo.png"]).toMatchObject({ encoding: "base64" });
+		expect(data.fileContents["logo.png"]?.oldContent).toBe(oldBytes.toString("base64"));
+		expect(data.fileContents["logo.png"]?.newContent).toBe(newBytes.toString("base64"));
+	});
+
+	it("serves null contents for a pure rename of a binary non-image file", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+
+		const bytes = Buffer.concat([Buffer.from("%PDF"), Buffer.alloc(64, 0), Buffer.from("end")]);
+		await fs.writeFile(path.join(repoRoot, "doc.pdf"), bytes);
+		git("add", "doc.pdf");
+		git("commit", "-m", "add pdf");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		git("mv", "doc.pdf", "renamed.pdf");
+		git("commit", "-m", "rename pdf");
+		const headSha = git("rev-parse", "HEAD").trim();
+
+		const runId = insertCommittedRun(baseSha, headSha);
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+
+		const data = parseDiffResponse(res.body);
+		expect(data.patch).toContain("rename from doc.pdf");
+		// Binary bytes must not be served as a UTF-8 text preview.
+		expect(data.fileContents["renamed.pdf"]?.oldContent).toBeNull();
+		expect(data.fileContents["renamed.pdf"]?.newContent).toBeNull();
+	});
+
+	it("skips working-tree image sides larger than the file size cap", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+
+		const oldBytes = Buffer.concat([Buffer.from("PNG"), Buffer.alloc(32, 0), Buffer.from("v1")]);
+		await fs.writeFile(path.join(repoRoot, "logo.png"), oldBytes);
+		git("add", "logo.png");
+		git("commit", "-m", "add image");
+
+		// Overwrite with > 5 MiB of binary data in the working tree.
+		const huge = Buffer.alloc(5 * 1024 * 1024 + 1, 0);
+		await fs.writeFile(path.join(repoRoot, "logo.png"), huge);
+		const runId = insertWorkingTreeRun(WORKING_TREE_REF.WORK);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+
+		const data = parseDiffResponse(res.body);
+		expect(data.fileContents["logo.png"]?.oldContent).toBe(oldBytes.toString("base64"));
+		expect(data.fileContents["logo.png"]?.newContent).toBeNull();
+	});
+
+	it("serves contents for a pure rename whose path git quotes", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		await fs.writeFile(path.join(repoRoot, "ole\u0301 file.txt"), "quoted contents\n");
+		git("add", "-A");
+		git("commit", "-m", "add quoted file");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		git("mv", "ole\u0301 file.txt", "ole\u0301 renamed.txt");
+		git("commit", "-m", "rename quoted file");
+		const headSha = git("rev-parse", "HEAD").trim();
+		const runId = insertCommittedRun(baseSha, headSha);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		const entry = data.fileContents["ole\u0301 renamed.txt"];
+		expect(entry).toBeDefined();
+		expect(entry?.newContent).toBe("quoted contents\n");
+		expect(entry?.oldContent).toBe("quoted contents\n");
+	});
+
+	it("includes untracked files with non-ASCII names in work-tree diffs", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		await fs.writeFile(path.join(repoRoot, "keep.txt"), "keep\n");
+		git("add", "keep.txt");
+		git("commit", "-m", "initial");
+
+		await fs.writeFile(path.join(repoRoot, "unt ol\u00e9.txt"), "untracked contents\n");
+		const runId = insertWorkingTreeRun(WORKING_TREE_REF.WORK);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		expect(data.patch).toContain("unt ol\u00e9.txt");
+		expect(data.fileContents["unt ol\u00e9.txt"]?.newContent).toBe("untracked contents\n");
+	});
+
+	it("parses binary paths containing ' b/' from ambiguous unquoted headers", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		const dir = path.join(repoRoot, "docs b", "assets");
+		await fs.mkdir(dir, { recursive: true });
+		const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+		await fs.writeFile(path.join(dir, "logo.png"), png);
+		git("add", "-A");
+		git("commit", "-m", "add image");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		await fs.writeFile(path.join(dir, "logo.png"), Buffer.concat([png, Buffer.from([2, 3])]));
+		git("commit", "-am", "modify image");
+		const headSha = git("rev-parse", "HEAD").trim();
+		const runId = insertCommittedRun(baseSha, headSha);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		const entry = data.fileContents["docs b/assets/logo.png"];
+		expect(entry).toBeDefined();
+		expect(entry?.encoding).toBe("base64");
+		expect(entry?.oldContent).toBe(png.toString("base64"));
+	});
+
+	it("serves an image-named symlink's target path as text, not base64", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		await fs.writeFile(path.join(repoRoot, "real.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+		git("add", "-A");
+		git("commit", "-m", "initial");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		await fs.symlink("real.png", path.join(repoRoot, "logo.png"));
+		git("add", "-A");
+		git("commit", "-m", "add symlink");
+		const headSha = git("rev-parse", "HEAD").trim();
+		const runId = insertCommittedRun(baseSha, headSha);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		const entry = data.fileContents["logo.png"];
+		expect(entry).toBeDefined();
+		expect(entry?.encoding).toBeUndefined();
+		expect(entry?.newContent?.trim()).toBe("real.png");
+	});
+
+	it("serves both sides of a pure-renamed image-named symlink as its target path", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		await fs.writeFile(path.join(repoRoot, "real.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+		await fs.symlink("real.png", path.join(repoRoot, "logo.png"));
+		git("add", "-A");
+		git("commit", "-m", "add symlink");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		git("mv", "logo.png", "icon.png");
+		git("commit", "-m", "rename symlink");
+		const headSha = git("rev-parse", "HEAD").trim();
+		const runId = insertCommittedRun(baseSha, headSha);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		// A pure rename emits no mode or index lines, so the symlink mode must
+		// come from git itself — not default to a regular (image) file.
+		expect(data.patch).toContain("rename from logo.png");
+		expect(data.patch).not.toMatch(/^index /m);
+		const entry = data.fileContents["icon.png"];
+		expect(entry).toBeDefined();
+		expect(entry?.encoding).toBeUndefined();
+		expect(entry?.oldContent?.trim()).toBe("real.png");
+		expect(entry?.newContent?.trim()).toBe("real.png");
+	});
+
+	it("serves the image side of a symlink-to-file transition as base64", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		await fs.writeFile(path.join(repoRoot, "real.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+		await fs.symlink("real.png", path.join(repoRoot, "logo.png"));
+		git("add", "-A");
+		git("commit", "-m", "symlink");
+		const baseSha = git("rev-parse", "HEAD").trim();
+
+		await fs.rm(path.join(repoRoot, "logo.png"));
+		const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 9, 9]);
+		await fs.writeFile(path.join(repoRoot, "logo.png"), png);
+		git("add", "-A");
+		git("commit", "-m", "replace symlink with real image");
+		const headSha = git("rev-parse", "HEAD").trim();
+		const runId = insertCommittedRun(baseSha, headSha);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		const entry = data.fileContents["logo.png"];
+		expect(entry).toBeDefined();
+		expect(entry?.encoding).toBe("base64");
+		expect(entry?.newContent).toBe(png.toString("base64"));
+		// The old (symlink) side ships nothing — never image bytes as a target.
+		expect(entry?.oldContent).toBeNull();
+	});
+
+	it("refuses to serve working-tree content through a symlink escaping the repo", async () => {
+		git("init", "--initial-branch=main");
+		git("config", "user.email", "test@example.com");
+		git("config", "user.name", "Test");
+		git("config", "commit.gpgsign", "false");
+		const outside = path.join(path.dirname(repoRoot), "outside-secret.png");
+		await fs.writeFile(outside, Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]));
+		await fs.writeFile(path.join(repoRoot, "keep.txt"), "keep\n");
+		git("add", "keep.txt");
+		git("commit", "-m", "initial");
+
+		await fs.symlink(outside, path.join(repoRoot, "leak.png"));
+		const runId = insertWorkingTreeRun(WORKING_TREE_REF.WORK);
+
+		const { port } = await startWithRoutes();
+		const res = await rawRequest(port, `/api/runs/${runId}/diff.patch`);
+		expect(res.status).toBe(200);
+		const data = parseDiffResponse(res.body);
+		// Git's content for a symlink is its target path (already visible in the
+		// patch itself) — served via readlink, which never opens the target. The
+		// out-of-repo file's bytes must not appear anywhere in the response.
+		const entry = data.fileContents["leak.png"];
+		expect(entry).toBeDefined();
+		expect(entry?.encoding).toBeUndefined();
+		expect(entry?.newContent).toBe(outside);
+		const outsideBase64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]).toString("base64");
+		expect(res.body).not.toContain(outsideBase64);
+		await fs.rm(outside, { force: true });
+	});
+
 	it("returns 404 for unknown runId", async () => {
 		const { port } = await startWithRoutes();
 		const res = await rawRequest(port, "/api/runs/00000000-0000-0000-0000-000000000000/diff.patch");

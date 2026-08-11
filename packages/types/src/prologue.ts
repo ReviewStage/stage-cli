@@ -51,6 +51,7 @@ export type Complexity = z.infer<typeof ComplexitySchema>;
 
 export const PrologueSchema = z.object({
 	motivation: z.string().nullable(),
+	rootCause: z.string().nullable().default(null),
 	outcome: z.string().nullable(),
 	/** Mermaid diagram source (without code fences), or null when prose alone is clear. */
 	diagram: z.string().nullable().default(null),

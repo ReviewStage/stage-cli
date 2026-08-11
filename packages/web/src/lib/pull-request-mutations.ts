@@ -1,5 +1,9 @@
 import type { PullRequestMergeMethod } from "@stagereview/types/pull-request";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
+import { PULL_REQUEST_STACK_QUERY_ROOT } from "@/lib/use-pull-request-stack";
+import { timelineQueryKey } from "@/lib/use-timeline";
+import { jsonFetch } from "@/lib/use-view-state";
 
 function prPath(runId: string, suffix: string): string {
 	return `/api/runs/${encodeURIComponent(runId)}/pull-request${suffix}`;
@@ -36,6 +40,15 @@ async function write(
 	return text ? JSON.parse(text) : {};
 }
 
+/**
+ * Captured at mutate() time, when the rendering component's runId still names
+ * the PR being mutated. Settle callbacks re-render with a stack sibling's
+ * runId after navigation; this context keeps invalidation on the mutated run.
+ */
+export interface PullRequestMutationContext {
+	mutatedRunId: string;
+}
+
 /** Invalidate every PR-derived query for a run after a mutation. */
 export function invalidatePullRequestQueries(
 	queryClient: QueryClient,
@@ -46,24 +59,30 @@ export function invalidatePullRequestQueries(
 		queryClient.invalidateQueries({ queryKey: ["pull-request-reviews", runId] }),
 		queryClient.invalidateQueries({ queryKey: ["pull-request-merge-status", runId] }),
 		queryClient.invalidateQueries({ queryKey: ["pull-request-checks", runId] }),
+		queryClient.invalidateQueries({ queryKey: ["pull-request-labels", runId] }),
+		queryClient.invalidateQueries({ queryKey: timelineQueryKey(runId) }),
+		// Root, not per-run: a title/close/merge on one PR changes every sibling run's cached stack.
+		queryClient.invalidateQueries({ queryKey: PULL_REQUEST_STACK_QUERY_ROOT }),
 	]);
 }
 
-export function useInvalidatePullRequest(runId: string): () => Promise<unknown> {
+export function useInvalidatePullRequest(
+	runId: string,
+): (context?: PullRequestMutationContext) => Promise<unknown> {
 	const queryClient = useQueryClient();
-	return () => invalidatePullRequestQueries(queryClient, runId);
+	return (context) => invalidatePullRequestQueries(queryClient, context?.mutatedRunId ?? runId);
 }
 
-// Mutation-option factories — mirror hosted's `orpc.pullRequests.X.mutationOptions()`
-// so the vendored components keep their `useMutation({ ...factory, onSuccess })` shape.
+// Mutation-option factories, consumed as `useMutation({ ...factory, onSuccess })`.
 // They accept the components' `{ owner, repo, number, ... }` call shape (owner/repo
 // are ignored — the server resolves the repo from the run).
 
-/** Vendored components call `.mutate({ owner, repo, ... })`; accept and ignore those. */
+/** Components call `.mutate({ owner, repo, ... })`; accept and ignore those. */
 type RepoVars = { owner?: string; repo?: string };
 
 export function titleMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: { number: number; title: string }) =>
 			write(runId, "/title", "PATCH", { number: v.number, title: v.title }),
 	};
@@ -71,18 +90,21 @@ export function titleMutationOptions(runId: string) {
 
 export function closeMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: { number: number }) => write(runId, "/close", "POST", { number: v.number }),
 	};
 }
 
 export function reopenMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: { number: number }) => write(runId, "/reopen", "POST", { number: v.number }),
 	};
 }
 
 export function draftMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: { number: number; draft: boolean }) =>
 			write(runId, "/draft", "POST", { number: v.number, draft: v.draft }),
 	};
@@ -90,6 +112,7 @@ export function draftMutationOptions(runId: string) {
 
 export function mergeMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (
 			v: RepoVars & {
 				number: number;
@@ -109,6 +132,7 @@ export function mergeMutationOptions(runId: string) {
 // Forward the head SHA so the server can guard against a stale head (--match-head-commit).
 export function enqueueMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: RepoVars & { number: number; expectedHeadOid?: string }) =>
 			write(runId, "/auto-merge", "POST", {
 				number: v.number,
@@ -120,6 +144,7 @@ export function enqueueMutationOptions(runId: string) {
 
 export function setAutoMergeMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (
 			v: RepoVars & {
 				number: number;
@@ -139,16 +164,19 @@ export function setAutoMergeMutationOptions(runId: string) {
 	};
 }
 
-// Dequeue maps to "disable auto-merge".
+// Dequeue maps to "disable auto-merge" — it is keyed on the PR itself
+// (gh resolves the queue entry), not a mergeQueueEntryId.
 export function dequeueMutationOptions(runId: string) {
 	return {
-		mutationFn: (v: RepoVars & { number: number; mergeQueueEntryId: string }) =>
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
+		mutationFn: (v: RepoVars & { number: number }) =>
 			write(runId, "/auto-merge", "POST", { number: v.number, enabled: false }),
 	};
 }
 
 export function addReviewerMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: RepoVars & { number: number; reviewers: string[] }) =>
 			write(runId, "/reviewers", "POST", { number: v.number, reviewers: v.reviewers }),
 	};
@@ -156,7 +184,63 @@ export function addReviewerMutationOptions(runId: string) {
 
 export function removeReviewerMutationOptions(runId: string) {
 	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
 		mutationFn: (v: RepoVars & { number: number; reviewer: string }) =>
 			write(runId, "/reviewers", "DELETE", { number: v.number, reviewers: [v.reviewer] }),
+	};
+}
+
+// ─── Labels ─────────────────────────────────────────────────────────────────────
+
+// The label subset the UI renders; the wire shape is defined by the labels route.
+const GitHubLabelSchema = z.object({
+	id: z.number(),
+	name: z.string(),
+	color: z.string(),
+	description: z.string().nullable().optional(),
+});
+export type GitHubLabel = z.infer<typeof GitHubLabelSchema>;
+
+// The PR's current labels; `null` when GitHub was unreachable (display degrades).
+const PullRequestLabelsResponseSchema = z.object({
+	labels: z.array(GitHubLabelSchema).nullable(),
+});
+// Every repository label, for the add-label picker.
+const RepositoryLabelsResponseSchema = z.object({ labels: z.array(GitHubLabelSchema) });
+
+/** The labels currently applied to the PR. */
+export function pullRequestLabelsQueryOptions(runId: string, number: number) {
+	return {
+		queryKey: ["pull-request-labels", runId, number] as const,
+		queryFn: async () =>
+			PullRequestLabelsResponseSchema.parse(
+				await jsonFetch(prPath(runId, `/labels?number=${number}`)),
+			).labels,
+	};
+}
+
+/** Every label defined on the repository. */
+export function repositoryLabelsQueryOptions(runId: string) {
+	return {
+		queryKey: ["repository-labels", runId] as const,
+		queryFn: async () =>
+			RepositoryLabelsResponseSchema.parse(await jsonFetch(prPath(runId, "/labels/repository")))
+				.labels,
+	};
+}
+
+export function addLabelsMutationOptions(runId: string) {
+	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
+		mutationFn: (v: RepoVars & { number: number; labels: string[] }) =>
+			write(runId, "/labels", "POST", { number: v.number, labels: v.labels }),
+	};
+}
+
+export function removeLabelMutationOptions(runId: string) {
+	return {
+		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
+		mutationFn: (v: RepoVars & { number: number; label: string }) =>
+			write(runId, "/labels", "DELETE", { number: v.number, label: v.label }),
 	};
 }

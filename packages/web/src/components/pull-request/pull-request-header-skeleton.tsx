@@ -2,7 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * Placeholder shown while the PR is being detected, so the real header swaps in
- * without a layout shift. Vendored from hosted Stage's PR page.
+ * without a layout shift.
  */
 export function PullRequestHeaderSkeleton() {
 	return (

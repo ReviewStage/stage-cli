@@ -26,7 +26,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Markdown } from "@/components/ui/markdown";
 import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCommentPreferences } from "@/lib/comment-preferences";
@@ -37,13 +36,12 @@ import { useViewer } from "@/lib/use-viewer";
 import { cn } from "@/lib/utils";
 import { CommentActions } from "./comment-actions";
 import { CommentForm } from "./comment-form";
+import { PENDING_COMMENT_BADGE_CN } from "./pending-comment-badge";
+import { ReviewCommentContent } from "./review-comment-content";
 
 function errorMessage(err: unknown, fallback: string): string {
 	return err instanceof Error ? err.message : fallback;
 }
-
-const PENDING_BADGE_CN =
-	"border-yellow-500/50 bg-yellow-50 text-yellow-800 dark:bg-yellow-950/20 dark:text-yellow-200";
 
 // Local comments remain editable offline. A pending GitHub comment is editable
 // only while this run can write to the current pending review.
@@ -69,7 +67,7 @@ function StateBadge({ state }: { state: ReviewComment["state"] }) {
 		return (
 			<Badge
 				variant="outline"
-				className={cn("shrink-0 text-[10px] leading-none", PENDING_BADGE_CN)}
+				className={cn("shrink-0 text-[10px] leading-none", PENDING_COMMENT_BADGE_CN)}
 			>
 				Pending
 			</Badge>
@@ -270,16 +268,16 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 						</TooltipTrigger>
 						<TooltipContent>{isOpen ? "Collapse thread" : "Expand thread"}</TooltipContent>
 					</Tooltip>
-					<ResolveButton
-						isResolved={thread.isResolved}
-						onToggle={handleResolveToggle}
-						disabled={!canToggleThreadResolution(thread, canWriteToGitHub)}
-					/>
 					<Byline comment={root} />
 					<StateBadge state={root.state} />
-					{idle && (
-						<div className="flex shrink-0 items-center gap-0.5">
-							{canAddLocalThreadToReview(
+					<div className="flex shrink-0 items-center gap-0.5">
+						<ResolveButton
+							isResolved={thread.isResolved}
+							onToggle={handleResolveToggle}
+							disabled={!canToggleThreadResolution(thread, canWriteToGitHub)}
+						/>
+						{idle &&
+							canAddLocalThreadToReview(
 								thread,
 								githubAvailable,
 								canWriteToGitHub,
@@ -300,39 +298,38 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 									<TooltipContent>Add to GitHub review (pending)</TooltipContent>
 								</Tooltip>
 							)}
-							{(!isGitHub || githubAvailable) && canReply && (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<Button
-											variant="ghost"
-											size="icon-xs"
-											aria-label="Reply"
-											className="rounded-md text-muted-foreground"
-											onClick={() => {
-												setIsOpen(true);
-												setError(null);
-												setIsReplying(true);
-											}}
-										>
-											<MessageSquare className="size-3.5" />
-										</Button>
-									</TooltipTrigger>
-									<TooltipContent>Reply</TooltipContent>
-								</Tooltip>
-							)}
-							{canEditReviewComment(root, canWriteToGitHub) && (
-								<CommentActions
-									onEdit={() => {
-										setIsOpen(true);
-										setError(null);
-										setEditingId(root.id);
-									}}
-									onDelete={() => setDeleteTarget(root)}
-									deleteLabel={rootDeleteRemovesReplies ? "Delete thread" : "Delete"}
-								/>
-							)}
-						</div>
-					)}
+						{idle && (!isGitHub || githubAvailable) && canReply && (
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button
+										variant="ghost"
+										size="icon-xs"
+										aria-label="Reply"
+										className="rounded-md text-muted-foreground"
+										onClick={() => {
+											setIsOpen(true);
+											setError(null);
+											setIsReplying(true);
+										}}
+									>
+										<MessageSquare className="size-3.5" />
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent>Reply</TooltipContent>
+							</Tooltip>
+						)}
+						{idle && canEditReviewComment(root, canWriteToGitHub) && (
+							<CommentActions
+								onEdit={() => {
+									setIsOpen(true);
+									setError(null);
+									setEditingId(root.id);
+								}}
+								onDelete={() => setDeleteTarget(root)}
+								deleteLabel={rootDeleteRemovesReplies ? "Delete thread" : "Delete"}
+							/>
+						)}
+					</div>
 				</div>
 
 				<CollapsibleContent className="space-y-3 px-3 pb-3">
@@ -517,14 +514,8 @@ function Byline({ comment }: { comment: ReviewComment }) {
 	);
 }
 
-// GitHub comments render GitHub's own server-rendered HTML (resolves @mentions,
-// #refs, emoji); local comments render their raw markdown.
 function CommentBody({ comment }: { comment: ReviewComment }) {
-	return comment.bodyHtml !== null ? (
-		<Markdown content={comment.bodyHtml} allowHtml />
-	) : (
-		<Markdown content={comment.body} />
-	);
+	return <ReviewCommentContent body={comment.body} bodyHtml={comment.bodyHtml} />;
 }
 
 function ReplyItem({

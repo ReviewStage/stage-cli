@@ -1,6 +1,8 @@
 import { type ViewState, ViewStateSchema } from "@stagereview/types/view-state";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { deriveViewedChapterIds } from "@/lib/derive-viewed-chapter-ids";
+import { useChapters } from "@/lib/use-chapters";
 
 export type { ViewState };
 
@@ -60,11 +62,27 @@ async function fetchViewState(runId: string): Promise<ViewState> {
 	return ViewStateSchema.parse(raw);
 }
 
-const postChapterView = (id: string) =>
-	jsonFetch<unknown>(`/api/chapter-view/${encodeURIComponent(id)}`, { method: "POST" });
+const jsonBodyRequest = (method: "POST" | "DELETE", body: unknown): RequestInit => ({
+	method,
+	headers: { "Content-Type": "application/json" },
+	body: JSON.stringify(body),
+});
 
-const deleteChapterView = (id: string) =>
-	jsonFetch<unknown>(`/api/chapter-view/${encodeURIComponent(id)}`, { method: "DELETE" });
+// Chapters are addressed by externalId so local view-state survives run
+// regeneration, which means the id alone can match rows in several runs. The
+// body's runId pins the run the user is viewing so the server syncs exactly
+// that run's pull request to GitHub.
+const postChapterView = (runId: string, id: string) =>
+	jsonFetch<unknown>(
+		`/api/chapter-view/${encodeURIComponent(id)}`,
+		jsonBodyRequest("POST", { runId }),
+	);
+
+const deleteChapterView = (runId: string, id: string) =>
+	jsonFetch<unknown>(
+		`/api/chapter-view/${encodeURIComponent(id)}`,
+		jsonBodyRequest("DELETE", { runId }),
+	);
 
 const postKeyChangeView = (id: string) =>
 	jsonFetch<unknown>(`/api/key-change-view/${encodeURIComponent(id)}`, { method: "POST" });
@@ -72,26 +90,24 @@ const postKeyChangeView = (id: string) =>
 const deleteKeyChangeView = (id: string) =>
 	jsonFetch<unknown>(`/api/key-change-view/${encodeURIComponent(id)}`, { method: "DELETE" });
 
-const fileViewRequest = (method: "POST" | "DELETE", path: string): RequestInit => ({
-	method,
-	headers: { "Content-Type": "application/json" },
-	body: JSON.stringify({ path }),
-});
-
 const postFileView = (runId: string, path: string) =>
 	jsonFetch<unknown>(
 		`/api/runs/${encodeURIComponent(runId)}/file-views`,
-		fileViewRequest("POST", path),
+		jsonBodyRequest("POST", { path }),
 	);
 
 const deleteFileView = (runId: string, path: string) =>
 	jsonFetch<unknown>(
 		`/api/runs/${encodeURIComponent(runId)}/file-views`,
-		fileViewRequest("DELETE", path),
+		jsonBodyRequest("DELETE", { path }),
 	);
 
 export interface UseViewStateDataResult {
-	/** Stable reference; mutates only when the underlying query data changes. */
+	/**
+	 * Stable reference; mutates only when the underlying query data changes.
+	 * Derived: a chapter is viewed via an explicit mark OR when every file its
+	 * hunk refs cover is in `filePathSet`.
+	 */
 	chapterIdSet: ReadonlySet<string>;
 	/** Stable reference; mutates only when the underlying query data changes. */
 	keyChangeIdSet: ReadonlySet<string>;
@@ -132,9 +148,18 @@ export function useViewStateData(runId: string): UseViewStateDataResult {
 		enabled: runId !== "",
 	});
 
-	const chapterIdSet = useMemo(() => new Set(data?.chapterIds ?? []), [data?.chapterIds]);
+	// Chapters feed the derived viewed set: a chapter also reads as viewed when
+	// all of its files are viewed, without storing any extra state.
+	const { data: chaptersData } = useChapters(runId === "" ? null : runId);
+
+	const explicitChapterIdSet = useMemo(() => new Set(data?.chapterIds ?? []), [data?.chapterIds]);
 	const keyChangeIdSet = useMemo(() => new Set(data?.keyChangeIds ?? []), [data?.keyChangeIds]);
 	const filePathSet = useMemo(() => new Set(data?.filePaths ?? []), [data?.filePaths]);
+
+	const chapterIdSet = useMemo(
+		() => deriveViewedChapterIds(chaptersData?.chapters ?? [], explicitChapterIdSet, filePathSet),
+		[chaptersData?.chapters, explicitChapterIdSet, filePathSet],
+	);
 
 	return useMemo(
 		() => ({
@@ -190,7 +215,7 @@ export function useViewState(runId: string): UseViewStateResult {
 	};
 
 	const markChapterMutation = useMutation<unknown, Error, string, MutationContext>({
-		mutationFn: postChapterView,
+		mutationFn: (chapterId) => postChapterView(runId, chapterId),
 		onMutate: (chapterId) =>
 			snapshotAndPatch((prev) => {
 				if (prev.chapterIds.includes(chapterId)) return prev;
@@ -201,7 +226,7 @@ export function useViewState(runId: string): UseViewStateResult {
 	});
 
 	const unmarkChapterMutation = useMutation<unknown, Error, string, MutationContext>({
-		mutationFn: deleteChapterView,
+		mutationFn: (chapterId) => deleteChapterView(runId, chapterId),
 		onMutate: (chapterId) =>
 			snapshotAndPatch((prev) => ({
 				...prev,

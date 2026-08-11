@@ -29,9 +29,12 @@ describe("useViewState — writes", () => {
 		await waitFor(() => expect(result.current.isChapterViewed("chap-1")).toBe(true));
 
 		// POST is still in flight (gated) — confirm we got an optimistic-only state.
-		expect(
-			script.calls.some((c) => c.method === "POST" && c.url === "/api/chapter-view/chap-1"),
-		).toBe(true);
+		// The body pins the initiating run so the server can scope GitHub sync to
+		// the run being viewed even when the externalId spans several runs.
+		const post = script.calls.find(
+			(c) => c.method === "POST" && c.url === "/api/chapter-view/chap-1",
+		);
+		expect(post?.body).toEqual({ runId: "run1" });
 
 		// Release the gate; the mutation settles, the refetch sees the server side
 		// committed state, and the optimistic write becomes the persisted state.
@@ -57,9 +60,10 @@ describe("useViewState — writes", () => {
 			result.current.unmarkChapterViewed("chap-1");
 		});
 		await waitFor(() => expect(result.current.isChapterViewed("chap-1")).toBe(false));
-		expect(
-			script.calls.some((c) => c.method === "DELETE" && c.url === "/api/chapter-view/chap-1"),
-		).toBe(true);
+		const del = script.calls.find(
+			(c) => c.method === "DELETE" && c.url === "/api/chapter-view/chap-1",
+		);
+		expect(del?.body).toEqual({ runId: "run1" });
 	});
 
 	it("markKeyChangeChecked / unmarkKeyChangeChecked round-trip via the key-change endpoints", async () => {

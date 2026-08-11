@@ -1,12 +1,13 @@
 import {
-	type DiffLineAnnotation,
 	type FileDiffMetadata,
 	type GetHoveredLineResult,
+	getLineAnnotationName,
 	getSingularPatch,
 	type Hunk,
 	type SelectedLineRange,
 } from "@pierre/diffs";
 import { FileDiff, PatchDiff } from "@pierre/diffs/react";
+import type { LineAnchoredReviewThread } from "@stagereview/types/review";
 import { Plus } from "lucide-react";
 import {
 	type CSSProperties,
@@ -20,11 +21,13 @@ import {
 } from "react";
 import { CommentForm } from "@/components/comments/comment-form";
 import { ReviewThreadView } from "@/components/comments/review-thread";
+import { MinimizedAnnotationIndicator } from "@/components/diff/minimized-annotation-indicator";
+import { useFileCommentDrafts } from "@/lib/comment-draft-store";
 import {
 	buildCommentAnnotations,
+	type CommentAnnotation,
 	type CommentDraft,
 	clearDraftBody,
-	type DraftBodies,
 	type DraftState,
 	findDraftAt,
 	isSameAnchor,
@@ -41,10 +44,14 @@ import {
 	type LineRef,
 	SIDE_TO_DIFF,
 } from "@/lib/diff-types";
+import {
+	resolveFontFamily,
+	resolveFontFeatures,
+	resolveFontSize,
+	resolveLineHeight,
+} from "@/lib/diff-typography";
 import { useReviewContext } from "@/lib/review-context";
-import { resolveSyntaxTheme } from "@/lib/syntax-themes";
 import { useDiffSettings } from "@/lib/use-diff-settings";
-import type { ReviewThread as CommentThread } from "@/lib/use-review";
 import { toSingleSideSelection, useTextSelection } from "@/lib/use-text-selection";
 import { LineHighlightOverlay } from "./hunk-highlight-overlay";
 import { TextSelectionPopup } from "./text-selection-popup";
@@ -113,10 +120,102 @@ export function getVisibleLineRange(
 	};
 }
 
+/**
+ * Builds CSS for annotation rows on change (addition/deletion) lines so the
+ * comment row mirrors the styling of the diff line above: two-tone background
+ * (number column darker, content lighter) plus the same indicator bar Pierre
+ * draws on `[data-column-number]::before` when `indicators="bars"`.
+ */
+/**
+ * Pierre 1.1.20 sets `isolation: isolate` on its `pre`, which flattens the whole
+ * diff into one paint unit — the light-DOM key-change highlight boxes (z-2/z-3
+ * siblings of the host) would then paint over comment annotation rows, which
+ * Pierre pins at z-index 2. Release the isolation (our diff container is itself
+ * `isolate`, so nothing leaks past it) and lift annotation rows above both box
+ * layers so comments always render on top of line highlights. The selection
+ * popup sits at z-50 and stays above everything.
+ */
+export const ANNOTATION_STACKING_CSS = `
+	pre { isolation: auto; }
+	[data-line-annotation] { z-index: 4; }
+`;
+
+export function buildChangeAnnotationCSS(additionSlots: string[], deletionSlots: string[]): string {
+	function buildSide(slots: string[], side: "addition" | "deletion"): string {
+		if (slots.length === 0) return "";
+
+		// `:not([data-selected-line])` lets Pierre's hover/selection blue take over,
+		// since our :has() selector has the same specificity as Pierre's selection rules.
+		// `[data-background]` mirrors Pierre's own gating: when the user disables the
+		// Backgrounds setting, Pierre removes that attribute and stops tinting change
+		// lines, so we must do the same for the annotation row.
+		const rowSel = slots
+			.map(
+				(slot) =>
+					`[data-background] [data-line-annotation]:has(slot[name="${slot}"]):not([data-selected-line])`,
+			)
+			.join(", ");
+		const contentSel = slots
+			.map(
+				(slot) =>
+					`[data-background] [data-line-annotation]:has(slot[name="${slot}"]):not([data-selected-line]) [data-annotation-content]`,
+			)
+			.join(", ");
+		const barSel = slots
+			.map(
+				(slot) =>
+					`[data-indicators="bars"] [data-line-annotation]:has(slot[name="${slot}"]):not([data-selected-line])::after`,
+			)
+			.join(", ");
+
+		// Match Pierre exactly: addition bar is solid, deletion bar is a striped gradient.
+		const barFill =
+			side === "addition"
+				? "background-color: var(--diffs-addition-base);"
+				: `background-image: linear-gradient(0deg, var(--diffs-bg-deletion) 50%, var(--diffs-deletion-base) 50%);
+				   background-repeat: repeat;
+				   background-size: 2px 2px;`;
+
+		return `
+			${rowSel} {
+				background-color: var(--diffs-bg-${side}-number);
+			}
+			${contentSel} {
+				background-color: var(--diffs-bg-${side});
+				/* 1px column separator, positioned just outside the left edge so it
+				   aligns with Pierre's [data-column-number] border-right above. */
+				box-shadow: -1px 0 0 0 var(--diffs-bg);
+			}
+			${barSel} {
+				content: '';
+				display: block;
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 4px;
+				height: 100%;
+				pointer-events: none;
+				z-index: 4;
+				${barFill}
+			}
+		`;
+	}
+
+	return [buildSide(additionSlots, "addition"), buildSide(deletionSlots, "deletion")]
+		.filter(Boolean)
+		.join("\n");
+}
+
 type PierreDiffViewerProps = {
 	filePath?: string;
 	selectedLines?: SelectedLineRange | null;
 	expandUnchanged?: boolean;
+	/**
+	 * Hunks GitHub review comments may anchor to, when they differ from the
+	 * rendered diff (full-file previews render synthetic context hunks that
+	 * GitHub would reject as anchors). Defaults to the rendered diff's hunks.
+	 */
+	anchorHunks?: Hunk[];
 	/** All key change line refs grouped by file path. */
 	allLineRefsByFile?: Map<string, AnnotatedLineRef[]> | null;
 	/** Currently focused key change line refs grouped by file path. */
@@ -154,12 +253,38 @@ const GUTTER_BUTTON_STYLE: CSSProperties = {
 	cursor: "pointer",
 };
 
+/** Line numbers the user force-shown while minimized, tracked per diff side. */
+type ForceShownLines = Record<DiffSide, ReadonlySet<number>>;
+
+const NO_FORCE_SHOWN_LINES: ForceShownLines = {
+	[DIFF_SIDE.ADDITIONS]: new Set(),
+	[DIFF_SIDE.DELETIONS]: new Set(),
+};
+
+/**
+ * A row is collapsed when inline annotations are minimized and the user hasn't
+ * force-shown it (and it isn't hosting a comment composer). Collapsed rows
+ * render as a zero-height floating chip instead of the full thread cards.
+ */
+function isAnnotationRowCollapsed(
+	annotation: CommentAnnotation,
+	hasDraft: boolean,
+	inlineCommentsMinimized: boolean,
+	forceShownLines: ForceShownLines,
+): boolean {
+	const threads = annotation.metadata ?? [];
+	if (!inlineCommentsMinimized || threads.length === 0) return false;
+	if (hasDraft) return false;
+	return !forceShownLines[annotation.side].has(annotation.lineNumber);
+}
+
 export function PierreDiffViewer({
 	patch,
 	fileDiff,
 	filePath,
 	selectedLines: selectedLinesProp,
 	expandUnchanged = false,
+	anchorHunks,
 	allLineRefsByFile,
 	focusedLineRefsByFile,
 	focusedKeyChangeId = null,
@@ -170,8 +295,21 @@ export function PierreDiffViewer({
 	appTheme: appThemeProp,
 }: PierreDiffViewerProps) {
 	const appTheme = useAppTheme(appThemeProp);
-	const { viewMode, diffIndicators, lineDiffType, backgrounds, wrap, lineNumbers, syntaxTheme } =
-		useDiffSettings();
+	const {
+		viewMode,
+		diffIndicators,
+		lineDiffType,
+		backgrounds,
+		wrap,
+		lineNumbers,
+		darkSyntaxTheme,
+		lightSyntaxTheme,
+		diffFontFamily,
+		diffFontSize,
+		diffLineHeight,
+		diffLigatures,
+		inlineCommentsMinimized,
+	} = useDiffSettings();
 
 	// Defer settings so UI controls update instantly while the expensive diff
 	// re-renders at lower priority.
@@ -181,12 +319,21 @@ export function PierreDiffViewer({
 	const deferredBackgrounds = useDeferredValue(backgrounds);
 	const deferredWrap = useDeferredValue(wrap);
 	const deferredLineNumbers = useDeferredValue(lineNumbers);
-	const deferredSyntaxTheme = useDeferredValue(syntaxTheme);
+	const deferredDarkSyntaxTheme = useDeferredValue(darkSyntaxTheme);
+	const deferredLightSyntaxTheme = useDeferredValue(lightSyntaxTheme);
+	const deferredFontFamily = useDeferredValue(diffFontFamily);
+	const deferredFontSize = useDeferredValue(diffFontSize);
+	const deferredLineHeight = useDeferredValue(diffLineHeight);
+	const deferredLigatures = useDeferredValue(diffLigatures);
 	const deferredExpandUnchanged = useDeferredValue(expandUnchanged);
 	const diffHunks = useMemo(
 		() => (fileDiff ? fileDiff.hunks : getSingularPatch(patch).hunks),
 		[fileDiff, patch],
 	);
+	// GitHub can only anchor review comments on real patch hunks; synthetic
+	// full-file preview hunks render fine but must not admit anchors GitHub
+	// would reject on submission.
+	const eligibilityHunks = anchorHunks ?? diffHunks;
 
 	const diffContainerRef = useRef<HTMLDivElement>(null);
 
@@ -208,13 +355,35 @@ export function PierreDiffViewer({
 		() => (filePath ? (comments.threadsByFile.get(filePath) ?? []) : []),
 		[comments.threadsByFile, filePath],
 	);
-	// In-progress comment composers, one per anchor row — several can be open at once.
-	const [drafts, setDrafts] = useState<DraftState[]>([]);
-	// Composer text indexed by anchor, kept in a ref so typing never rebuilds the
-	// annotation list and a composer's text survives the remount that opening or
-	// closing another draft can trigger.
-	const draftBodiesRef = useRef<DraftBodies>(new Map());
+	// In-progress comment composers, one per anchor row — several can be open at
+	// once. Both the open anchors and their typed text live in the run-level
+	// draft store (keyed by file path) so they survive this viewer unmounting
+	// when Virtuoso scrolls its row beyond the overscan window. The bodies map
+	// is held outside React state so typing never rebuilds the annotation list.
+	const { drafts, setDrafts, draftBodies } = useFileCommentDrafts(filePath);
 	const { selectionInfo, clearSelection } = useTextSelection(diffContainerRef);
+
+	// Rows the user expanded while inline comments are minimized ('i' toggle).
+	const [forceShownLines, setForceShownLines] = useState<ForceShownLines>(NO_FORCE_SHOWN_LINES);
+
+	// Clear per-line overrides when the global toggle is turned off
+	useEffect(() => {
+		if (!inlineCommentsMinimized) {
+			setForceShownLines(NO_FORCE_SHOWN_LINES);
+		}
+	}, [inlineCommentsMinimized]);
+
+	const toggleLineVisibility = useCallback((side: DiffSide, lineNumber: number) => {
+		setForceShownLines((prev) => {
+			const next = new Set(prev[side]);
+			if (next.has(lineNumber)) {
+				next.delete(lineNumber);
+			} else {
+				next.add(lineNumber);
+			}
+			return { ...prev, [side]: next };
+		});
+	}, []);
 
 	// Hovering a thread highlights its anchored lines. The hook also clears the
 	// synthetic selection if a mutation removes the hovered thread before mouseleave.
@@ -230,16 +399,45 @@ export function PierreDiffViewer({
 		[fileThreads, drafts],
 	);
 
+	// Tint comment annotation rows on change lines so each comment visually
+	// attaches to the diff line it's reviewing. Collapsed rows are zero-height chips,
+	// so decorating them would paint a stray tinted strip — exclude them.
+	const annotationRowUnsafeCSS = useMemo(() => {
+		const additionSlots: string[] = [];
+		const deletionSlots: string[] = [];
+
+		for (const annotation of lineAnnotations) {
+			const hasDraft = findDraftAt(drafts, annotation.side, annotation.lineNumber) !== undefined;
+			if (isAnnotationRowCollapsed(annotation, hasDraft, inlineCommentsMinimized, forceShownLines))
+				continue;
+			if (!isChangeLine(diffHunks, annotation.lineNumber, annotation.side)) continue;
+			const slotName = getLineAnnotationName(annotation);
+			if (annotation.side === DIFF_SIDE.ADDITIONS) {
+				additionSlots.push(slotName);
+			} else {
+				deletionSlots.push(slotName);
+			}
+		}
+
+		return `${ANNOTATION_STACKING_CSS}${buildChangeAnnotationCSS(additionSlots, deletionSlots)}`;
+	}, [lineAnnotations, diffHunks, drafts, inlineCommentsMinimized, forceShownLines]);
+
 	// Open a composer at an anchor. A row holds at most one composer, so re-opening the
 	// same (side, endLine) adopts the new range's startLine rather than duplicating it.
-	const openDraft = useCallback((anchor: CommentDraft) => {
-		setDrafts((prev) => upsertDraft(prev, anchor));
-	}, []);
+	const openDraft = useCallback(
+		(anchor: CommentDraft) => {
+			setDrafts((prev) => upsertDraft(prev, anchor));
+		},
+		[setDrafts],
+	);
 
-	const closeDraft = useCallback((draft: CommentDraft) => {
-		clearDraftBody(draftBodiesRef.current, draft.side, draft.endLine);
-		setDrafts((prev) => prev.filter((d) => !isSameAnchor(d, draft.side, draft.endLine)));
-	}, []);
+	const closeDraft = useCallback(
+		(draft: CommentDraft) => {
+			clearDraftBody(draftBodies, draft.side, draft.endLine);
+			setDrafts((prev) => prev.filter((d) => !isSameAnchor(d, draft.side, draft.endLine)));
+		},
+		[draftBodies, setDrafts],
+	);
 
 	const handleCreateComment = useCallback(
 		async (draft: DraftState, body: string, isLocal: boolean, pending: boolean) => {
@@ -265,14 +463,35 @@ export function PierreDiffViewer({
 				throw err; // keep the composer open with the body intact
 			}
 		},
-		[filePath, createLocalThread, createGitHubComment, closeDraft],
+		[filePath, createLocalThread, createGitHubComment, closeDraft, setDrafts],
 	);
 
 	const renderAnnotation = useCallback(
-		(annotation: DiffLineAnnotation<CommentThread[]>): ReactNode => {
+		(annotation: CommentAnnotation): ReactNode => {
 			const threads = annotation.metadata ?? [];
 			const draft = findDraftAt(drafts, annotation.side, annotation.lineNumber);
 			if (threads.length === 0 && !draft) return null;
+			const toggleVisibility = () => toggleLineVisibility(annotation.side, annotation.lineNumber);
+
+			// Minimized rows collapse every thread on the line into a single merged
+			// indicator chip. An open comment composer always forces the row open.
+			if (
+				isAnnotationRowCollapsed(
+					annotation,
+					draft !== undefined,
+					inlineCommentsMinimized,
+					forceShownLines,
+				)
+			) {
+				return (
+					<div className="relative z-20 h-0 font-sans">
+						<div className="absolute right-1.5 bottom-0">
+							<MinimizedAnnotationIndicator threads={threads} onClick={toggleVisibility} />
+						</div>
+					</div>
+				);
+			}
+
 			const controls =
 				draft === undefined
 					? null
@@ -281,78 +500,92 @@ export function PierreDiffViewer({
 							{
 								canWriteToGitHub: comments.canWriteToGitHub,
 								hasPendingReview: comments.hasPendingReview,
-								isGitHubAnchor: isGitHubReviewAnchor(diffHunks, draft),
+								isGitHubAnchor: isGitHubReviewAnchor(eligibilityHunks, draft),
 							},
 						);
 			return (
-				<div
-					className="space-y-2 px-3 py-2 font-sans"
-					style={{ maxWidth: "min(48rem, 90cqw)", whiteSpace: "normal" }}
-				>
-					{threads.map((thread) => (
-						// biome-ignore lint/a11y/noStaticElementInteractions: hover only highlights the anchored lines, it's not an interactive control
-						<div
-							key={thread.id}
-							onMouseEnter={() => handleThreadMouseEnter(thread)}
-							onMouseLeave={() => handleThreadMouseLeave(thread.id)}
-						>
-							<ReviewThreadView
-								model={{
-									thread,
-									githubAnchorEligible: isGitHubReviewAnchor(diffHunks, thread),
-								}}
-							/>
+				<div className="relative z-20 font-sans">
+					{inlineCommentsMinimized && threads.length > 0 && (
+						<div className="relative h-0">
+							<div className="absolute right-1.5 bottom-0">
+								<MinimizedAnnotationIndicator
+									threads={threads}
+									onClick={toggleVisibility}
+									isExpanded
+								/>
+							</div>
 						</div>
-					))}
-					{draft && (
-						// Pierre keys annotation rows by array index, so a row can be reused
-						// for a different anchor when a draft is added/removed. Key the composer
-						// by its anchor to force a clean remount (re-reading its own draft text)
-						// instead of inheriting another composer's in-progress state.
-						<CommentForm
-							key={`draft-${draft.side}-${draft.endLine}`}
-							label="Comment"
-							allowsSuggestedChanges={canSuggestChanges(draft.side)}
-							placeholder="Leave a comment…"
-							error={draft.error}
-							initialBody={readDraftBody(draftBodiesRef.current, draft.side, draft.endLine)}
-							onBodyChange={(body) =>
-								writeDraftBody(draftBodiesRef.current, draft.side, draft.endLine, body)
-							}
-							controls={{
-								local: {
-									checked: controls?.local === true,
-									disabled: controls?.localDisabled,
-									onCheckedChange: setLocal,
-								},
-								...(controls?.showStartReview
-									? {
-											startReview: {
-												checked: controls.startReview,
-												onCheckedChange: setStartReview,
-											},
-										}
-									: {}),
-							}}
-							onSubmit={(body) =>
-								handleCreateComment(
-									draft,
-									body,
-									controls?.local === true,
-									controls?.startReview === true,
-								)
-							}
-							onCancel={() => closeDraft(draft)}
-						/>
 					)}
+					<div
+						className="space-y-2 px-3 py-2"
+						style={{ maxWidth: "min(48rem, 90cqw)", whiteSpace: "normal" }}
+					>
+						{threads.map((thread) => (
+							// biome-ignore lint/a11y/noStaticElementInteractions: hover only highlights the anchored lines, it's not an interactive control
+							<div
+								key={thread.id}
+								onMouseEnter={() => handleThreadMouseEnter(thread)}
+								onMouseLeave={() => handleThreadMouseLeave(thread.id)}
+							>
+								<ReviewThreadView
+									model={{
+										thread,
+										githubAnchorEligible: isGitHubReviewAnchor(eligibilityHunks, thread),
+									}}
+								/>
+							</div>
+						))}
+						{draft && (
+							// Pierre keys annotation rows by array index, so a row can be reused
+							// for a different anchor when a draft is added/removed. Key the composer
+							// by its anchor to force a clean remount (re-reading its own draft text)
+							// instead of inheriting another composer's in-progress state.
+							<CommentForm
+								key={`draft-${draft.side}-${draft.endLine}`}
+								label="Comment"
+								allowsSuggestedChanges={canSuggestChanges(draft.side)}
+								placeholder="Leave a comment…"
+								error={draft.error}
+								initialBody={readDraftBody(draftBodies, draft.side, draft.endLine)}
+								onBodyChange={(body) =>
+									writeDraftBody(draftBodies, draft.side, draft.endLine, body)
+								}
+								controls={{
+									local: {
+										checked: controls?.local === true,
+										disabled: controls?.localDisabled,
+										onCheckedChange: setLocal,
+									},
+									...(controls?.showStartReview
+										? {
+												startReview: {
+													checked: controls.startReview,
+													onCheckedChange: setStartReview,
+												},
+											}
+										: {}),
+								}}
+								onSubmit={(body) =>
+									handleCreateComment(
+										draft,
+										body,
+										controls?.local === true,
+										controls?.startReview === true,
+									)
+								}
+								onCancel={() => closeDraft(draft)}
+							/>
+						)}
+					</div>
 				</div>
 			);
 		},
 		[
 			drafts,
+			draftBodies,
 			comments.canWriteToGitHub,
 			comments.hasPendingReview,
-			diffHunks,
+			eligibilityHunks,
 			local,
 			startReview,
 			setLocal,
@@ -361,6 +594,9 @@ export function PierreDiffViewer({
 			closeDraft,
 			handleThreadMouseEnter,
 			handleThreadMouseLeave,
+			inlineCommentsMinimized,
+			forceShownLines,
+			toggleLineVisibility,
 		],
 	);
 
@@ -422,7 +658,12 @@ export function PierreDiffViewer({
 
 	const options = useMemo(
 		() => ({
-			theme: resolveSyntaxTheme(deferredSyntaxTheme, appTheme),
+			// Light and dark each carry the user's separately persisted theme; Pierre
+			// renders the one selected by themeType.
+			theme: {
+				dark: deferredDarkSyntaxTheme,
+				light: deferredLightSyntaxTheme,
+			},
 			themeType: appTheme,
 			diffStyle: deferredViewMode,
 			diffIndicators: deferredIndicators,
@@ -436,10 +677,12 @@ export function PierreDiffViewer({
 			enableLineSelection: true,
 			enableGutterUtility: true,
 			onLineSelected: handleLineSelected,
+			unsafeCSS: annotationRowUnsafeCSS,
 		}),
 		[
 			appTheme,
-			deferredSyntaxTheme,
+			deferredDarkSyntaxTheme,
+			deferredLightSyntaxTheme,
 			deferredViewMode,
 			deferredIndicators,
 			deferredLineDiffType,
@@ -448,6 +691,7 @@ export function PierreDiffViewer({
 			deferredLineNumbers,
 			deferredExpandUnchanged,
 			handleLineSelected,
+			annotationRowUnsafeCSS,
 		],
 	);
 
@@ -488,13 +732,24 @@ export function PierreDiffViewer({
 		/>
 	) : null;
 
+	// Inherited CSS custom properties Pierre reads; they cascade into its shadow
+	// root, applying typography in a single reactive place. Typed as an intersection
+	// so the `--diffs-*` keys are allowed yet the value stays assignable to `style`.
+	const typographyStyle: CSSProperties & Record<`--diffs-${string}`, string> = {
+		"--diffs-font-family": resolveFontFamily(deferredFontFamily),
+		"--diffs-font-size": resolveFontSize(deferredFontSize),
+		"--diffs-line-height": resolveLineHeight(deferredLineHeight),
+		"--diffs-font-features": resolveFontFeatures(deferredLigatures),
+	};
+
 	if (fileDiff) {
 		return (
 			<div
 				className="@container/diff relative isolate overflow-hidden rounded-b-lg border-x border-b border-border"
 				ref={diffContainerRef}
+				style={typographyStyle}
 			>
-				<FileDiff<CommentThread[]> fileDiff={fileDiff} {...sharedProps} />
+				<FileDiff<LineAnchoredReviewThread[]> fileDiff={fileDiff} {...sharedProps} />
 				{overlay}
 				{textSelectionPopup}
 			</div>
@@ -505,8 +760,9 @@ export function PierreDiffViewer({
 		<div
 			className="@container/diff relative isolate overflow-hidden rounded-b-lg border-x border-b border-border"
 			ref={diffContainerRef}
+			style={typographyStyle}
 		>
-			<PatchDiff<CommentThread[]> patch={patch} {...sharedProps} />
+			<PatchDiff<LineAnchoredReviewThread[]> patch={patch} {...sharedProps} />
 			{overlay}
 			{textSelectionPopup}
 		</div>
@@ -546,6 +802,32 @@ export function findContainingHunk(
 		const count = side === DIFF_SIDE.ADDITIONS ? hunk.additionCount : hunk.deletionCount;
 		return line >= start && line < start + count;
 	});
+}
+
+/**
+ * Returns true when the given line is an addition (RIGHT side) or deletion (LEFT side),
+ * not a context line. Used to decide whether to tint the inline comment annotation row.
+ */
+export function isChangeLine(hunks: Hunk[], line: number, side: DiffSide): boolean {
+	const hunk = findContainingHunk(hunks, line, side);
+	if (!hunk) return false;
+
+	const isAdditionsSide = side === DIFF_SIDE.ADDITIONS;
+	let currentLine = isAdditionsSide ? hunk.additionStart : hunk.deletionStart;
+
+	for (const content of hunk.hunkContent) {
+		// This Pierre version exposes block sizes as line counts, not line arrays.
+		const blockSize =
+			content.type === "context"
+				? content.lines
+				: isAdditionsSide
+					? content.additions
+					: content.deletions;
+		if (blockSize === 0) continue;
+		if (line < currentLine + blockSize) return content.type === "change";
+		currentLine += blockSize;
+	}
+	return false;
 }
 
 /** GitHub line comments must start and end inside the same hunk in the PR diff. */

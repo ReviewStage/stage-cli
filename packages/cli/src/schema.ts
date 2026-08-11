@@ -1,9 +1,18 @@
-import { hunkReferenceSchema, lineRefSchema } from "@stagereview/types/chapters";
+import { hunkReferenceSchema, lineRefSchema, RISK_LEVEL } from "@stagereview/types/chapters";
 import { PrologueSchema } from "@stagereview/types/prologue";
 import { z } from "zod";
+import { OTHER_CHANGES_CHAPTER_ID } from "./build-other-changes.js";
 
-export type { DiffSide, HunkReference, LineRef } from "@stagereview/types/chapters";
-export { DIFF_SIDE, hunkReferenceSchema, lineRefSchema } from "@stagereview/types/chapters";
+export type { DiffSide, HunkReference, LineRef, RiskLevel } from "@stagereview/types/chapters";
+export {
+	DIFF_SIDE,
+	HEADER_ONLY_OLD_START,
+	hunkReferenceSchema,
+	isValidRiskLevel,
+	lineRefSchema,
+	RISK_LABELS,
+	RISK_LEVEL,
+} from "@stagereview/types/chapters";
 
 export const SCOPE_KIND = {
 	COMMITTED: "committed",
@@ -23,7 +32,10 @@ const fullShaSchema = z.string().regex(/^[0-9a-f]{40}$/, "Expected a full commit
 export const keyChangeSchema = z.strictObject({
 	/** A judgment-call question for a human reviewer, not source code. */
 	content: z.string().min(1),
-	lineRefs: z.array(lineRefSchema).min(1),
+	// Tolerates empty and inverted ranges. Every production ingestion path runs
+	// through show.ts, whose sanitizeLineRefs repairs them before persistence by
+	// dropping invalid refs (and keyChanges left with none).
+	lineRefs: z.array(lineRefSchema),
 });
 export type KeyChange = z.infer<typeof keyChangeSchema>;
 
@@ -34,6 +46,8 @@ export const chapterSchema = z.strictObject({
 	summary: z.string().min(1),
 	hunkRefs: z.array(hunkReferenceSchema),
 	keyChanges: z.array(keyChangeSchema),
+	riskLevel: z.enum(RISK_LEVEL).nullable().default(null),
+	riskReasons: z.array(z.string()).default([]),
 });
 export type Chapter = z.infer<typeof chapterSchema>;
 
@@ -69,7 +83,11 @@ export const ChaptersFileSchema = z.strictObject({
 export type ChaptersFile = z.infer<typeof ChaptersFileSchema>;
 
 export const AgentOutputSchema = z.strictObject({
-	chapters: z.array(chapterSchema),
+	chapters: z
+		.array(chapterSchema)
+		.refine((chapters) => chapters.every((c) => c.id !== OTHER_CHANGES_CHAPTER_ID), {
+			message: `"${OTHER_CHANGES_CHAPTER_ID}" is reserved for the synthetic catch-all chapter appended by \`show\`; use chapter-<n> ids`,
+		}),
 	prologue: PrologueSchema.optional(),
 });
 export type AgentOutput = z.infer<typeof AgentOutputSchema>;

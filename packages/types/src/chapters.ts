@@ -7,24 +7,41 @@ export const DIFF_SIDE = {
 } as const;
 export type DiffSide = (typeof DIFF_SIDE)[keyof typeof DIFF_SIDE];
 
+export const HEADER_ONLY_OLD_START = 0;
+
 export const hunkReferenceSchema = z.strictObject({
 	filePath: z.string().min(1),
 	oldStart: z.number().int().nonnegative(),
 });
 export type HunkReference = z.infer<typeof hunkReferenceSchema>;
 
-export const lineRefSchema = z
-	.strictObject({
-		filePath: z.string().min(1),
-		side: z.enum(DIFF_SIDE),
-		startLine: z.number().int().positive(),
-		endLine: z.number().int().positive(),
-	})
-	.refine((v) => v.startLine <= v.endLine, {
-		message: "endLine must be greater than or equal to startLine",
-		path: ["endLine"],
-	});
+export const lineRefSchema = z.strictObject({
+	filePath: z.string().min(1),
+	side: z.enum(DIFF_SIDE),
+	startLine: z.number().int().positive(),
+	endLine: z.number().int().positive(),
+});
 export type LineRef = z.infer<typeof lineRefSchema>;
+
+export const RISK_LEVEL = {
+	HIGH: "high",
+	MEDIUM: "medium",
+	LOW: "low",
+} as const;
+export type RiskLevel = (typeof RISK_LEVEL)[keyof typeof RISK_LEVEL];
+
+export const RISK_LABELS = {
+	high: "High",
+	medium: "Medium",
+	low: "Low",
+} as const satisfies Record<RiskLevel, string>;
+
+export const riskLevelSchema = z.enum(RISK_LEVEL);
+
+const RISK_LEVEL_SET: ReadonlySet<string> = new Set(riskLevelSchema.options);
+export function isValidRiskLevel(value: string): value is RiskLevel {
+	return RISK_LEVEL_SET.has(value);
+}
 
 // Non-strict (vs. ingestion's z.strictObject in packages/cli/src/schema.ts) so the server
 // can add fields the SPA doesn't yet read without rejecting the whole response.
@@ -44,6 +61,8 @@ export const ChapterSchema = z.object({
 	summary: z.string(),
 	hunkRefs: z.array(hunkReferenceSchema),
 	keyChanges: z.array(KeyChangeSchema),
+	riskLevel: riskLevelSchema.nullable().default(null),
+	riskReasons: z.array(z.string()).default([]),
 });
 export type Chapter = z.infer<typeof ChapterSchema>;
 
