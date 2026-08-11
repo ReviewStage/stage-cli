@@ -28,7 +28,9 @@ const GhAuthorSchema = z
 	.nullable()
 	.optional();
 
-const GhPullRequestNumberListSchema = z.array(z.object({ number: z.number() }));
+const GhPullRequestNumberListSchema = z.array(
+	z.object({ number: z.number(), state: z.enum(["OPEN", "CLOSED", "MERGED"]) }),
+);
 
 const GhPullRequestSchema = z.object({
 	number: z.number(),
@@ -176,9 +178,9 @@ export async function getPullRequestOrThrow(
 			"--state",
 			"all",
 			"--json",
-			"number",
+			"number,state",
 			"--limit",
-			"1",
+			"20",
 			"--repo",
 			repository,
 		];
@@ -188,9 +190,12 @@ export async function getPullRequestOrThrow(
 		if (!listParsed.success) {
 			throw new Error("Unexpected response shape from gh pr list");
 		}
-		const first = listParsed.data[0];
-		if (!first) return null;
-		selector = first.number;
+		// Newest-first listing; prefer the open PR (gh pr view <branch>
+		// semantics) so a newer closed PR on a reused branch can't shadow the
+		// one still under review, falling back to the newest closed/merged.
+		const candidate = listParsed.data.find((pr) => pr.state === "OPEN") ?? listParsed.data[0];
+		if (!candidate) return null;
+		selector = candidate.number;
 	}
 	const positional = selector === null ? [] : [String(selector)];
 	const viewArgs = [

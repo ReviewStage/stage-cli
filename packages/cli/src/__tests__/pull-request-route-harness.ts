@@ -138,7 +138,7 @@ export const DEPLOYMENTS_JSON = JSON.stringify({
 
 interface GhFixtures {
 	pr?: string;
-	/** `gh pr list --head <branch>` result (`[{ number }]`) for branch-pinned resolution. */
+	/** `gh pr list --head <branch>` result (`[{ number, state }]`) for branch-pinned resolution. */
 	prList?: string;
 	restPr?: string;
 	reviews?: string;

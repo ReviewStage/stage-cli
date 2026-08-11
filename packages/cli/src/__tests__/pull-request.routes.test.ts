@@ -88,7 +88,7 @@ describe("pull-request API — discovery", () => {
 	it("resolves a branch run's PR from its import-time branch, not the checkout", async () => {
 		await harness.writeFakeGh({
 			pr: PR_JSON,
-			prList: JSON.stringify([{ number: 7 }]),
+			prList: JSON.stringify([{ number: 7, state: "OPEN" }]),
 			restPr: REST_PR_JSON,
 		});
 		const runId = harness.insertRun(GITHUB_ORIGIN, null, "feature");
@@ -102,6 +102,28 @@ describe("pull-request API — discovery", () => {
 		const argv = await harness.argv();
 		expect(argv).toContain("pr list --head feature");
 		expect(argv).toContain("pr view 7 --json");
+	});
+
+	it("prefers the open PR over a newer closed one on a reused branch", async () => {
+		await harness.writeFakeGh({
+			pr: PR_JSON,
+			// Newest-first listing: a closed successor must not shadow the PR
+			// still under review on the same branch.
+			prList: JSON.stringify([
+				{ number: 9, state: "MERGED" },
+				{ number: 7, state: "OPEN" },
+			]),
+			restPr: REST_PR_JSON,
+		});
+		const runId = harness.insertRun(GITHUB_ORIGIN, null, "feature");
+
+		const response = await harness.request(
+			await harness.start(),
+			`/api/runs/${runId}/pull-request`,
+		);
+
+		expect((JSON.parse(response.body) as PullRequestResponse).pullRequest?.number).toBe(7);
+		expect(await harness.argv()).toContain("pr view 7 --json");
 	});
 
 	it("returns null when the import-time branch has no PR", async () => {

@@ -401,7 +401,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 } else if (args[0] === "pr" && args[1] === "list") {
   // Branch-pinned resolution: the run's import-time branch resolves to the
   // same PR number the checkout-discovery fixture serves via pr view.
-  emit(${options.noPullRequest ? "[]" : "[{ number: 5 }]"});
+  emit(${options.noPullRequest ? "[]" : '[{ number: 5, state: "OPEN" }]'});
 } else if (args[0] === "pr" && args[1] === "view") {
   if (${options.noPullRequest ? "true" : "false"}) {
     process.stderr.write("no pull requests found for branch \\"feature\\"\\n");
