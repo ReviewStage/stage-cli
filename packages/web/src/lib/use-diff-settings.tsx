@@ -10,13 +10,9 @@ import {
 	isDiffFontSize,
 	isDiffLineHeight,
 } from "./diff-typography";
-import {
-	DEFAULT_SYNTAX_THEME_BY_APP_THEME,
-	isSyntaxThemeForAppTheme,
-	resolveLegacySyntaxTheme,
-} from "./syntax-themes";
+import { DEFAULT_SYNTAX_THEME_BY_APP_THEME, isSyntaxThemeForAppTheme } from "./syntax-themes";
 import { APP_THEME, useTheme } from "./theme";
-import { parseStoredValue, useLocalStorage } from "./use-local-storage";
+import { useLocalStorage } from "./use-local-storage";
 
 export const VIEW_MODE = {
 	SPLIT: "split",
@@ -39,36 +35,8 @@ export const LINE_DIFF_TYPE = {
 } as const;
 export type LineDiffType = (typeof LINE_DIFF_TYPE)[keyof typeof LINE_DIFF_TYPE];
 
-const LEGACY_SYNTAX_THEME_KEY = "diff-syntaxTheme";
 const DARK_SYNTAX_THEME_KEY = "diff-syntaxTheme-dark";
 const LIGHT_SYNTAX_THEME_KEY = "diff-syntaxTheme-light";
-
-/**
- * One-time startup migration from the retired curated single-key syntax theme
- * (`diff-syntaxTheme`) to the per-app-theme keys. The legacy value identified a
- * dark/light pair, so it seeds both new keys — but only when neither exists yet,
- * so a newer explicit pick always wins over a stale legacy remnant.
- */
-function migrateLegacySyntaxTheme(): void {
-	try {
-		const legacyRaw = window.localStorage.getItem(LEGACY_SYNTAX_THEME_KEY);
-		if (legacyRaw === null) return;
-		window.localStorage.removeItem(LEGACY_SYNTAX_THEME_KEY);
-		if (
-			window.localStorage.getItem(DARK_SYNTAX_THEME_KEY) !== null ||
-			window.localStorage.getItem(LIGHT_SYNTAX_THEME_KEY) !== null
-		) {
-			return;
-		}
-		const pair = resolveLegacySyntaxTheme(parseStoredValue<string>(legacyRaw, ""));
-		if (!pair) return;
-		window.localStorage.setItem(DARK_SYNTAX_THEME_KEY, JSON.stringify(pair.dark));
-		window.localStorage.setItem(LIGHT_SYNTAX_THEME_KEY, JSON.stringify(pair.light));
-	} catch {
-		// localStorage unavailable
-	}
-}
-migrateLegacySyntaxTheme();
 
 interface DiffSettingsContextValue {
 	viewMode: ViewMode;
