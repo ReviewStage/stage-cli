@@ -4,15 +4,13 @@ import {
 	type ReviewEvent,
 	SUBJECT_TYPE,
 } from "@stagereview/types/review";
-import { ChevronRight, CornerDownLeft, File, MessageSquarePlus, Trash2 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { ChevronRight, CornerDownLeft, MessageSquarePlus, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { CommentMarkdownEditor } from "@/components/comments/comment-markdown-editor";
-import { PendingCommentBadge } from "@/components/comments/pending-comment-badge";
-import { ReviewCommentContent } from "@/components/comments/review-comment-content";
-import { CommentHeader } from "@/components/conversation/comment-header";
+import type { Thread } from "@/components/conversation/normalize-threads";
+import { ReviewThreadItem } from "@/components/conversation/review-card";
 import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
-import type { GitHubUser } from "@/components/shared/user-utils";
 import {
 	AlertDialog,
 	AlertDialogCancel,
@@ -49,18 +47,46 @@ const ACTION_OPTIONS: { event: ReviewEvent; label: string; description: string }
 	},
 ];
 
-// Flatten the viewer's pending comments, grouped by file, for the "what you're
-// about to submit" list.
-function collectPendingByFile(
-	comments: PendingReviewComment[],
-): Map<string, PendingReviewComment[]> {
-	const byFile = new Map<string, PendingReviewComment[]>();
-	for (const comment of comments) {
-		const list = byFile.get(comment.filePath) ?? [];
-		if (!byFile.has(comment.filePath)) byFile.set(comment.filePath, list);
-		list.push(comment);
-	}
-	return byFile;
+/**
+ * Adapt a pending draft to the Discussion panel's thread shape so the tray
+ * renders it exactly like a review-comment thread there. The diff preview
+ * carries the frozen original coordinates GitHub took the hunk snapshot at
+ * (per the `ThreadDiffPreview` contract); whole-file comments and drafts
+ * returned without a hunk get no preview, which the thread item already
+ * renders gracefully.
+ */
+function toPendingThread(comment: PendingReviewComment): Thread {
+	return {
+		nodeId: comment.id,
+		id: comment.databaseId ?? 0,
+		path: comment.filePath,
+		line: comment.line,
+		startLine: comment.startLine,
+		side: comment.side,
+		startSide: comment.startSide,
+		subjectType: comment.subjectType,
+		body: comment.body,
+		bodyHtml: comment.bodyHtml,
+		diffPreview:
+			comment.diffHunk !== "" && comment.subjectType === SUBJECT_TYPE.LINE
+				? {
+						diffHunk: comment.diffHunk,
+						line: comment.originalLine,
+						startLine: comment.originalStartLine,
+					}
+				: null,
+		htmlUrl: comment.htmlUrl,
+		user: {
+			login: comment.author.login,
+			avatar_url:
+				comment.author.avatarUrl ??
+				`https://github.com/${encodeURIComponent(comment.author.login)}.png`,
+		},
+		createdAt: comment.createdAt,
+		isResolved: false,
+		resolvedBy: null,
+		replies: [],
+	};
 }
 
 function ActionSelector({
@@ -115,76 +141,23 @@ function ActionSelector({
 	);
 }
 
-function PendingCommentLocation({ comment }: { comment: PendingReviewComment }) {
-	return (
-		<div className="mb-2 flex items-center gap-2 text-muted-foreground text-xs">
-			<span className="inline-flex h-5 min-w-10 items-center justify-center rounded-md border border-border bg-muted/50 px-1.5 font-mono">
-				{comment.subjectType === SUBJECT_TYPE.FILE ? (
-					<File className="size-3" />
-				) : comment.line === null ? (
-					"Outdated"
-				) : (
-					`L${comment.line}`
-				)}
-			</span>
-		</div>
-	);
-}
-
-/** Renders a pending draft through the same header/content components as inline comments. */
-function PendingPanelCommentCard({ comment }: { comment: PendingReviewComment }) {
-	const user: GitHubUser = {
-		login: comment.author.login,
-		avatar_url:
-			comment.author.avatarUrl ??
-			`https://github.com/${encodeURIComponent(comment.author.login)}.png`,
-	};
-	return (
-		<div className="rounded-lg border border-border bg-background p-3">
-			<PendingCommentLocation comment={comment} />
-			<CommentHeader
-				user={user}
-				createdAt={comment.createdAt}
-				htmlUrl={comment.htmlUrl}
-				size="sm"
-				badge={<PendingCommentBadge />}
-			>
-				<ReviewCommentContent body={comment.body} bodyHtml={comment.bodyHtml} />
-			</CommentHeader>
-		</div>
-	);
-}
-
-function PendingCommentsList({
-	byFile,
-	count,
-}: {
-	byFile: Map<string, PendingReviewComment[]>;
-	count: number;
-}) {
+function PendingCommentsList({ comments }: { comments: PendingReviewComment[] }) {
 	const [open, setOpen] = useState(false);
-	if (count === 0) return null;
+	if (comments.length === 0) return null;
 	return (
 		<Collapsible open={open} onOpenChange={setOpen}>
 			<CollapsibleTrigger className="mt-3 flex items-center gap-1.5 font-medium text-muted-foreground text-xs hover:text-foreground">
 				<ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
 				Pending comments
 				<Badge variant="secondary" className="h-4 min-w-4 px-1 text-[10px] leading-none">
-					{count}
+					{comments.length}
 				</Badge>
 			</CollapsibleTrigger>
 			<CollapsibleContent>
 				<div className="mt-2 max-h-80 overflow-y-auto scrollbar-thin rounded-xl border border-border bg-muted/30">
-					<div className="divide-y divide-border/60">
-						{[...byFile.entries()].map(([path, comments]) => (
-							<div key={path} className="p-3">
-								<p className="min-w-0 truncate font-mono text-muted-foreground text-xs">{path}</p>
-								<div className="mt-2 space-y-2">
-									{comments.map((c) => (
-										<PendingPanelCommentCard key={c.id} comment={c} />
-									))}
-								</div>
-							</div>
+					<div className="space-y-3 p-3">
+						{comments.map((c) => (
+							<ReviewThreadItem key={c.id} thread={toPendingThread(c)} />
 						))}
 					</div>
 				</div>
@@ -243,10 +216,6 @@ export function ReviewPanel() {
 
 	const { pendingComments, hasPendingReview, isOwnPullRequest, canWriteToGitHub } = review;
 	const pendingCommentCount = pendingComments.length;
-	const pendingByFile = useMemo(
-		() => collectPendingByFile(review.pendingComments),
-		[review.pendingComments],
-	);
 	if (review.github !== GITHUB_REVIEW_STATUS.AVAILABLE) return null;
 
 	// On your own PR only "Comment" is allowed; coerce the effective event so a stale
@@ -371,7 +340,7 @@ export function ReviewPanel() {
 						maxRows={10}
 						className="mt-3 rounded-lg border border-border bg-card transition-shadow has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-2 has-[textarea:focus-visible]:ring-ring/20"
 					/>
-					<PendingCommentsList byFile={pendingByFile} count={pendingCommentCount} />
+					<PendingCommentsList comments={pendingComments} />
 					<ActionSelector
 						selected={effectiveEvent}
 						onSelect={selectAction}

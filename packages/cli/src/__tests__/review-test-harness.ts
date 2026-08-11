@@ -35,14 +35,18 @@ const submittedThread = {
 	startLine: null,
 	diffSide: "RIGHT",
 	startDiffSide: null,
+	originalLine: 10,
+	originalStartLine: null,
 	comments: {
 		pageInfo: { hasNextPage: false, endCursor: null },
 		nodes: [
 			{
 				id: "COMMENT_sub",
+				databaseId: 1001,
 				url: "https://github.com/owner/repo/pull/5#discussion_r1",
 				body: "Submitted comment",
 				bodyHTML: "<p>Submitted comment</p>",
+				diffHunk: "@@ -9,3 +9,3 @@\n context\n-old submitted line\n+new submitted line",
 				createdAt: "2026-01-01T00:00:00Z",
 				author: { login: "octocat", avatarUrl: "https://x/o.png" },
 				pullRequestReview: { state: "COMMENTED" },
@@ -63,14 +67,18 @@ const pendingThread = {
 	startLine: null,
 	diffSide: "LEFT",
 	startDiffSide: null,
+	originalLine: 4,
+	originalStartLine: null,
 	comments: {
 		pageInfo: { hasNextPage: false, endCursor: null },
 		nodes: [
 			{
 				id: "COMMENT_pending",
+				databaseId: 1002,
 				url: "https://github.com/owner/repo/pull/5#discussion_r2",
 				body: "Draft comment",
 				bodyHTML: "<p>Draft comment</p>",
+				diffHunk: "@@ -3,3 +3,3 @@\n context\n-removed line\n+added line",
 				createdAt: "2026-01-02T00:00:00Z",
 				author: { login: "octocat", avatarUrl: "https://x/o.png" },
 				pullRequestReview: { state: "PENDING" },
@@ -91,14 +99,18 @@ const fileLevelThread = {
 	startLine: null,
 	diffSide: "RIGHT",
 	startDiffSide: null,
+	originalLine: null,
+	originalStartLine: null,
 	comments: {
 		pageInfo: { hasNextPage: false, endCursor: null },
 		nodes: [
 			{
 				id: "COMMENT_file",
+				databaseId: 1003,
 				url: "https://github.com/owner/repo/pull/5#discussion_r4",
 				body: "Whole-file comment",
 				bodyHTML: "<p>Whole-file comment</p>",
+				diffHunk: "",
 				createdAt: "2026-01-04T00:00:00Z",
 				author: { login: "octocat", avatarUrl: "https://x/o.png" },
 				pullRequestReview: { state: "COMMENTED" },
@@ -119,14 +131,19 @@ const outdatedThread = {
 	startLine: null,
 	diffSide: "RIGHT",
 	startDiffSide: null,
+	originalLine: 7,
+	originalStartLine: null,
 	comments: {
 		pageInfo: { hasNextPage: false, endCursor: null },
 		nodes: [
 			{
 				id: "COMMENT_outdated",
+				// GraphQL Int overflow: GitHub nulls `databaseId` for large comment ids.
+				databaseId: null,
 				url: "https://github.com/owner/repo/pull/5#d9",
 				body: "Outdated draft",
 				bodyHTML: "<p>Outdated draft</p>",
+				diffHunk: "@@ -6,2 +6,2 @@\n-stale line\n+fresh line",
 				createdAt: "2026-01-03T00:00:00Z",
 				author: { login: "octocat", avatarUrl: "https://x/o.png" },
 				pullRequestReview: { state: "PENDING" },
@@ -148,14 +165,18 @@ function makePromotionThread(rootState: "PENDING" | "COMMENTED") {
 		startLine: null,
 		diffSide: "RIGHT",
 		startDiffSide: null,
+		originalLine: 3,
+		originalStartLine: null,
 		comments: {
 			pageInfo: { hasNextPage: false, endCursor: null },
 			nodes: [
 				{
 					id: "COMMENT_new",
+					databaseId: 1004,
 					url: "https://github.com/owner/repo/pull/5#discussion_r3",
 					body: "Local note",
 					bodyHTML: "<p>Local note</p>",
+					diffHunk: "@@ -2,2 +2,2 @@\n-old local line\n+new local line",
 					createdAt: "2026-01-03T00:00:00Z",
 					author: { login: "octocat", avatarUrl: "https://x/o.png" },
 					pullRequestReview: { state: rootState },
@@ -427,7 +448,7 @@ if (args.some((arg) => arg.includes("/compare/"))) {
 } else if (query.includes("query GetReview")) {
   sleep(${options.reviewQueryDelayMs ?? 0});
   const commentFields = query.slice(query.indexOf("comments(first:"), query.indexOf("author {"));
-  const illegalCommentField = ["databaseId", "diffSide", "startDiffSide"].find((field) => commentFields.includes(field));
+  const illegalCommentField = ["diffSide", "startDiffSide"].find((field) => commentFields.includes(field));
   if (illegalCommentField) {
     process.stderr.write("gh: PullRequestReviewComment has no field " + illegalCommentField + "\\n");
     process.exit(1);

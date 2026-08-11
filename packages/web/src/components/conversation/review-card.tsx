@@ -259,7 +259,7 @@ function ThreadHeader({ thread }: { thread: Thread }) {
 	);
 }
 
-function ReviewThreadItem({
+export function ReviewThreadItem({
 	thread,
 	reactionDetails,
 }: {

@@ -1,18 +1,11 @@
-import type { ReviewEvent } from "@stagereview/types/review";
-import { SUBJECT_TYPE, type SubjectType } from "@stagereview/types/review";
+import type { GitHubDiffSide, ReviewEvent } from "@stagereview/types/review";
+import { GITHUB_DIFF_SIDE, SUBJECT_TYPE, type SubjectType } from "@stagereview/types/review";
 import { z } from "zod";
 import { ghReadOrThrow, ghWriteOrThrow } from "./exec.js";
 import type { GitHubRepo } from "./repo.js";
 
-/**
- * GitHub's diff sides. `LEFT` is the base/deletion side, `RIGHT` the head/addition
- * side; they map onto the local `DIFF_SIDE` (deletions/additions) in the review layer.
- */
-export const GITHUB_DIFF_SIDE = {
-	LEFT: "LEFT",
-	RIGHT: "RIGHT",
-} as const;
-export type GitHubDiffSide = (typeof GITHUB_DIFF_SIDE)[keyof typeof GITHUB_DIFF_SIDE];
+export type { GitHubDiffSide };
+export { GITHUB_DIFF_SIDE };
 
 // ─── Read: the PR's review state in one paginated query ─────────────────────────
 
@@ -49,12 +42,16 @@ const REVIEW_QUERY = `query GetReview($owner: String!, $repo: String!, $number: 
           startLine
           diffSide
           startDiffSide
+          originalLine
+          originalStartLine
 		  comments(first: ${EMBEDDED_COMMENT_PAGE_SIZE}) {
             nodes {
               id
+              databaseId
               url
               body
               bodyHTML
+              diffHunk
               createdAt
               author { login avatarUrl }
               pullRequestReview { state }
@@ -70,9 +67,12 @@ const GqlActorSchema = z.object({ login: z.string(), avatarUrl: z.string() }).nu
 
 const GqlReviewCommentSchema = z.object({
 	id: z.string(),
+	// GraphQL's Int-typed `databaseId` is null when the numeric id overflows it.
+	databaseId: z.number().nullable(),
 	url: z.string(),
 	body: z.string(),
 	bodyHTML: z.string(),
+	diffHunk: z.string(),
 	createdAt: z.string(),
 	author: GqlActorSchema,
 	pullRequestReview: z.object({ state: z.string() }).nullable(),
@@ -99,6 +99,8 @@ const GqlReviewThreadSchema = z.object({
 	startLine: z.number().nullable(),
 	diffSide: z.enum(GITHUB_DIFF_SIDE),
 	startDiffSide: z.enum(GITHUB_DIFF_SIDE).nullable(),
+	originalLine: z.number().nullable(),
+	originalStartLine: z.number().nullable(),
 	comments: GqlReviewCommentsPageSchema,
 });
 
@@ -197,9 +199,22 @@ export interface GitHubReview {
 
 export interface PendingReviewComment {
 	id: string;
+	/** GraphQL's Int-typed `databaseId`; null when the numeric id overflows it. */
+	databaseId: number | null;
 	filePath: string;
 	line: number | null;
+	startLine: number | null;
+	side: GitHubDiffSide;
+	startSide: GitHubDiffSide | null;
 	subjectType: SubjectType;
+	/**
+	 * GitHub freezes `diffHunk` at comment creation; slice it with the original
+	 * coordinates below, never the thread's current `line`/`startLine`. Empty for
+	 * whole-file comments.
+	 */
+	diffHunk: string;
+	originalLine: number | null;
+	originalStartLine: number | null;
 	body: string;
 	bodyHtml: string;
 	htmlUrl: string;
@@ -260,9 +275,16 @@ export async function getReview(
 				if (c.pullRequestReview?.state !== PENDING_STATE) continue;
 				pendingComments.push({
 					id: c.id,
+					databaseId: c.databaseId,
 					filePath: node.path,
 					line: node.line,
+					startLine: node.startLine,
+					side: node.diffSide,
+					startSide: node.startDiffSide,
 					subjectType: node.subjectType,
+					diffHunk: c.diffHunk,
+					originalLine: node.originalLine,
+					originalStartLine: node.originalStartLine,
 					body: c.body,
 					bodyHtml: c.bodyHTML,
 					htmlUrl: c.url,

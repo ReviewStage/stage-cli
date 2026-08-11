@@ -73,6 +73,16 @@ export type GitHubReviewComment = z.infer<typeof GitHubReviewCommentSchema>;
 export const ReviewCommentSchema = z.union([LocalReviewCommentSchema, GitHubReviewCommentSchema]);
 export type ReviewComment = z.infer<typeof ReviewCommentSchema>;
 
+/**
+ * GitHub's diff sides. `LEFT` is the base/deletion side, `RIGHT` the head/addition
+ * side; they map onto the local `DIFF_SIDE` (deletions/additions) in the review layer.
+ */
+export const GITHUB_DIFF_SIDE = {
+	LEFT: "LEFT",
+	RIGHT: "RIGHT",
+} as const;
+export type GitHubDiffSide = (typeof GITHUB_DIFF_SIDE)[keyof typeof GITHUB_DIFF_SIDE];
+
 // What a GitHub review thread anchors to: a diff line (range) or a whole file.
 export const SUBJECT_TYPE = {
 	LINE: "LINE",
@@ -140,9 +150,20 @@ export type LineAnchoredReviewThread = LocalReviewThread | GitHubLineReviewThrea
 
 export const PendingReviewCommentSchema = z.object({
 	id: z.string(),
+	// GraphQL's Int-typed `databaseId` is null when the numeric id overflows it.
+	databaseId: z.number().int().nullable(),
 	filePath: z.string(),
 	line: z.number().int().positive().nullable(),
+	startLine: z.number().int().positive().nullable(),
+	side: z.enum(GITHUB_DIFF_SIDE),
+	startSide: z.enum(GITHUB_DIFF_SIDE).nullable(),
 	subjectType: z.enum(SUBJECT_TYPE),
+	// GitHub freezes `diffHunk` at comment creation, so it must be sliced with the
+	// original coordinates below — `line`/`startLine` are remapped as the PR head
+	// advances. Empty for whole-file comments (no hunk to preview).
+	diffHunk: z.string(),
+	originalLine: z.number().int().positive().nullable(),
+	originalStartLine: z.number().int().positive().nullable(),
 	body: z.string(),
 	// Pending comments are GitHub-backed drafts, so the tray can render them
 	// through the same header/content components as inline comments.

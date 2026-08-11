@@ -33,9 +33,16 @@ describe("review API — pending review recovery", () => {
 		expect(review.pendingComments).toEqual([
 			{
 				id: "COMMENT_outdated",
+				databaseId: null,
 				filePath: "src/foo.ts",
 				line: null,
+				startLine: null,
+				side: "RIGHT",
+				startSide: null,
 				subjectType: "LINE",
+				diffHunk: "@@ -6,2 +6,2 @@\n-stale line\n+fresh line",
+				originalLine: 7,
+				originalStartLine: null,
 				body: "Outdated draft",
 				bodyHtml: "<p>Outdated draft</p>",
 				htmlUrl: "https://github.com/owner/repo/pull/5#d9",

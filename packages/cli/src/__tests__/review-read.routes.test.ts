@@ -59,9 +59,16 @@ describe("review API — read", () => {
 		expect(review.pendingComments).toEqual([
 			{
 				id: "COMMENT_pending",
+				databaseId: 1002,
 				filePath: "src/bar.ts",
 				line: 4,
+				startLine: null,
+				side: "LEFT",
+				startSide: null,
 				subjectType: "LINE",
+				diffHunk: "@@ -3,3 +3,3 @@\n context\n-removed line\n+added line",
+				originalLine: 4,
+				originalStartLine: null,
 				body: "Draft comment",
 				bodyHtml: "<p>Draft comment</p>",
 				htmlUrl: "https://github.com/owner/repo/pull/5#discussion_r2",
