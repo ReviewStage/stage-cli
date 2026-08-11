@@ -115,6 +115,23 @@ describe("useFileCommentDrafts", () => {
 		expect(readDraftBody(probe().draftBodies, ANCHOR.side, ANCHOR.endLine)).toBe("");
 	});
 
+	it("drops a stale setDrafts captured before a run switch", () => {
+		const { rerender } = render(<Harness resetKey="run-1" rowMounted filePath="src/a.ts" />);
+
+		// A submit completion holds onto setDrafts across the await.
+		const staleSetDrafts = probe().setDrafts;
+
+		// Navigate to a sibling run that has its own draft at the same anchor.
+		rerender(<Harness resetKey="run-2" rowMounted filePath="src/a.ts" />);
+		act(() => probe().setDrafts((prev) => upsertDraft(prev, ANCHOR)));
+		expect(probe().drafts).toHaveLength(1);
+
+		// The first run's submission settles late: closing its draft must not
+		// remove the sibling's draft at the same (file, side, line).
+		act(() => staleSetDrafts((prev) => prev.filter((d) => d.endLine !== ANCHOR.endLine)));
+		expect(probe().drafts).toEqual([{ ...ANCHOR, error: null }]);
+	});
+
 	it("keeps drafts local to the instance when no file path is given", () => {
 		const { rerender } = render(<Harness resetKey="run-1" rowMounted />);
 

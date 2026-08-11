@@ -13,8 +13,9 @@ import type { DraftBodies, DraftState } from "@/lib/comment-drafts";
 type DraftsUpdater = (prev: readonly DraftState[]) => readonly DraftState[];
 
 interface CommentDraftStoreValue {
+	generation: number;
 	draftsByFile: ReadonlyMap<string, readonly DraftState[]>;
-	updateDrafts: (filePath: string, updater: DraftsUpdater) => void;
+	updateDrafts: (generation: number, filePath: string, updater: DraftsUpdater) => void;
 	getDraftBodies: (filePath: string) => DraftBodies;
 }
 
@@ -37,9 +38,12 @@ export function CommentDraftStoreProvider({
 	resetKey: string;
 	children: ReactNode;
 }) {
-	const [draftsByFile, setDraftsByFile] = useState<ReadonlyMap<string, readonly DraftState[]>>(
-		new Map(),
-	);
+	// Drafts and the reset generation live in one state object so the stale-write
+	// guard below reads them atomically inside the functional updater.
+	const [drafts, setDraftsState] = useState<{
+		generation: number;
+		byFile: ReadonlyMap<string, readonly DraftState[]>;
+	}>({ generation: 0, byFile: new Map() });
 	// Composer text lives outside React state so typing never re-renders the
 	// diff tree (see DraftBodies) — one bodies map per file, created lazily.
 	// Nested under a generation counter that bumps on every committed reset,
@@ -47,7 +51,7 @@ export function CommentDraftStoreProvider({
 	// discarded with an earlier reset. Lazy idempotent inserts are the only
 	// render-time mutation, safe to repeat if a concurrent render is discarded.
 	const bodiesByGenerationRef = useRef(new Map<number, Map<string, DraftBodies>>());
-	const [generation, setGeneration] = useState(0);
+	const generation = drafts.generation;
 
 	// React's "adjust state during render" pattern: the previous key lives in
 	// state, not a ref — a ref mutated mid-render leaks when a concurrent
@@ -55,24 +59,32 @@ export function CommentDraftStoreProvider({
 	const [prevResetKey, setPrevResetKey] = useState(resetKey);
 	if (prevResetKey !== resetKey) {
 		setPrevResetKey(resetKey);
-		setDraftsByFile(new Map());
-		setGeneration((current) => current + 1);
+		setDraftsState((current) => ({ generation: current.generation + 1, byFile: new Map() }));
 	}
 
-	const updateDrafts = useCallback((filePath: string, updater: DraftsUpdater) => {
-		setDraftsByFile((prev) => {
-			const current = prev.get(filePath) ?? NO_DRAFTS;
-			const updated = updater(current);
-			if (updated === current) return prev;
-			const next = new Map(prev);
-			if (updated.length === 0) {
-				next.delete(filePath);
-			} else {
-				next.set(filePath, updated);
-			}
-			return next;
-		});
-	}, []);
+	// A comment submission awaits the network and then closes its draft or attaches
+	// an error. The provider stays mounted across stack navigation, so a completion
+	// that settles after the run switched must not land in the new run's map — each
+	// write carries the generation its caller rendered with and no-ops once a reset
+	// has superseded it.
+	const updateDrafts = useCallback(
+		(callerGeneration: number, filePath: string, updater: DraftsUpdater) => {
+			setDraftsState((prev) => {
+				if (prev.generation !== callerGeneration) return prev;
+				const current = prev.byFile.get(filePath) ?? NO_DRAFTS;
+				const updated = updater(current);
+				if (updated === current) return prev;
+				const next = new Map(prev.byFile);
+				if (updated.length === 0) {
+					next.delete(filePath);
+				} else {
+					next.set(filePath, updated);
+				}
+				return { generation: prev.generation, byFile: next };
+			});
+		},
+		[],
+	);
 
 	const getDraftBodies = useCallback(
 		(filePath: string): DraftBodies => {
@@ -102,8 +114,8 @@ export function CommentDraftStoreProvider({
 	}, [generation]);
 
 	const value = useMemo(
-		() => ({ draftsByFile, updateDrafts, getDraftBodies }),
-		[draftsByFile, updateDrafts, getDraftBodies],
+		() => ({ generation, draftsByFile: drafts.byFile, updateDrafts, getDraftBodies }),
+		[generation, drafts.byFile, updateDrafts, getDraftBodies],
 	);
 
 	return <CommentDraftStoreContext value={value}>{children}</CommentDraftStoreContext>;
@@ -128,12 +140,14 @@ export function useFileCommentDrafts(filePath: string | undefined): FileCommentD
 
 	const [localDrafts, setLocalDrafts] = useState<readonly DraftState[]>(NO_DRAFTS);
 	const localBodiesRef = useRef<DraftBodies>(new Map());
+	// Bind the generation this consumer rendered with: a callback captured before
+	// a run switch writes against the old generation and is dropped by the store.
 	const setDrafts = useCallback(
 		(updater: DraftsUpdater) => {
 			if (filePath === undefined) {
 				setLocalDrafts(updater);
 			} else {
-				store.updateDrafts(filePath, updater);
+				store.updateDrafts(store.generation, filePath, updater);
 			}
 		},
 		[store, filePath],
