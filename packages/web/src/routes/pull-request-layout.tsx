@@ -45,9 +45,11 @@ const PR_TAB = {
 } as const;
 type PrTab = (typeof PR_TAB)[keyof typeof PR_TAB];
 
-// The topbar's h-12 (48px). The contained layout reserves it so the page itself
-// never scrolls — only the prologue/chapters panels do.
-const TOPBAR_PX = 48;
+// The topbar's h-12 (3rem). Expressed in rem so it scales with the app
+// text-size preference, like the Tailwind offsets it pairs with. The contained
+// layout reserves it so the page itself never scrolls — only the
+// prologue/chapters panels do.
+const TOPBAR_REM = 3;
 
 // Mirrors hosted's tab order: Chapters, Activity, Files changed. The Activity
 // tab is a GitHub-only affordance and is offered only for PR runs.
@@ -462,7 +464,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 							<div
 								style={
 									{
-										"--content-top": `${TOPBAR_PX + navHeight}px`,
+										"--content-top": `calc(${TOPBAR_REM}rem + ${navHeight}px)`,
 										"--main-height": "100vh",
 									} as CSSProperties
 								}

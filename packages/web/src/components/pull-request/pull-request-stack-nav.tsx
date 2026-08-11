@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { KEYBOARD_SHORTCUTS } from "@/lib/keyboard-shortcuts";
 import { usePullRequestContext } from "@/lib/pull-request-context";
+import { CHAPTER_VIEW_MODE, useChapterSettings } from "@/lib/use-chapter-settings";
 import { usePullRequestStack } from "@/lib/use-pull-request-stack";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,7 @@ export function PullRequestStackNav() {
 	const { runId, owner, repo, number } = usePullRequestContext();
 	const navigate = useNavigate();
 	const location = useLocation();
+	const { chapterViewMode } = useChapterSettings();
 
 	const { data } = usePullRequestStack(runId, number);
 
@@ -57,12 +59,22 @@ export function PullRequestStackNav() {
 			} else if (subroute.startsWith("/activity")) {
 				navigate({ to: "/runs/$runId/activity", params });
 			} else if (subroute.startsWith("/chapters")) {
-				navigate({ to: "/runs/$runId/chapters", params });
+				// Paged mode redirects the bare /chapters URL to the overview, so a
+				// paged hop must land on a chapter detail route; the sibling's first
+				// chapter always exists. Continuous mode owns the bare URL.
+				if (chapterViewMode === CHAPTER_VIEW_MODE.PAGED) {
+					navigate({
+						to: "/runs/$runId/chapters/$chapterNumber",
+						params: { ...params, chapterNumber: "1" },
+					});
+				} else {
+					navigate({ to: "/runs/$runId/chapters", params });
+				}
 			} else {
 				navigate({ to: "/runs/$runId", params });
 			}
 		},
-		[navigate, owner, repo, runId, location.pathname],
+		[navigate, owner, repo, runId, location.pathname, chapterViewMode],
 	);
 
 	// Gate each shortcut on a live target so the handlers aren't registered on

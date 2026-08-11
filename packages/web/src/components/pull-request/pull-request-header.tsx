@@ -8,7 +8,7 @@ import {
 } from "@stagereview/types/pull-request";
 import { useMutation } from "@tanstack/react-query";
 import { Check, GitBranch, Github, Pencil, ScanSearch, X } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { CIChecks } from "@/components/pull-request/ci-checks";
 import { Labels } from "@/components/pull-request/labels";
@@ -343,11 +343,13 @@ export function PullRequestHeader({ pullRequest, mergeInfo }: PullRequestHeaderP
 							{hasChecks && <CIChecks state={checksData.state} items={checksData.items} />}
 						</>
 					)}
-					<Reviewers />
-					{/* Keyed by run so stack navigation remounts the label manager —
-					    a sibling's in-flight mutation callbacks then no-op instead of
-					    clobbering this run's optimistic label state. */}
-					<Labels key={runId} />
+					{/* Keyed by run so stack navigation remounts both managers — a
+					    sibling's in-flight mutation callbacks then no-op instead of
+					    clobbering this run's optimistic state. */}
+					<Fragment key={runId}>
+						<Reviewers />
+						<Labels />
+					</Fragment>
 				</div>
 			</header>
 
