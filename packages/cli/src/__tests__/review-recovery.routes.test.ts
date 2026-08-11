@@ -37,6 +37,10 @@ describe("review API — pending review recovery", () => {
 				line: null,
 				subjectType: "LINE",
 				body: "Outdated draft",
+				bodyHtml: "<p>Outdated draft</p>",
+				htmlUrl: "https://github.com/owner/repo/pull/5#d9",
+				createdAt: "2026-01-03T00:00:00Z",
+				author: { login: "octocat", avatarUrl: "https://x/o.png" },
 			},
 		]);
 		expect(submit.status).toBe(200);

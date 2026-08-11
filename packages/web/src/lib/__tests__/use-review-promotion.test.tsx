@@ -72,6 +72,10 @@ const review = (promoted: boolean): ReviewResponse => ({
 					filePath: "src/foo.ts",
 					line: 3,
 					subjectType: "LINE" as const,
+					bodyHtml: "<p>Promote me</p>",
+					htmlUrl: "https://github.com/o/r/pull/1#discussion_r1",
+					createdAt: "2026-01-01T00:00:00Z",
+					author: { login: "reviewer", avatarUrl: null },
 					body: "Promote me",
 				},
 			]

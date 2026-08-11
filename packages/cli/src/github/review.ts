@@ -201,6 +201,10 @@ export interface PendingReviewComment {
 	line: number | null;
 	subjectType: SubjectType;
 	body: string;
+	bodyHtml: string;
+	htmlUrl: string;
+	createdAt: string;
+	author: { login: string; avatarUrl: string | null };
 }
 
 const PENDING_STATE = "PENDING";
@@ -260,6 +264,10 @@ export async function getReview(
 					line: node.line,
 					subjectType: node.subjectType,
 					body: c.body,
+					bodyHtml: c.bodyHTML,
+					htmlUrl: c.url,
+					createdAt: c.createdAt,
+					author: { login: c.author?.login ?? "ghost", avatarUrl: c.author?.avatarUrl || null },
 				});
 			}
 			const root = comments[0];

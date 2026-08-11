@@ -26,7 +26,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Markdown } from "@/components/ui/markdown";
 import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCommentPreferences } from "@/lib/comment-preferences";
@@ -37,13 +36,12 @@ import { useViewer } from "@/lib/use-viewer";
 import { cn } from "@/lib/utils";
 import { CommentActions } from "./comment-actions";
 import { CommentForm } from "./comment-form";
+import { PENDING_COMMENT_BADGE_CN } from "./pending-comment-badge";
+import { ReviewCommentContent } from "./review-comment-content";
 
 function errorMessage(err: unknown, fallback: string): string {
 	return err instanceof Error ? err.message : fallback;
 }
-
-const PENDING_BADGE_CN =
-	"border-yellow-500/50 bg-yellow-50 text-yellow-800 dark:bg-yellow-950/20 dark:text-yellow-200";
 
 // Local comments remain editable offline. A pending GitHub comment is editable
 // only while this run can write to the current pending review.
@@ -69,7 +67,7 @@ function StateBadge({ state }: { state: ReviewComment["state"] }) {
 		return (
 			<Badge
 				variant="outline"
-				className={cn("shrink-0 text-[10px] leading-none", PENDING_BADGE_CN)}
+				className={cn("shrink-0 text-[10px] leading-none", PENDING_COMMENT_BADGE_CN)}
 			>
 				Pending
 			</Badge>
@@ -516,14 +514,8 @@ function Byline({ comment }: { comment: ReviewComment }) {
 	);
 }
 
-// GitHub comments render GitHub's own server-rendered HTML (resolves @mentions,
-// #refs, emoji); local comments render their raw markdown.
 function CommentBody({ comment }: { comment: ReviewComment }) {
-	return comment.bodyHtml !== null ? (
-		<Markdown content={comment.bodyHtml} allowHtml />
-	) : (
-		<Markdown content={comment.body} />
-	);
+	return <ReviewCommentContent body={comment.body} bodyHtml={comment.bodyHtml} />;
 }
 
 function ReplyItem({

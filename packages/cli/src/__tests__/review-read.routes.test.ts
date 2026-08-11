@@ -63,6 +63,10 @@ describe("review API — read", () => {
 				line: 4,
 				subjectType: "LINE",
 				body: "Draft comment",
+				bodyHtml: "<p>Draft comment</p>",
+				htmlUrl: "https://github.com/owner/repo/pull/5#discussion_r2",
+				createdAt: "2026-01-02T00:00:00Z",
+				author: { login: "octocat", avatarUrl: "https://x/o.png" },
 			},
 		]);
 		expect(review.threads.map((t) => t.comments[0]?.state).sort()).toEqual([

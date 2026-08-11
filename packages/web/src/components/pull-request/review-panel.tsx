@@ -8,7 +8,11 @@ import { ChevronRight, CornerDownLeft, File, MessageSquarePlus, Trash2 } from "l
 import { useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { CommentMarkdownEditor } from "@/components/comments/comment-markdown-editor";
+import { PendingCommentBadge } from "@/components/comments/pending-comment-badge";
+import { ReviewCommentContent } from "@/components/comments/review-comment-content";
+import { CommentHeader } from "@/components/conversation/comment-header";
 import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
+import type { GitHubUser } from "@/components/shared/user-utils";
 import {
 	AlertDialog,
 	AlertDialogCancel,
@@ -111,6 +115,46 @@ function ActionSelector({
 	);
 }
 
+function PendingCommentLocation({ comment }: { comment: PendingReviewComment }) {
+	return (
+		<div className="mb-2 flex items-center gap-2 text-muted-foreground text-xs">
+			<span className="inline-flex h-5 min-w-10 items-center justify-center rounded-md border border-border bg-muted/50 px-1.5 font-mono">
+				{comment.subjectType === SUBJECT_TYPE.FILE ? (
+					<File className="size-3" />
+				) : comment.line === null ? (
+					"Outdated"
+				) : (
+					`L${comment.line}`
+				)}
+			</span>
+		</div>
+	);
+}
+
+/** Renders a pending draft through the same header/content components as inline comments. */
+function PendingPanelCommentCard({ comment }: { comment: PendingReviewComment }) {
+	const user: GitHubUser = {
+		login: comment.author.login,
+		avatar_url:
+			comment.author.avatarUrl ??
+			`https://github.com/${encodeURIComponent(comment.author.login)}.png`,
+	};
+	return (
+		<div className="rounded-lg border border-border bg-background p-3">
+			<PendingCommentLocation comment={comment} />
+			<CommentHeader
+				user={user}
+				createdAt={comment.createdAt}
+				htmlUrl={comment.htmlUrl}
+				size="sm"
+				badge={<PendingCommentBadge />}
+			>
+				<ReviewCommentContent body={comment.body} bodyHtml={comment.bodyHtml} />
+			</CommentHeader>
+		</div>
+	);
+}
+
 function PendingCommentsList({
 	byFile,
 	count,
@@ -130,25 +174,14 @@ function PendingCommentsList({
 				</Badge>
 			</CollapsibleTrigger>
 			<CollapsibleContent>
-				<div className="mt-1.5 max-h-[200px] overflow-y-auto scrollbar-thin rounded-lg border border-border bg-muted/30">
-					<div className="divide-y divide-border/50">
+				<div className="mt-2 max-h-80 overflow-y-auto scrollbar-thin rounded-xl border border-border bg-muted/30">
+					<div className="divide-y divide-border/60">
 						{[...byFile.entries()].map(([path, comments]) => (
-							<div key={path} className="px-3 py-2">
-								<p className="min-w-0 truncate font-mono text-foreground text-xs">{path}</p>
-								<div className="mt-1 space-y-1">
+							<div key={path} className="p-3">
+								<p className="min-w-0 truncate font-mono text-muted-foreground text-xs">{path}</p>
+								<div className="mt-2 space-y-2">
 									{comments.map((c) => (
-										<div key={c.id} className="flex items-baseline gap-2 pl-2 text-xs">
-											<span className="inline-block w-10 shrink-0 text-right font-mono text-muted-foreground">
-												{c.subjectType === SUBJECT_TYPE.FILE ? (
-													<File className="inline size-3" />
-												) : c.line === null ? (
-													"Outdated"
-												) : (
-													`L${c.line}`
-												)}
-											</span>
-											<span className="line-clamp-1 text-muted-foreground">{c.body}</span>
-										</div>
+										<PendingPanelCommentCard key={c.id} comment={c} />
 									))}
 								</div>
 							</div>

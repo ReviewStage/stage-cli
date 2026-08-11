@@ -144,6 +144,12 @@ export const PendingReviewCommentSchema = z.object({
 	line: z.number().int().positive().nullable(),
 	subjectType: z.enum(SUBJECT_TYPE),
 	body: z.string(),
+	// Pending comments are GitHub-backed drafts, so the tray can render them
+	// through the same header/content components as inline comments.
+	bodyHtml: z.string(),
+	htmlUrl: z.string(),
+	createdAt: z.string(),
+	author: ReviewCommentAuthorSchema,
 });
 export type PendingReviewComment = z.infer<typeof PendingReviewCommentSchema>;
 
