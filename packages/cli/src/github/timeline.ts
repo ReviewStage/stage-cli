@@ -22,10 +22,8 @@ import { z } from "zod";
 import { ghReadOrThrow } from "./exec.js";
 import type { GitHubRepo } from "./repo.js";
 
-// Vendored from hosted Stage's `packages/github/src/conversation.ts`, adapted from
-// Octokit to `gh api`: hosted trusts Octokit's response types where the CLI
-// validates each raw event with the shared Zod wire schemas (which also strip the
-// payload down to the fields the UI consumes).
+// Each raw `gh api` event is validated with the shared Zod wire schemas (which
+// also strip the payload down to the fields the UI consumes).
 
 /** Adds `body_html` alongside `body` so comment markdown renders like GitHub. */
 const FULL_MEDIA_TYPE = "application/vnd.github.full+json";
@@ -110,7 +108,7 @@ export async function getTimeline(
 		const item = RawTimelineItemSchema.safeParse(raw);
 		if (!item.success) continue;
 
-		// Unknown event types skip by design (hosted's type-guard pass), but a
+		// Unknown event types skip by design, but a
 		// KNOWN type failing validation means schema drift — dropping it would
 		// silently remove conversation content, so those fail the boundary.
 		if (item.data.event === "commented") {
@@ -179,7 +177,6 @@ export async function getReviewComments(
 
 // ─── Thread metadata (GraphQL) ────────────────────────────────────────────────
 
-// Verbatim from hosted's `packages/github/src/graphql/conversation.graphql`.
 const THREAD_METADATA_QUERY = `query GetThreadMetadata($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
@@ -455,7 +452,7 @@ export function getEventDate(event: TimelineEvent): string {
 	}
 }
 
-/** Fetch and assemble the full pull-request timeline, mirroring hosted's endpoint. */
+/** Fetch and assemble the full pull-request timeline. */
 export async function getPullRequestTimeline(
 	repoRoot: string,
 	repo: GitHubRepo,

@@ -30,11 +30,10 @@ import { normalizeReviewComments, type Thread, type ThreadReply } from "./normal
 import { ReactionBar } from "./reaction-bar";
 import { ReviewCommentDiffPreview } from "./review-comment-diff-preview";
 
-// Vendored from hosted Stage's `conversation/review-card.tsx` (post-#1139:
-// `isolate` on the thread file header so its z-10 layers stay below the sticky
-// Discussion header). Read-only adaptations: reply/resolve/edit mutations are
-// hosted-only concerns — resolved state renders as an indicator instead of a
-// toggle, and review bodies are not editable.
+// `isolate` on the thread file header keeps its z-10 layers below the sticky
+// Discussion header. Read-only: reply/resolve/edit mutations are not
+// supported — resolved state renders as an indicator instead of a toggle, and
+// review bodies are not editable.
 
 const REVIEW_STATE_CONFIG: Record<
 	ReviewState,

@@ -121,8 +121,8 @@ export const FileDiffList = forwardRef<FileDiffListHandle, FileDiffListProps>(fu
 	const pendingDisconnectsRef = useRef<Set<() => void>>(new Set());
 
 	// One binding per page — the list is the single component both the Files tab
-	// and the chapter detail page render, mirroring the hosted app's page-level
-	// binding (binding inside PierreDiffViewer would fire once per mounted file).
+	// and the chapter detail page render (binding inside PierreDiffViewer would
+	// fire once per mounted file).
 	const { toggleInlineCommentsMinimized } = useDiffSettings();
 	useHotkeys(KEYBOARD_SHORTCUTS.TOGGLE_INLINE_COMMENTS.hotkey, toggleInlineCommentsMinimized, {
 		preventDefault: true,
@@ -393,8 +393,7 @@ export const FileDiffSection = memo(function FileDiffSection({
 	const { file, diff } = entry;
 	const isCollapsed = collapseState.collapsedFiles.has(file.path);
 	// "Expand unchanged lines" lives above the virtualizer so it survives this
-	// row unmounting once it scrolls beyond Virtuoso's overscan (mirrors the
-	// hosted app's expandedFiles in its pull-request context).
+	// row unmounting once it scrolls beyond Virtuoso's overscan.
 	const { expandedFiles, toggleFileExpanded } = useFileExpansion();
 	const isExpanded = expandedFiles.has(file.path);
 

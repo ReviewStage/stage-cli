@@ -16,10 +16,9 @@ export const Route = createFileRoute("/runs/$runId/chapters")({
 const CHAPTER_DETAIL_ROUTE_ID = "/runs/$runId/chapters/$chapterNumber";
 
 /**
- * Routes between the paged and continuous chapter experiences (vendored from
- * the hosted app's chapters layout). In continuous mode `/chapters/N` deep
- * links are normalized to the bare `/chapters` URL — but unlike the hosted
- * app (which scrolls first and normalizes after), the redirect happens BEFORE
+ * Routes between the paged and continuous chapter experiences. In continuous
+ * mode `/chapters/N` deep links are normalized to the bare `/chapters` URL —
+ * and the redirect must happen BEFORE
  * the continuous view mounts: the pull-request layout picks page scroll vs
  * contained scroll off the matched route, so the continuous view must only
  * ever render under the bare URL's contained scroll area. The deep-linked

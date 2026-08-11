@@ -300,7 +300,7 @@ describe("view-state API", () => {
 	it("POST /api/chapter-view/:chapterId only promotes file_view once every chapter containing the file is marked", async () => {
 		// Two chapters share file `shared.ts`. Marking the first should leave file_view
 		// empty for it (only one of two containing chapters covered); marking the second
-		// promotes it. Mirrors hosted's "all chapters covered → file viewed" rule.
+		// promotes it — the "all chapters covered → file viewed" rule.
 		const db = getDb({ dbPath });
 		const fixture = makeFixture({
 			chapters: [

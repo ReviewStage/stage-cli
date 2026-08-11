@@ -11,11 +11,10 @@ import { CHAPTER_VIEW_MODE, useChapterSettings } from "@/lib/use-chapter-setting
 import { usePullRequestStack } from "@/lib/use-pull-request-stack";
 import { cn } from "@/lib/utils";
 
-// Vendored from hosted Stage's `pull-request-stack-nav.tsx` (final state,
-// #1049 + #1052), with hosted's by-number page navigation adapted to the CLI's
-// one-PR-per-run model: a stack sibling with a local run opens that run
-// (keeping the reviewer on their current tab), and one without a run opens the
-// PR on GitHub like the header's other external affordances.
+// Navigation follows the CLI's one-PR-per-run model: a stack sibling with a
+// local run opens that run (keeping the reviewer on their current tab), and
+// one without a run opens the PR on GitHub like the header's other external
+// affordances.
 
 /**
  * Surfaces the stack a pull request belongs to and lets the reviewer jump

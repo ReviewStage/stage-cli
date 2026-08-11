@@ -71,7 +71,7 @@ function avatarUrlForLogin(login: string): string {
 // REST user shape (`.user`, reviewers, etc.). Unlike gh's GraphQL projection, it
 // carries `type` ("Bot" for GitHub Apps), the real `avatar_url`, and the `[bot]`
 // login suffix — everything getUserDisplay needs to render bot chips and the
-// /apps/<slug> profile URL. Sourcing users from REST keeps parity with hosted Stage.
+// /apps/<slug> profile URL.
 const RestUserSchema = z.object({
 	login: z.string(),
 	avatar_url: z.string(),
@@ -377,8 +377,8 @@ const GhDeploymentsSchema = z.object({
 
 /**
  * Preview/deployment links for `headSha`: one per environment, keeping the
- * latest successful deployment with an https URL (mirrors hosted Stage's
- * resolveDeploymentLinks). Returns [] on any failure so checks still render.
+ * latest successful deployment with an https URL. Returns [] on any failure
+ * so checks still render.
  */
 async function getDeploymentLinks(
 	repoRoot: string,

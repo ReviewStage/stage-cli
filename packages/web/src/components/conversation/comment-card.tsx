@@ -5,8 +5,7 @@ import { CommentBody } from "./comment-body";
 import { CommentHeader } from "./comment-header";
 import { ReactionBar } from "./reaction-bar";
 
-// Vendored from hosted Stage's `conversation/comment-card.tsx`, read-only:
-// issue-comment edit/delete mutations are hosted-only concerns and are dropped.
+// Read-only: issue comments render without edit/delete mutations.
 
 interface CommentCardProps {
 	user: GitHubUser;

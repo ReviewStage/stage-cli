@@ -122,8 +122,7 @@ function ChapterDetailContent({
 	const navigate = useNavigate();
 
 	// After a chapter is marked viewed, advance to the next chapter — or, once
-	// every chapter is viewed, return to the run's chapter list. Mirrors the
-	// hosted app's mark-complete flow (minus the confetti the CLI omits).
+	// every chapter is viewed, return to the run's chapter list.
 	const advanceAfterChapterComplete = useCallback(() => {
 		// markChapterViewed patches the cache on a later tick, so this snapshot
 		// still excludes the chapter just marked — treat it as about-to-be-viewed.
@@ -140,7 +139,7 @@ function ChapterDetailContent({
 				to: "/runs/$runId/chapters/$chapterNumber",
 				params: { runId, chapterNumber: String(next.order + 1) },
 				// Preserve scroll position when moving between chapters on the detail
-				// page (matches the hosted app); resetting would jump to the top.
+				// page; resetting would jump to the top.
 				resetScroll: false,
 			});
 		}
@@ -228,8 +227,8 @@ function ChapterDetailContent({
 		collapse: collapseState,
 	});
 
-	// On chapter change, realign the diff column to the new chapter's first file
-	// (matches the hosted app). `resetScroll: false` keeps the prior scroll
+	// On chapter change, realign the diff column to the new chapter's first
+	// file. `resetScroll: false` keeps the prior scroll
 	// offset, so when the user had scrolled down into the previous chapter the
 	// new first file lands above the sticky header — snap it back under the
 	// header. When already near the top (first file still below the header), the
@@ -275,8 +274,8 @@ function ChapterDetailContent({
 			void navigate({
 				to: "/runs/$runId/chapters/$chapterNumber",
 				params: { runId, chapterNumber: String(target.order + 1) },
-				// Keep scroll position when stepping chapters via the keyboard
-				// (matches the hosted app); the default would jump to the top.
+				// Keep scroll position when stepping chapters via the keyboard;
+				// the default would jump to the top.
 				resetScroll: false,
 			});
 		},
@@ -366,9 +365,9 @@ function ChapterDetailContent({
 // the side layouts only.
 
 /**
- * Position-aware variant of the shared SidebarLayout (vendored from the hosted
- * app's pull-request SidebarLayout): the chapter panel can dock left, right, or
- * stack above the diff list. The side layouts pull the panel to the page edge
+ * Position-aware variant of the shared SidebarLayout: the chapter panel can
+ * dock left, right, or stack above the diff list. The side layouts pull the
+ * panel to the page edge
  * (counter to the route's `px-6 lg:px-8`); the main column needs `min-w-0` so
  * its children overflow within the column instead of pushing it wider.
  */

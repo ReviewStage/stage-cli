@@ -1,10 +1,8 @@
 import { z } from "zod";
 
-// Wire format for the GitHub pull-request timeline (Activity tab), mirroring hosted
-// Stage's `packages/types/src/github-timeline.ts`. Hosted types these payloads with
-// Octokit's REST schemas; the CLI receives untyped `gh api` JSON instead, so each
-// shape is a Zod schema carrying only the fields the UI consumes (parsing strips
-// the rest of GitHub's payload).
+// Wire format for the GitHub pull-request timeline (Activity tab). The CLI
+// receives untyped `gh api` JSON, so each shape is a Zod schema carrying only
+// the fields the UI consumes (parsing strips the rest of GitHub's payload).
 
 // ─── Users & reactions ────────────────────────────────────────────────────────
 

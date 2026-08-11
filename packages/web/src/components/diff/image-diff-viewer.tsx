@@ -3,12 +3,9 @@ import { useMemo } from "react";
 import { FILE_STATUS, type PullRequestFile } from "@/lib/diff-types";
 
 /**
- * Vendored from the hosted app's `components/diff/image-diff-viewer.tsx`.
- *
- * The hosted app fetches base/head blobs from GitHub per side; the CLI's diff
- * response instead ships full file contents inline — UTF-8 text for SVG,
- * base64 for binary image formats — so both sides arrive synchronously with
- * the diff and there is no loading state.
+ * The CLI's diff response ships full file contents inline — UTF-8 text for
+ * SVG, base64 for binary image formats — so both sides arrive synchronously
+ * with the diff and there is no loading state.
  */
 interface ImageDiffViewerProps {
 	file: PullRequestFile;

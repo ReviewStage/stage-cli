@@ -13,7 +13,6 @@ const FileExpansionContext = createContext<FileExpansionContextValue | null>(nul
  * lists, keyed by file path. Virtuoso unmounts a file's row once it scrolls
  * beyond the overscan window, so state kept inside the row would be lost;
  * keeping it here means an expanded file stays expanded when its row remounts.
- * Mirrors the hosted app's `expandedFiles` in its pull-request context.
  */
 export function FileExpansionProvider({
 	resetKey,

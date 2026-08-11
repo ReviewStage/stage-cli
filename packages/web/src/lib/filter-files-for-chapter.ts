@@ -191,8 +191,7 @@ export function filterFilesForChapter(
 			// Header-only files (binary contents, pure renames) have no hunks to
 			// filter; include them whole — matched via the HEADER_ONLY_OLD_START
 			// sentinel ref — so chapter views can render them through the
-			// image/full-preview branches. Mirrors hosted's filterFilesForChapter,
-			// which passes zero-hunk files straight through.
+			// image/full-preview branches.
 			const diff = parseSegment(segment.text);
 			if (diff === null) continue;
 			result.push({ file: fileDiffToPullRequestFile(diff), diff });

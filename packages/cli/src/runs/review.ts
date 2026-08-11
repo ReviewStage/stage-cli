@@ -224,8 +224,7 @@ function toGitHubOutdatedThreadDto(
  * The wire threads for the PR: line-anchored threads, plus the anchorless ones
  * that still count toward file/chapter comment badges — whole-file threads and
  * outdated line threads (GitHub nulls their `line` once the code moves), the
- * latter counted via their frozen original coordinates like hosted's
- * `original_line` fallback in `commentMatchesHunk`.
+ * latter counted via their frozen original coordinates.
  */
 function toGitHubThreadDtos(review: GitHubReview): GitHubReviewThreadDto[] {
 	const dtos = review.threads.map(toGitHubLineThreadDto);
@@ -640,8 +639,7 @@ async function recoverFromStaleReviewAndSubmit(
 			}
 		}
 
-		// Hosted's recovery fetch of the reviews summary throws on failure, aborting
-		// recovery. `getReviews` swallows failures into null — without bailing here a
+		// `getReviews` swallows failures into null — without bailing here a
 		// transient reviews failure would skip the dedupe check below and duplicate a
 		// decision already submitted from the other session.
 		const reviewsSummary = await getReviews(run.repoRoot, target.repo, target.prNumber);
@@ -667,8 +665,7 @@ async function recoverFromStaleReviewAndSubmit(
 		await submitReview(run.repoRoot, review.pullRequestNodeId, reviewNodeId, event, body);
 	} catch (error) {
 		// Recovery exhausted with the review still not pending — surface it as a
-		// conflict (hosted maps GITHUB_REVIEW_NOT_PENDING to CONFLICT) so the UI can
-		// refresh instead of showing a raw GraphQL failure.
+		// conflict so the UI can refresh instead of showing a raw GraphQL failure.
 		if (error instanceof GitHubReviewNotPendingError) {
 			throw new ReviewError(error.message, 409);
 		}

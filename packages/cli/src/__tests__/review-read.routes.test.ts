@@ -116,8 +116,8 @@ describe("review API — read", () => {
 			endLine: null,
 		});
 		// Outdated threads carry the frozen original anchor instead of a live
-		// line, so comment counts can place them like hosted's original_line
-		// fallback while inline rendering skips them.
+		// line, so comment counts can still place them while inline rendering
+		// skips them.
 		expect(review.threads.find((t) => t.id === "THREAD_outdated")).toMatchObject({
 			source: "github",
 			subjectType: "LINE",

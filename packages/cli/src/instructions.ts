@@ -33,8 +33,7 @@ export function combineInstructions(
 /**
  * Render the additional-instructions section appended to the prep file. Emitted
  * as a `=== ... ===` header so it matches the section contract the generation
- * skill parses (hosted's inline prompts use a bare `ADDITIONAL INSTRUCTIONS:`
- * label instead). Returns an empty string when there are no instructions so
+ * skill parses. Returns an empty string when there are no instructions so
  * callers can interpolate it inline without conditional logic.
  */
 export function formatInstructionsBlock(instructions: string | null | undefined): string {
@@ -44,8 +43,7 @@ export function formatInstructionsBlock(instructions: string | null | undefined)
 
 /**
  * Load standing repo instructions from a `.stageinstructions` file at the repo
- * root (the CLI analogue of hosted Stage's repository custom instructions).
- * Returns the raw text, or null when the file is absent.
+ * root. Returns the raw text, or null when the file is absent.
  */
 export function loadStageInstructions(repoRoot: string): string | null {
 	const instructionsPath = path.join(repoRoot, ".stageinstructions");

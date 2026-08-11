@@ -8,8 +8,7 @@ import { formatTimeAgo } from "@/lib/format";
 
 /**
  * The PR description rendered as a GitHub-style comment: author avatar/header
- * plus the markdown body. Mirrors hosted Stage's PullRequestBodyCard, minus the
- * write/reaction affordances the CLI doesn't carry.
+ * plus the markdown body.
  */
 export function PullRequestBodyCard({ pullRequest }: { pullRequest: GitHubPullRequest }) {
 	const user = pullRequest.user;

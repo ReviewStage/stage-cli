@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { unescapeLiteralNewlines } from "../unescape.js";
 
-// Cases ported from hosted's narrative-agent output-mapping tests, applied
-// directly to the vendored unescapeLiteralNewlines function.
 describe("unescapeLiteralNewlines", () => {
 	it("unescapes literal backslash-n sequences in prose", () => {
 		expect(

@@ -14,7 +14,7 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 import { jsonFetch } from "@/lib/use-view-state";
 
 // Live PR data: never auto-refetch on focus/reconnect (the CLI is local and
-// the data is cheap to refetch explicitly). Mirrors hosted's live query opts.
+// the data is cheap to refetch explicitly).
 const LIVE = {
 	staleTime: Number.POSITIVE_INFINITY,
 	refetchOnWindowFocus: false,

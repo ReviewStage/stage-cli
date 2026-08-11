@@ -26,7 +26,7 @@ interface OverviewSidebarProps {
  * Left overview column: a Prologue tab (the imported run's structured prologue)
  * and a Description tab (the detected PR's markdown body). Each tab is shown
  * only when its content exists; the route renders this only when at least one
- * does. Mirrors hosted Stage's PrologueSidebar.
+ * does.
  */
 export function OverviewSidebar({ prologue, pullRequest }: OverviewSidebarProps) {
 	const hasPrologue = prologue !== null;

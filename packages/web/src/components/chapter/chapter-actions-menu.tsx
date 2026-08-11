@@ -16,10 +16,6 @@ interface ChapterActionsMenuProps {
 	onCopyChapter: () => void;
 }
 
-/**
- * Vendored from the hosted app's ChapterActionsMenu, minus the AI edit actions
- * (the CLI has no chapter-edit backend) and analytics.
- */
 export function ChapterActionsMenu({ onCopyChapter }: ChapterActionsMenuProps) {
 	const { panelPosition, setPanelPosition, showWhatToReview, setShowWhatToReview } =
 		useChapterSettings();

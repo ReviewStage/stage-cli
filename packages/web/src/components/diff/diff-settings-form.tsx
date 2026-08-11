@@ -73,7 +73,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 	const chapterViewState = useChapterViewState();
 
 	// When leaving continuous mode from the chapters reader, land on the
-	// chapter that was active in the stream (hosted's ChapterViewState flow).
+	// chapter that was active in the stream.
 	const updateChapterViewMode = (value: ChapterViewMode) => {
 		const runId = params.runId;
 		if (
@@ -124,8 +124,8 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 
 	return (
 		<div className={cn("space-y-4", compact && "space-y-3")}>
-			{/* App-wide appearance — hosted keeps these on its preferences page; the CLI
-			    has no settings page, so they live here in their own small group. */}
+			{/* App-wide appearance — the CLI has no settings page, so these
+			    live here in their own small group. */}
 			<GroupLabel>Appearance</GroupLabel>
 
 			{/* Text size — scales the whole app; the diff keeps its own size below */}

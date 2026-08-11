@@ -1,6 +1,6 @@
 import { formatDistanceToNow } from "date-fns";
 
-/** "opened 3 days ago" — matches hosted Stage's relative-time rendering. */
+/** Relative-time rendering, e.g. "opened 3 days ago". */
 export function formatTimeAgo(dateString: string): string {
 	return formatDistanceToNow(new Date(dateString), { addSuffix: true });
 }

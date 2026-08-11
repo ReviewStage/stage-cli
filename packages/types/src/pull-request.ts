@@ -114,8 +114,7 @@ export type PullRequestMergeMethod =
 
 // ─── Pull request ─────────────────────────────────────────────────────────────
 // REST-shaped subset of GitHub's `pull-request` payload — only the fields the
-// header reads. Named/shaped to match hosted Stage's `GitHubPullRequest` so the
-// vendored components consume it unchanged. The CLI's gh adapter maps gh's
+// header reads. The CLI's gh adapter maps gh's
 // GraphQL camelCase output onto this REST snake_case shape.
 
 const GitHubUserSchema = z.object({

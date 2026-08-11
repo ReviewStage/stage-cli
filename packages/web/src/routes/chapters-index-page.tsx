@@ -85,8 +85,7 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 										if (isViewed) {
 											// A chapter can read as viewed purely because all of its
 											// files are viewed, so unmarking must also clear those
-											// file views (mirrors the hosted toggle, which unmarks a
-											// chapter's files with it) or the unmark is a no-op.
+											// file views or the unmark is a no-op.
 											view.unmarkChapterViewed(ch.externalId);
 											for (const path of new Set(ch.hunkRefs.map((h) => h.filePath))) {
 												if (view.isFileViewed(path)) view.unmarkFileViewed(path);
@@ -168,8 +167,7 @@ function ChaptersList({ chapters, runId }: { chapters: Chapter[]; runId: string 
 }
 
 /**
- * Mirrors the hosted app's ChapterNavigationShortcuts on the pull index page:
- * with no chapter selected, "next" navigates into the first chapter and "prev"
+ * With no chapter selected, "next" navigates into the first chapter and "prev"
  * is a no-op.
  */
 function ChapterNavigationShortcuts({ chapters, runId }: { chapters: Chapter[]; runId: string }) {
@@ -218,7 +216,7 @@ export function ChaptersIndexPage({ chapters, runId, isLoading }: ChaptersIndexP
 			<OverviewColumnHeader>
 				<SectionLabel>Chapters</SectionLabel>
 				{/* Shown once the diff has loaded so a copy includes the per-chapter
-				    file lists (the patch drives them). Mirrors hosted's onCopy gate. */}
+				    file lists (the patch drives them). */}
 				{hasChapters && diffLoaded && (
 					<CopyMarkdownButton getMarkdown={copyChapters} label="chapters" />
 				)}

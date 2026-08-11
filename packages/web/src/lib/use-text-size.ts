@@ -26,10 +26,8 @@ function readStoredTextSize(): TextSize {
 	}
 }
 
-// Apply the saved size before first paint. The hosted app does this with an inline
-// pre-hydration script; the CLI SPA has no SSR, so a module-level init (which runs
-// before React renders anything) fills the same role and prevents a flash of the
-// default size.
+// Apply the saved size before first paint. A module-level init runs before
+// React renders anything, preventing a flash of the default size.
 applyTextSizeToDOM(readStoredTextSize());
 
 interface TextSizeValue {

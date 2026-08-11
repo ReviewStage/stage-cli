@@ -2,14 +2,12 @@ import { DIFF_SIDE, type DiffSide, HEADER_ONLY_OLD_START } from "@stagereview/ty
 import { SUBJECT_TYPE, type SubjectType } from "@stagereview/types/review";
 
 /**
- * Comment counts for file trees and chapter lists, mirroring the hosted app's
- * `buildFileCommentCountsMap`/`buildChapterCommentCountsMap`. The hosted app
- * counts root GitHub review comments; the CLI's review model already groups
- * comments into line-anchored threads (one thread = one root comment), so a
- * thread counts toward the file it is anchored to and — like hosted's
- * `commentMatchesHunk` — toward every chapter with a hunk whose line range
- * contains the thread's anchor on its side. Whole-file threads have no anchor
- * and count toward every chapter containing any hunk of their file.
+ * Comment counts for file trees and chapter lists. The CLI's review model
+ * groups comments into line-anchored threads (one thread = one root comment),
+ * so a thread counts toward the file it is anchored to and toward every
+ * chapter with a hunk whose line range contains the thread's anchor on its
+ * side. Whole-file threads have no anchor and count toward every chapter
+ * containing any hunk of their file.
  */
 
 export interface CommentThreadLike {
@@ -19,7 +17,7 @@ export interface CommentThreadLike {
 	endLine: number | null;
 	/** Absent on local threads, which are always line-anchored. */
 	subjectType?: SubjectType;
-	/** An outdated line thread's frozen original anchor (hosted's `original_line`). */
+	/** An outdated line thread's frozen original anchor (GitHub's `original_line`). */
 	originalLine?: number | null;
 }
 
@@ -60,10 +58,10 @@ export interface HunkRangeSource {
 }
 
 /**
- * Indexes each parsed file's hunk ranges by old-side start line, the CLI
- * counterpart of hosted's `buildHunkIndex` (`HunkReference.oldStart` is the
- * lookup key in both). Pierre's `deletionStart`/`deletionCount` are the hunk
- * header's old-side range and `additionStart`/`additionCount` the new side.
+ * Indexes each parsed file's hunk ranges by old-side start line
+ * (`HunkReference.oldStart` is the lookup key). Pierre's
+ * `deletionStart`/`deletionCount` are the hunk header's old-side range and
+ * `additionStart`/`additionCount` the new side.
  */
 export function buildHunkRangeIndex(files: readonly HunkRangeSource[]): HunkRangeIndex {
 	const index: HunkRangeIndex = new Map();
@@ -83,12 +81,11 @@ export function buildHunkRangeIndex(files: readonly HunkRangeSource[]): HunkRang
 }
 
 /**
- * Mirrors hosted's `commentMatchesHunk` for the CLI's thread model: a line
- * thread's anchor (`endLine`, GitHub's `line`) must fall inside the hunk's
- * range on the thread's side. Whole-file threads are matched by path before
- * this runs (hosted's FILE branch). Outdated threads (GitHub nulled their
- * `line` once the code moved) fall back to the frozen original anchor against
- * the hunk's old-file range — hosted's `original_line` fallback.
+ * A line thread's anchor (`endLine`, GitHub's `line`) must fall inside the
+ * hunk's range on the thread's side. Whole-file threads are matched by path
+ * before this runs. Outdated threads (GitHub nulled their `line` once the
+ * code moved) fall back to the frozen original anchor (`original_line`)
+ * against the hunk's old-file range.
  */
 function threadMatchesHunk(thread: CommentThreadLike, hunk: HunkRange): boolean {
 	if (thread.endLine === null) {

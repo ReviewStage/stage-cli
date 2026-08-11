@@ -238,7 +238,7 @@ describe("ChaptersFileSchema", () => {
 		expectInvalidAt(makeFixture({ prologue: { motivation: "test" } }), "prologue.keyChanges");
 	});
 
-	it("accepts inverted and empty line references (repaired by sanitizeLineRefs, matching hosted)", () => {
+	it("accepts inverted and empty line references (repaired by sanitizeLineRefs)", () => {
 		expect(() =>
 			ChaptersFileSchema.parse(
 				makeFixture({

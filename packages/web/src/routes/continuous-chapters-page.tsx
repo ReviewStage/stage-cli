@@ -49,12 +49,11 @@ interface ContinuousChaptersPageProps {
 
 /**
  * Continuous chapter review: a single virtualized stream of every chapter's
- * file diffs with a sticky per-chapter narrative panel, vendored from the
- * hosted app's ContinuousChaptersPage. Adapted to the CLI's data plumbing:
- * chapters come from ChapterContext, diffs from the run's patch + file
- * contents, and viewed state from the local view-state API. Unlike the hosted
- * page (which scrolls the window), this page renders inside the pull-request
- * layout's contained scroll area, so all scroll work targets that container.
+ * file diffs with a sticky per-chapter narrative panel. Chapters come from
+ * ChapterContext, diffs from the run's patch + file contents, and viewed
+ * state from the local view-state API. Unlike the paged view (which scrolls
+ * the window), this page renders inside the pull-request layout's contained
+ * scroll area, so all scroll work targets that container.
  */
 export function ContinuousChaptersPage({
 	runId,
@@ -137,9 +136,8 @@ function ContinuousChaptersContent({
 	const { panelPosition } = useChapterSettings();
 
 	// All chapter diff models are computed before the virtualized sections
-	// mount (hosted's ChapterDiffModelBuilder). The CLI's patch and file
-	// contents arrive in a single fetch and never change for a run, so a plain
-	// memo replaces the hosted builder's per-batch caching.
+	// mount. The CLI's patch and file contents arrive in a single fetch and
+	// never change for a run, so a plain memo suffices.
 	const models = useMemo<ChapterDiffModel[]>(
 		() =>
 			allChapters.map((chapter) => {
@@ -157,7 +155,7 @@ function ContinuousChaptersContent({
 	const activeChapter = allChapters[activeChapterNumber - 1];
 
 	// Report the active chapter so the settings form can preserve it when
-	// switching back to paged mode (hosted's ChapterViewState behavior).
+	// switching back to paged mode.
 	const chapterViewState = useChapterViewState();
 	const setActiveContinuousChapterNumber = chapterViewState?.setActiveContinuousChapterNumber;
 	useEffect(() => {
@@ -342,7 +340,7 @@ function ContinuousChaptersContent({
 
 	// After a chapter is marked viewed, advance the stream to the next chapter —
 	// unless every chapter is now viewed, in which case stay on the continuous
-	// view (hosted's stayOnContinuousView). Advancing only applies when the
+	// view. Advancing only applies when the
 	// completed chapter is the one currently active on screen.
 	const advanceAfterChapterComplete = useCallback(
 		(completed: Chapter) => {
@@ -422,8 +420,7 @@ function ContinuousChaptersContent({
 
 	// Focus is page-level and NOT reset when the active chapter changes — the
 	// active chapter changes on mere scrolling and every chapter's diffs stay
-	// mounted, so focus survives until the user toggles it off (hosted's
-	// resetFocusOnChapterChange={false}).
+	// mounted, so focus survives until the user toggles it off.
 	const [focus, setFocus] = useState<FocusedKeyChangeState | null>(null);
 	const handleFocusKeyChange = useCallback(
 		(keyChangeId: string | null, scrollTarget?: LineRef | null) => {

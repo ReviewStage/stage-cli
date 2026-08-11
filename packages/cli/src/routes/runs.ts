@@ -20,7 +20,7 @@ type KeyChangeRow = typeof keyChange.$inferSelect;
 // Project DB rows into the public wire shape. Keeps DB-only fields
 // (`runId`, `chapterIndex`, `createdAt`, `updatedAt`, the denormalized
 // `keyChanges` string array) out of the API surface so the wire format can
-// evolve independently of the schema. Mirrors hosted's mapChapterRow pattern.
+// evolve independently of the schema.
 function mapKeyChange(kc: KeyChangeRow): KeyChange {
 	return {
 		id: kc.id,
@@ -30,7 +30,7 @@ function mapKeyChange(kc: KeyChangeRow): KeyChange {
 	};
 }
 
-// Mirrors hosted's mapChapterRow: order keyChanges by the first file they
+// Order keyChanges by the first file they
 // reference (per the chapter's hunkRef file order), then by min startLine
 // within that file, so What-to-Review reads top-to-bottom with the diff.
 function mapChapter(ch: ChapterRow, kcs: KeyChangeRow[]): Chapter {

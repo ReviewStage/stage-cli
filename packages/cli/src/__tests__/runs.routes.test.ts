@@ -118,7 +118,7 @@ describe("runs API", () => {
 		expect(body.chapters[1]?.keyChanges).toHaveLength(0);
 	});
 
-	it("orders keyChanges by the chapter's hunkRef file order, then min startLine (hosted mapChapterRow)", async () => {
+	it("orders keyChanges by the chapter's hunkRef file order, then min startLine", async () => {
 		const db = getDb({ dbPath });
 		const fixture = makeFixture({
 			chapters: [

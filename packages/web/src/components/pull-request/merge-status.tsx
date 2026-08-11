@@ -151,8 +151,7 @@ export function MergeStatus({
 	}
 
 	function handleEnableAutoMerge() {
-		// Unlike hosted (whose auto-merge mutation has no head pin), the CLI's
-		// auto-merge maps to `gh pr merge --auto`; pin the reviewed head so the
+		// The CLI's auto-merge maps to `gh pr merge --auto`; pin the reviewed head so the
 		// stale-head guard (--match-head-commit) applies, as in handleMerge.
 		autoMergeMutation.mutate({
 			owner,
@@ -165,9 +164,9 @@ export function MergeStatus({
 	}
 
 	function handleRemoveFromQueue() {
-		// Unlike hosted (which dequeues the queue entry and separately clears a
-		// lingering auto-merge request), the CLI's dequeue maps to the same
-		// `gh pr merge --disable-auto` as disabling auto-merge, so one call covers both.
+		// The CLI's dequeue maps to the same `gh pr merge --disable-auto` as
+		// disabling auto-merge, so one call both dequeues the queue entry and
+		// clears any lingering auto-merge request.
 		dequeueMutation.mutate({ owner, repo, number });
 	}
 

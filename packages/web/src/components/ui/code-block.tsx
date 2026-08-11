@@ -9,7 +9,7 @@ interface CodeBlockProps {
 
 // Shiki emits `--shiki-light`/`--shiki-dark` CSS variables (defaultColor: false);
 // the arbitrary variants below pick the variable matching the app theme, so code
-// blocks follow the light/dark toggle like hosted Stage.
+// blocks follow the light/dark toggle.
 const SHIKI_THEME_CLASSES =
 	"[&_.shiki]:bg-(--shiki-light-bg) [&_.shiki]:text-(--shiki-light) [&_.shiki_span]:text-(--shiki-light) dark:[&_.shiki]:bg-(--shiki-dark-bg) dark:[&_.shiki]:text-(--shiki-dark) dark:[&_.shiki_span]:text-(--shiki-dark)";
 

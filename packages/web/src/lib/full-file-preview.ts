@@ -4,17 +4,15 @@ import type { FileDiffEntry } from "@/lib/parse-diff";
 import { splitWithNewlines } from "@/lib/split-with-newlines";
 
 /**
- * Full-content previews for moved/renamed files (hosted #1106).
+ * Full-content previews for moved/renamed files.
  *
  * A pure rename/move produces a diff with zero hunks, which Pierre renders as
  * an empty box. When the file's full contents are available we synthesize a
  * single context-only hunk covering the whole file so the reviewer can still
  * read it in place.
  *
- * Adapted from hosted `lib/diff/full-file-preview.ts` + `renderable-hunks.ts`:
- * the CLI's newer Pierre stores context blocks as line counts with indices into
- * file-level `additionLines`/`deletionLines` arrays (hosted's older version
- * inlined string arrays per block), and the CLI already has the parsed
+ * Pierre stores context blocks as line counts with indices into file-level
+ * `additionLines`/`deletionLines` arrays, and the CLI already has the parsed
  * `FileDiffMetadata` on each entry, so the preview is built directly from it
  * instead of re-parsing via `parseDiffFromFile`.
  */

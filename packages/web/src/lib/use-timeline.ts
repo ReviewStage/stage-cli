@@ -9,8 +9,8 @@ export function timelineQueryKey(runId: string) {
 
 /**
  * Full pull-request timeline for the Activity tab. Fetched once per run page
- * load and refreshed on demand like the CLI's other GitHub reads — hosted's
- * live cursor polling is dropped.
+ * load and refreshed on demand like the CLI's other GitHub reads — there is
+ * no live polling.
  */
 export function useTimeline(runId: string, number: number | null) {
 	return useQuery<TimelineResponse>({

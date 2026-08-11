@@ -134,9 +134,8 @@ export type GitHubFileReviewThread = z.infer<typeof GitHubFileReviewThreadSchema
 
 // A line thread whose anchor GitHub has outdated: once the code it pointed at
 // changed, GitHub nulls `line`, so the thread can't render inline. It still
-// counts toward file/chapter comment badges via the frozen original coordinates
-// (hosted's `original_line` fallback in `commentMatchesHunk`), which ride the
-// wire in place of the live anchor.
+// counts toward file/chapter comment badges via the frozen original
+// coordinates, which ride the wire in place of the live anchor.
 export const GitHubOutdatedReviewThreadSchema = GitHubReviewThreadBaseSchema.extend({
 	subjectType: z.literal(SUBJECT_TYPE.LINE),
 	startLine: z.null(),

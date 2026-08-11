@@ -54,7 +54,7 @@ export function insertChaptersFile(
 		// comment routes derive from a chapter_run row.
 		const scopeKey = deriveScopeKey(runValues);
 
-		// Mirrors hosted persistChaptersIdempotent: sort by the agent-supplied
+		// Sort by the agent-supplied
 		// `order`, then assign a dense 0-based chapterIndex from array position so
 		// duplicate or sparse orders can't violate unique(runId, chapterIndex).
 		const sortedChapters = [...file.chapters].sort((a, b) => a.order - b.order);

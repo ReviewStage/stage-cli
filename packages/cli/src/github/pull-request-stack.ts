@@ -2,10 +2,8 @@ import { z } from "zod";
 import { ghReadOrThrow } from "./exec.js";
 import type { GitHubRepo } from "./repo.js";
 
-// Vendored from hosted Stage's `packages/github/src/pull-request-stack.ts`,
-// adapted from Octokit's cached `listPullRequests` to a `gh api` read: the CLI
-// fetches the repo's open PRs on demand and validates them with Zod, but the
-// stack derivation itself is byte-for-byte hosted's algorithm.
+// The CLI fetches the repo's open PRs on demand via a `gh api` read and
+// validates them with Zod before deriving the stack.
 
 /** The slice of a listed pull request the stack derivation consumes. */
 export interface GitHubPullRequestListItem {
@@ -157,8 +155,8 @@ function toListItem(pull: z.infer<typeof RestListedPullSchema>): GitHubPullReque
 
 /**
  * The stack of open PRs connected to `currentNumber`, derived on read from the
- * repo's open PR list. Only open PRs can form a stack, so the closed ones
- * hosted's cached list carries are simply never fetched. Returns [] on any gh
+ * repo's open PR list. Only open PRs can form a stack, so closed ones are
+ * simply never fetched. Returns [] on any gh
  * failure or unexpected shape so the header degrades to no stack; the failure
  * is reported on stderr.
  */

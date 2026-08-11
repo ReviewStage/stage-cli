@@ -20,7 +20,6 @@ import {
 type Res = Parameters<RouteHandler>[1];
 
 const numberField = z.number().int().positive();
-// Mirrors hosted's `pullRequests.labels.add` / `.remove` inputs.
 const addLabelsInput = z.object({
 	number: numberField,
 	labels: z.array(z.string().min(1)).min(1),
@@ -42,9 +41,9 @@ async function runMutation(res: Res, fn: () => Promise<void>): Promise<void> {
 export function labelRoutes(db: StageDb): Route[] {
 	return [
 		{
-			// The PR's current labels. Hosted reads these off its PR payload; the CLI's
-			// PR wire shape has no labels, so they get their own read. Failures degrade
-			// to `labels: null` (like the reviews read) so the header never breaks.
+			// The PR's current labels. The CLI's PR wire shape has no labels, so they
+			// get their own read. Failures degrade to `labels: null` (like the reviews
+			// read) so the header never breaks.
 			method: "GET",
 			pattern: "/api/runs/:runId/pull-request/labels",
 			handler: async (req, res, params) => {
@@ -71,7 +70,7 @@ export function labelRoutes(db: StageDb): Route[] {
 			},
 		},
 		{
-			// Hosted `pullRequests.labels.list`: every repository label, for the picker.
+			// Every repository label, for the picker.
 			// Errors surface so the picker can show its failed-load state.
 			method: "GET",
 			pattern: "/api/runs/:runId/pull-request/labels/repository",
@@ -91,7 +90,6 @@ export function labelRoutes(db: StageDb): Route[] {
 			},
 		},
 		{
-			// Hosted `pullRequests.labels.add`.
 			method: "POST",
 			pattern: "/api/runs/:runId/pull-request/labels",
 			handler: async (req, res, params) => {
@@ -108,7 +106,6 @@ export function labelRoutes(db: StageDb): Route[] {
 			},
 		},
 		{
-			// Hosted `pullRequests.labels.remove`.
 			method: "DELETE",
 			pattern: "/api/runs/:runId/pull-request/labels",
 			handler: async (req, res, params) => {

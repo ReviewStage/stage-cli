@@ -1,6 +1,5 @@
 /**
- * Browser-displayable image formats, vendored from the hosted app's
- * `@stage/utils` image helpers. Shared between the CLI server (which decides
+ * Browser-displayable image formats, shared between the CLI server (which decides
  * which diff files ship base64-encoded) and the web UI (which routes image
  * files to the image diff viewer and builds their data URLs).
  */

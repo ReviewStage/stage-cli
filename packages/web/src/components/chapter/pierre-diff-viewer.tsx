@@ -265,7 +265,6 @@ const NO_FORCE_SHOWN_LINES: ForceShownLines = {
  * A row is collapsed when inline annotations are minimized and the user hasn't
  * force-shown it (and it isn't hosting a comment composer). Collapsed rows
  * render as a zero-height floating chip instead of the full thread cards.
- * Mirrors the hosted app's isAnnotationRowCollapsed.
  */
 function isAnnotationRowCollapsed(
 	annotation: CommentAnnotation,
@@ -401,8 +400,7 @@ export function PierreDiffViewer({
 	);
 
 	// Tint comment annotation rows on change lines so each comment visually
-	// attaches to the diff line it's reviewing (mirrors the hosted app's
-	// buildChangeAnnotationCSS pipeline). Collapsed rows are zero-height chips,
+	// attaches to the diff line it's reviewing. Collapsed rows are zero-height chips,
 	// so decorating them would paint a stray tinted strip — exclude them.
 	const annotationRowUnsafeCSS = useMemo(() => {
 		const additionSlots: string[] = [];

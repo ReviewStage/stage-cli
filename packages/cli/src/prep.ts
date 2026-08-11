@@ -16,7 +16,6 @@ import {
 } from "./instructions.js";
 import { type DiffScopeOptions, resolveDiffScope } from "./scope.js";
 
-// One-off instructions share hosted Stage's per-run cap (chapters.ts regenerate input).
 const runInstructionsSchema = z.string().max(1000).nullable().optional();
 
 export interface PrepOptions extends DiffScopeOptions {
@@ -51,8 +50,8 @@ export async function runPrep(options: PrepOptions): Promise<string> {
 		.flatMap((file) => file.hunks.map((hunk) => formatHunkForPrompt(file, hunk)))
 		.join("\n\n");
 
-	// Stats describe the whole change like hosted's (computed from the PR's
-	// full file list) — a lockfile-heavy PR must not report "0 files" to the
+	// Stats describe the whole change (computed from the PR's full file
+	// list) — a lockfile-heavy PR must not report "0 files" to the
 	// prologue's complexity assessment even though its hunks are filtered out.
 	const totalFiles = allFiles.length;
 	const totalAdded = allFiles.reduce((sum, f) => sum + f.additions, 0);
@@ -70,9 +69,9 @@ export async function runPrep(options: PrepOptions): Promise<string> {
 	const pullRequest =
 		prNumber === null ? null : await getPullRequestOrThrow(repoRoot, originUrl, prNumber);
 	if (pullRequest) {
-		// Hosted's <author_provided_context> wrapper (summary-agent.ts): the tags
-		// mark the title/body as untrusted author text so ===-style lines inside a
-		// PR description can't masquerade as prep section structure. The delimiter
+		// The <author_provided_context> tags mark the title/body as untrusted
+		// author text so ===-style lines inside a PR description can't
+		// masquerade as prep section structure. The delimiter
 		// itself is stripped from the author text so it can't close the fence early.
 		sections.push(
 			"=== PULL REQUEST ===",

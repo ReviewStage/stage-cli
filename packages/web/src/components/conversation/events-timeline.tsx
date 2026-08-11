@@ -61,9 +61,8 @@ function groupEvents(events: NonDiscussionEvent[]): EventGroup[] {
 }
 
 /**
- * Base repository URL derived from the PR's html_url. Hosted reads
- * `pullRequest.base.repo.html_url`; the CLI's leaner PR shape doesn't carry the
- * repo object, but the PR URL always embeds it.
+ * Base repository URL derived from the PR's html_url. The CLI's lean PR shape
+ * doesn't carry the repo object, but the PR URL always embeds it.
  */
 function repoUrlFromPullRequest(pullRequest: GitHubPullRequest): string {
 	return pullRequest.html_url.replace(/\/pull\/\d+.*$/, "");

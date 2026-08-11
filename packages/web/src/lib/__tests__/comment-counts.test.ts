@@ -192,9 +192,9 @@ describe("buildChapterCommentCountsMap", () => {
 	});
 
 	it("matches an outdated thread by its original line against the old-file range", () => {
-		// Hosted's original_line fallback in commentMatchesHunk: an outdated
-		// comment (line=null) matches when its frozen anchor falls in the
-		// hunk's old-file range, regardless of side.
+		// The original_line fallback: an outdated comment (line=null) matches
+		// when its frozen anchor falls in the hunk's old-file range,
+		// regardless of side.
 		const index = buildHunkRangeIndex([
 			makeFile("src/app.ts", [{ oldStart: 10, oldLines: 5, newStart: 20, newLines: 8 }]),
 		]);

@@ -2,8 +2,7 @@ import type { DiffSide } from "@/lib/diff-types";
 import { findRenderedDiffLine } from "./rendered-line-target";
 
 /**
- * Scroll helpers for the continuous chapter view, vendored from the hosted
- * app's `components/diff/scroll-into-view.ts`. Unlike the paged view (which
+ * Scroll helpers for the continuous chapter view. Unlike the paged view (which
  * scrolls the window), the continuous view lives inside the pull-request
  * layout's contained scroll area, so every helper operates on that explicit
  * scroll container element.

@@ -2,8 +2,8 @@ import { z } from "zod";
 import { ghReadOrThrow, ghWriteOrThrow } from "./exec.js";
 import type { GitHubRepo } from "./repo.js";
 
-// The subset of GitHub's REST label the UI renders (hosted uses the full REST
-// `label` schema; extra fields are stripped on parse).
+// The subset of GitHub's REST `label` schema the UI renders (extra fields are
+// stripped on parse).
 export const GitHubLabelSchema = z.object({
 	id: z.number(),
 	name: z.string(),

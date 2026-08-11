@@ -73,12 +73,11 @@ export function useInvalidatePullRequest(
 	return (context) => invalidatePullRequestQueries(queryClient, context?.mutatedRunId ?? runId);
 }
 
-// Mutation-option factories — mirror hosted's `orpc.pullRequests.X.mutationOptions()`
-// so the vendored components keep their `useMutation({ ...factory, onSuccess })` shape.
+// Mutation-option factories, consumed as `useMutation({ ...factory, onSuccess })`.
 // They accept the components' `{ owner, repo, number, ... }` call shape (owner/repo
 // are ignored — the server resolves the repo from the run).
 
-/** Vendored components call `.mutate({ owner, repo, ... })`; accept and ignore those. */
+/** Components call `.mutate({ owner, repo, ... })`; accept and ignore those. */
 type RepoVars = { owner?: string; repo?: string };
 
 export function titleMutationOptions(runId: string) {
@@ -165,8 +164,8 @@ export function setAutoMergeMutationOptions(runId: string) {
 	};
 }
 
-// Dequeue maps to "disable auto-merge" — like hosted since #1052, it is keyed on
-// the PR itself (gh resolves the queue entry), not a mergeQueueEntryId.
+// Dequeue maps to "disable auto-merge" — it is keyed on the PR itself
+// (gh resolves the queue entry), not a mergeQueueEntryId.
 export function dequeueMutationOptions(runId: string) {
 	return {
 		onMutate: (): PullRequestMutationContext => ({ mutatedRunId: runId }),
@@ -191,10 +190,9 @@ export function removeReviewerMutationOptions(runId: string) {
 	};
 }
 
-// ─── Labels (vendored from hosted `pullRequests.labels.*`, #1071) ───────────────
+// ─── Labels ─────────────────────────────────────────────────────────────────────
 
-// The label subset the UI renders. Hosted shares its REST-derived `GitHubLabel`
-// via @stage/types; the CLI's wire shape is defined by the labels route.
+// The label subset the UI renders; the wire shape is defined by the labels route.
 const GitHubLabelSchema = z.object({
 	id: z.number(),
 	name: z.string(),
@@ -207,7 +205,7 @@ export type GitHubLabel = z.infer<typeof GitHubLabelSchema>;
 const PullRequestLabelsResponseSchema = z.object({
 	labels: z.array(GitHubLabelSchema).nullable(),
 });
-// Every repository label, for the add-label picker (hosted `labels.list`).
+// Every repository label, for the add-label picker.
 const RepositoryLabelsResponseSchema = z.object({ labels: z.array(GitHubLabelSchema) });
 
 /** The labels currently applied to the PR. */

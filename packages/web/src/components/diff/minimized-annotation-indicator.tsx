@@ -21,8 +21,7 @@ interface AnnotationUser {
 /**
  * The single compact chip shown for a minimized annotation row. It merges every
  * comment thread on the line into one summary — author avatars + a comment count +
- * a resolved indicator. (Hosted also folds code movements in here; the CLI has
- * none, so threads are the only annotation type.)
+ * a resolved indicator.
  */
 export function MinimizedAnnotationIndicator({
 	threads,

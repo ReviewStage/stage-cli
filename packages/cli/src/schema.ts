@@ -34,7 +34,7 @@ export const keyChangeSchema = z.strictObject({
 	content: z.string().min(1),
 	// Tolerates empty and inverted ranges. Every production ingestion path runs
 	// through show.ts, whose sanitizeLineRefs repairs them before persistence by
-	// dropping invalid refs (and keyChanges left with none), matching hosted.
+	// dropping invalid refs (and keyChanges left with none).
 	lineRefs: z.array(lineRefSchema),
 });
 export type KeyChange = z.infer<typeof keyChangeSchema>;

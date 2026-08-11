@@ -38,8 +38,7 @@ function formatChapterOrdinal(value: number): string {
 }
 
 /**
- * Per-chapter narrative column for the continuous view (vendored from the
- * hosted app's ContinuousChapterPanel). In the side layouts it is sticky
+ * Per-chapter narrative column for the continuous view. In the side layouts it is sticky
  * within its chapter section: it pins at the content top while the chapter's
  * diffs scroll, then scrolls away past the chapter's last diff as the next
  * chapter's panel scrolls in.

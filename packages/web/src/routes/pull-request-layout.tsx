@@ -51,7 +51,7 @@ type PrTab = (typeof PR_TAB)[keyof typeof PR_TAB];
 // prologue/chapters panels do.
 const TOPBAR_REM = 3;
 
-// Mirrors hosted's tab order: Chapters, Activity, Files changed. The Activity
+// Tab order: Chapters, Activity, Files changed. The Activity
 // tab is a GitHub-only affordance and is offered only for PR runs.
 const tabs = [
 	{ id: PR_TAB.CHAPTERS, label: "Chapters", icon: BookOpen, to: "/runs/$runId" as const },
@@ -330,9 +330,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 	const headerLineCounts = useMemo<HeaderLineCounts | null>(() => {
 		if (diffData === undefined) return null;
 
-		// Unlike the hosted app (which anchors totals on GitHub's API and must
-		// guard against the PR metadata and diff resolving for different heads),
-		// the CLI's chapters, diff, and view-state all describe the same run, so
+		// The CLI's chapters, diff, and view-state all describe the same run, so
 		// the parsed diff is both the total and the remaining baseline.
 		const totalCounts = computeFileLineCounts(files);
 

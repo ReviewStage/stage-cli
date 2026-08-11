@@ -1,9 +1,7 @@
 import { z } from "zod";
 
-// Vendored from hosted Stage's `packages/github/src/pull-request-stack.ts`
-// PullRequestStackEntry, extended with `runId`: hosted navigates between PR
-// pages by number, while the CLI reviews one PR per run — so the server also
-// resolves which stack members have a local run to land on.
+// The CLI reviews one PR per run, so beyond identifying each stack member the
+// server also resolves which of them have a local run to land on (`runId`).
 
 /** A single pull request within a detected stack, as surfaced to the reviewer. */
 export const PullRequestStackEntrySchema = z.object({

@@ -12,11 +12,6 @@ import { Switch } from "@/components/ui/switch";
 import { usePullRequest } from "@/lib/use-pull-request";
 import { useTimeline } from "@/lib/use-timeline";
 
-// Vendored from hosted Stage's `$orgSlug.$repo.pull.$number.activity.tsx`.
-// Adaptations: the timeline comes from the run-scoped hook instead of the
-// hosted PR context, framer-motion entrance animations are dropped (not a CLI
-// dependency), and local (non-PR) runs get an explicit empty state.
-
 export function ActivityPage({ runId }: { runId: string }) {
 	const { data: prData, error: prError } = usePullRequest(runId);
 	const pullRequest = prData?.pullRequest ?? null;

@@ -64,7 +64,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 
 					promoted = promoteFullyCoveredFiles(tx, touchedRunPaths(rows));
 				});
-				// Hosted's mark rule: a file reaches GitHub only once every chapter
+				// Mark rule: a file reaches GitHub only once every chapter
 				// containing it is viewed — exactly the promotion condition above.
 				// Sibling rows updated by the fan-out stay local-only: GitHub sync is
 				// scoped to the run the user acted in (see initiatingRunPaths).
@@ -129,7 +129,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 							.run();
 					}
 				});
-				// Hosted's unmark rule: any chapter-file unview unmarks the path on
+				// Unmark rule: any chapter-file unview unmarks the path on
 				// GitHub unconditionally, mirroring the file_view clear above — but
 				// only on the initiating run's own PR (see initiatingRunPaths).
 				await new GitHubViewSync(db).unmark(initiatingRunPaths(touched, pin.runId));
@@ -219,7 +219,7 @@ export function viewStateRoutes(db: StageDb): Route[] {
 				const parsed = await parseJsonBody(req, res, FileViewBodySchema);
 				if (!parsed) return;
 
-				// Cascade to chapter state too, matching hosted's file-unview behavior.
+				// Cascade to chapter state too.
 				db.transaction((tx) => {
 					tx.delete(fileView)
 						.where(
@@ -686,8 +686,8 @@ function chainGitHubMutations(pairs: RunPath[], task: () => Promise<void>): Prom
 }
 
 /**
- * Best-effort per-request propagation of file view marks to GitHub, mirroring
- * hosted Stage's chapter-file-view sync rules: mark a file only when every
+ * Best-effort per-request propagation of file view marks to GitHub, following
+ * the chapter-file-view sync rules: mark a file only when every
  * chapter containing it is viewed (the exact condition under which
  * promoteFullyCoveredFiles promotes it locally), and unmark unconditionally
  * whenever any chapter-file view is removed. Sync is scoped to the initiating

@@ -70,7 +70,7 @@ describe("GitHub mark sync", () => {
 		const port = await harness.start();
 
 		// Chapter A alone doesn't complete coverage of shared.ts (B also contains it),
-		// so only only-a.ts reaches GitHub — hosted's every-chapter-viewed mark rule.
+		// so only only-a.ts reaches GitHub — the every-chapter-viewed mark rule.
 		await harness.request(port, "POST", `/api/chapter-view/${chapterA.id}`);
 		expect((await markCalls()).map((c) => c.fields.path)).toEqual(["only-a.ts"]);
 

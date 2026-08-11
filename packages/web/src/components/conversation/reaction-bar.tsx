@@ -6,9 +6,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-// Vendored from hosted Stage's `conversation/reaction-bar.tsx`, read-only:
-// reaction toggling needs a mutation backend the CLI doesn't have (descoped),
-// so the add-reaction button and toggle handlers are dropped.
+// Read-only: reaction toggling needs a mutation backend the CLI doesn't have,
+// so there is no add-reaction button and no toggle handlers.
 
 export const REACTION_EMOJI: Record<ReactionContentKey, { emoji: string; label: string }> = {
 	[REACTION_CONTENT.THUMBS_UP]: { emoji: "👍", label: "thumbs up" },

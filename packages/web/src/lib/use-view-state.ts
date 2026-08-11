@@ -106,8 +106,7 @@ export interface UseViewStateDataResult {
 	/**
 	 * Stable reference; mutates only when the underlying query data changes.
 	 * Derived: a chapter is viewed via an explicit mark OR when every file its
-	 * hunk refs cover is in `filePathSet` (mirrors the hosted app's
-	 * `deriveViewedChapterIds`).
+	 * hunk refs cover is in `filePathSet`.
 	 */
 	chapterIdSet: ReadonlySet<string>;
 	/** Stable reference; mutates only when the underlying query data changes. */

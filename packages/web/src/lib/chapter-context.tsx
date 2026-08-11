@@ -16,8 +16,7 @@ interface ChapterContextValue {
 	runId: string;
 	chapters: readonly Chapter[];
 	chapterLineCountsMap: ReadonlyMap<string, ChapterLineCounts>;
-	// Threads matched to each chapter's hunk ranges, mirroring hosted's
-	// chapter-context `chapterCommentCounts` (keyed by chapter id).
+	// Threads matched to each chapter's hunk ranges, keyed by chapter id.
 	chapterCommentCounts: ReadonlyMap<string, number>;
 }
 

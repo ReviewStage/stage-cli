@@ -99,9 +99,8 @@ export function imageProxyRoutes(): Route[] {
 				const token = await getGitHubToken();
 				// Node's fetch strips the Authorization header on cross-origin
 				// redirects, so the token never reaches GitHub's CDN hosts.
-				// Hosted's serverless runtime enforces an execution deadline for it;
-				// this long-lived local server needs its own so a stalled upstream
-				// can't accumulate stuck requests.
+				// This long-lived local server enforces its own execution deadline
+				// so a stalled upstream can't accumulate stuck requests.
 				let upstream: Response;
 				try {
 					upstream = await fetch(imageUrl, {

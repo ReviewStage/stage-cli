@@ -9,8 +9,7 @@ interface ChapterFileSource {
  * A chapter is viewed when it carries an explicit "viewed" mark, OR when every
  * file it contains is already viewed. The CLI tracks file views as a flat
  * per-run set of paths, so a chapter's file viewed state is membership of each
- * of its (deduped) hunk-ref file paths in that set — the CLI's equivalent of
- * the hosted app's GitHub/Stage file-view merge.
+ * of its (deduped) hunk-ref file paths in that set.
  */
 export function deriveViewedChapterIds(
 	chapters: readonly ChapterFileSource[],

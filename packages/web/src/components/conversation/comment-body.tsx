@@ -9,10 +9,9 @@ interface CommentBodyProps {
 
 /**
  * Renders a GitHub comment body through the CLI's Markdown component (shiki
- * code blocks, mermaid, GitHub image proxying, sanitized raw HTML). Hosted
- * renders GitHub's `body_html` directly through DOMPurify; the CLI instead
- * feeds it to the shared Markdown pipeline, matching how GitHub review
- * comments already render in `components/comments/review-thread.tsx`.
+ * code blocks, mermaid, GitHub image proxying, sanitized raw HTML), matching
+ * how GitHub review comments already render in
+ * `components/comments/review-thread.tsx`.
  */
 export function CommentBody({ body, bodyHtml }: CommentBodyProps) {
 	const content = bodyHtml != null && bodyHtml.length > 0 ? bodyHtml : body;

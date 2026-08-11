@@ -18,7 +18,7 @@ import {
 import { GITHUB_REVIEW_STATUS, useReview } from "@/lib/use-review";
 import { cn } from "@/lib/utils";
 
-// ─── Label chip (vendored from hosted dashboard/pull-request-shared.tsx) ────────
+// ─── Label chip ─────────────────────────────────────────────────────────────────
 
 const GITHUB_LABEL_LIGHTNESS_THRESHOLD = 0.453;
 const GITHUB_LABEL_DARK_TEXT = "#24292f";
@@ -80,7 +80,7 @@ export function LabelChip({ name, color }: { name: string; color?: string | null
 	);
 }
 
-// ─── Label manager (vendored from hosted lib/hooks/pull-request/use-label-manager.ts) ──
+// ─── Label manager ──────────────────────────────────────────────────────────────
 
 interface UseLabelManagerOptions {
 	open: boolean;
@@ -93,8 +93,7 @@ function sortLabels(labels: GitHubLabel[]) {
 
 function useLabelManager({ open, search }: UseLabelManagerOptions) {
 	const { runId, owner, repo, number } = usePullRequestContext();
-	// Hosted gates label writes on membership (useCanMutatePullRequest). Labels
-	// are PR metadata with no diff coordinates, so unlike review comments they
+	// Labels are PR metadata with no diff coordinates, so unlike review comments they
 	// only need GitHub to be reachable — not a fresh diff anchor: a stale or
 	// working-tree run can still manage labels.
 	const { github } = useReview(runId);
@@ -117,8 +116,7 @@ function useLabelManager({ open, search }: UseLabelManagerOptions) {
 		setPendingAdditions(new Set());
 	}
 
-	// Hosted reads current labels off its PR payload; the CLI's PR wire shape has
-	// no labels, so they come from the labels route.
+	// The CLI's PR wire shape has no labels, so they come from the labels route.
 	const { data: currentLabels } = useQuery({
 		...pullRequestLabelsQueryOptions(runId, number),
 		staleTime: Number.POSITIVE_INFINITY,
@@ -257,7 +255,7 @@ function useLabelManager({ open, search }: UseLabelManagerOptions) {
 	};
 }
 
-// ─── Labels popover (vendored from hosted components/pull-request/labels.tsx) ───
+// ─── Labels popover ─────────────────────────────────────────────────────────────
 
 interface CurrentLabelRowProps {
 	label: GitHubLabel;

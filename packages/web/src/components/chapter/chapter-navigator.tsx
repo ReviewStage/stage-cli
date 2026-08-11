@@ -44,7 +44,7 @@ export function ChapterNavigator({
 }: ChapterNavigatorProps) {
 	const { runId, chapters: allChapters, chapterLineCountsMap } = useChapterContext();
 	const navigate = useNavigate();
-	// Like hosted, dropdown items navigate via onClick — rendering a Link here
+	// Dropdown items navigate via onClick — rendering a Link here
 	// would nest the Markdown title's anchors inside another anchor.
 	const navigateToChapter = (chapterNumber: number) => {
 		void navigate({

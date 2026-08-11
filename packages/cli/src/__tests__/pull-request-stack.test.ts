@@ -4,10 +4,8 @@ import {
 	type GitHubPullRequestListItem,
 } from "../github/pull-request-stack.js";
 
-// Ported from hosted Stage's `packages/github/src/__tests__/pull-request-stack.test.ts`.
-// The pr() helper builds the CLI's narrowed list item (the fields the stack
-// derivation consumes) instead of hosted's full Octokit-shaped item; every test
-// case is otherwise identical.
+// The pr() helper builds the CLI's narrowed list item (only the fields the
+// stack derivation consumes).
 
 function pr(
 	number: number,

@@ -17,8 +17,8 @@ export interface ResolvedHunk {
 
 /**
  * Indexes each file's hunks by old-side start line. The CLI keeps hunks on the
- * parsed Pierre diff — `PullRequestFile.hunks` is always empty (unlike the
- * hosted app's wire format) — so the index is built from `FileDiffEntry.diff`:
+ * parsed Pierre diff — `PullRequestFile.hunks` is always empty — so the index
+ * is built from `FileDiffEntry.diff`:
  * `deletionStart` is the hunk's old start, matching `HunkReference.oldStart`,
  * and `additionLines`/`deletionLines` are its changed-line counts.
  */
@@ -96,8 +96,7 @@ export interface ChapterHunkReferences {
  * would be subtracted despite never being shown.
  *
  * Chapters are keyed by `externalId` and file views by path, matching the
- * CLI's view-state (the hosted app keys chapters by id and resolves per-chapter
- * file viewed state through GitHub's sync instead).
+ * CLI's view-state.
  */
 export function collectViewedChapterHunkRefs(
 	chapters: readonly ChapterHunkReferences[],

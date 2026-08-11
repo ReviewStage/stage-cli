@@ -6,9 +6,8 @@ interface ReviewCommentContentProps {
 }
 
 // GitHub comments render GitHub's own server-rendered HTML (resolves
-// @mentions, #refs, emoji); local comments render their raw markdown. Hosted's
-// counterpart threads owner/repo into CommentBody for image rewriting; the
-// CLI's Markdown handles proxying internally, so no extra props are needed.
+// @mentions, #refs, emoji); local comments render their raw markdown. Markdown
+// handles image proxying internally, so no extra props are needed.
 export function ReviewCommentContent({ body, bodyHtml }: ReviewCommentContentProps) {
 	if (bodyHtml !== null) {
 		return <Markdown content={bodyHtml} allowHtml />;
