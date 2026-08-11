@@ -206,20 +206,37 @@ function toGitHubFileThreadDto(t: GitHubApiLoadedReviewThread): GitHubReviewThre
 	};
 }
 
+function toGitHubOutdatedThreadDto(
+	t: GitHubApiLoadedReviewThread,
+	originalLine: number,
+): GitHubReviewThreadDto {
+	return {
+		...toGitHubThreadDtoCommon(t),
+		subjectType: SUBJECT_TYPE.LINE,
+		startLine: null,
+		endLine: null,
+		originalLine,
+		originalStartLine: t.originalStartLine,
+	};
+}
+
 /**
- * The wire threads for the PR: line-anchored threads plus whole-file threads,
- * which have no line but still count toward file/chapter comment badges.
- * Outdated line threads (GitHub nulls their `line` once the code moves) stay
- * hidden — the review query doesn't fetch `originalLine`, so they can't be
- * placed or counted.
+ * The wire threads for the PR: line-anchored threads, plus the anchorless ones
+ * that still count toward file/chapter comment badges — whole-file threads and
+ * outdated line threads (GitHub nulls their `line` once the code moves), the
+ * latter counted via their frozen original coordinates like hosted's
+ * `original_line` fallback in `commentMatchesHunk`.
  */
 function toGitHubThreadDtos(review: GitHubReview): GitHubReviewThreadDto[] {
-	return [
-		...review.threads.map(toGitHubLineThreadDto),
-		...review.allThreads
-			.filter((t) => t.subjectType === SUBJECT_TYPE.FILE)
-			.map(toGitHubFileThreadDto),
-	];
+	const dtos = review.threads.map(toGitHubLineThreadDto);
+	for (const t of review.allThreads) {
+		if (t.subjectType === SUBJECT_TYPE.FILE) {
+			dtos.push(toGitHubFileThreadDto(t));
+		} else if (t.line === null && t.originalLine !== null) {
+			dtos.push(toGitHubOutdatedThreadDto(t, t.originalLine));
+		}
+	}
+	return dtos;
 }
 
 /**

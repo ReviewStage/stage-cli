@@ -132,17 +132,31 @@ export const GitHubFileReviewThreadSchema = GitHubReviewThreadBaseSchema.extend(
 });
 export type GitHubFileReviewThread = z.infer<typeof GitHubFileReviewThreadSchema>;
 
-export const GitHubReviewThreadSchema = z.discriminatedUnion("subjectType", [
+// A line thread whose anchor GitHub has outdated: once the code it pointed at
+// changed, GitHub nulls `line`, so the thread can't render inline. It still
+// counts toward file/chapter comment badges via the frozen original coordinates
+// (hosted's `original_line` fallback in `commentMatchesHunk`), which ride the
+// wire in place of the live anchor.
+export const GitHubOutdatedReviewThreadSchema = GitHubReviewThreadBaseSchema.extend({
+	subjectType: z.literal(SUBJECT_TYPE.LINE),
+	startLine: z.null(),
+	endLine: z.null(),
+	originalStartLine: z.number().int().positive().nullable(),
+	originalLine: z.number().int().positive(),
+});
+export type GitHubOutdatedReviewThread = z.infer<typeof GitHubOutdatedReviewThreadSchema>;
+
+// Plain unions: current and outdated line threads share `subjectType: LINE`, so
+// `subjectType` no longer discriminates — the null-vs-positive anchor fields do.
+export const GitHubReviewThreadSchema = z.union([
 	GitHubLineReviewThreadSchema,
 	GitHubFileReviewThreadSchema,
+	GitHubOutdatedReviewThreadSchema,
 ]);
 export type GitHubReviewThread = z.infer<typeof GitHubReviewThreadSchema>;
 
 /** A local or GitHub thread with source-specific identifier invariants. */
-export const ReviewThreadSchema = z.discriminatedUnion("source", [
-	LocalReviewThreadSchema,
-	GitHubReviewThreadSchema,
-]);
+export const ReviewThreadSchema = z.union([LocalReviewThreadSchema, GitHubReviewThreadSchema]);
 export type ReviewThread = z.infer<typeof ReviewThreadSchema>;
 
 /** The threads the line-based diff UI can anchor: everything but whole-file threads. */

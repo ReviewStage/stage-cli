@@ -163,6 +163,9 @@ export interface LoadedReviewThread {
 	startLine: number | null;
 	side: GitHubDiffSide;
 	startSide: GitHubDiffSide | null;
+	/** The anchor frozen at thread creation — all an outdated thread has left. */
+	originalLine: number | null;
+	originalStartLine: number | null;
 	comments: ReviewComment[];
 }
 
@@ -306,6 +309,8 @@ export async function getReview(
 				startLine: node.startLine,
 				side: node.diffSide,
 				startSide: node.startDiffSide,
+				originalLine: node.originalLine,
+				originalStartLine: node.originalStartLine,
 				comments: comments.map(toReviewComment),
 			};
 			allThreads.push(loadedThread);

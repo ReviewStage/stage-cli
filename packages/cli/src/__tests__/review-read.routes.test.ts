@@ -96,20 +96,36 @@ describe("review API — read", () => {
 		expect(githubThread).toMatchObject({ side: "additions", startSide: "deletions" });
 	});
 
-	it("surfaces whole-file threads without a line anchor and drops outdated line threads", async () => {
+	it("surfaces whole-file and outdated line threads without a live anchor", async () => {
 		await harness.writeGhShim(makeFileLevelThreadReview());
 		const runId = harness.insertRun();
 
 		const res = await harness.request(await harness.start(), "GET", `/api/runs/${runId}/review`);
 
 		const review = ReviewResponseSchema.parse(JSON.parse(res.body));
-		expect(review.threads.map((t) => t.id).sort()).toEqual(["THREAD_file", "THREAD_sub"]);
+		expect(review.threads.map((t) => t.id).sort()).toEqual([
+			"THREAD_file",
+			"THREAD_outdated",
+			"THREAD_sub",
+		]);
 		expect(review.threads.find((t) => t.id === "THREAD_file")).toMatchObject({
 			source: "github",
 			subjectType: "FILE",
 			filePath: "src/foo.ts",
 			startLine: null,
 			endLine: null,
+		});
+		// Outdated threads carry the frozen original anchor instead of a live
+		// line, so comment counts can place them like hosted's original_line
+		// fallback while inline rendering skips them.
+		expect(review.threads.find((t) => t.id === "THREAD_outdated")).toMatchObject({
+			source: "github",
+			subjectType: "LINE",
+			filePath: "src/foo.ts",
+			startLine: null,
+			endLine: null,
+			originalLine: 7,
+			originalStartLine: null,
 		});
 	});
 

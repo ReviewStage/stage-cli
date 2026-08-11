@@ -15,10 +15,12 @@ import { SUBJECT_TYPE, type SubjectType } from "@stagereview/types/review";
 export interface CommentThreadLike {
 	filePath: string;
 	side: DiffSide;
-	/** Null only for whole-file GitHub threads (`subjectType: FILE`). */
+	/** Null for whole-file GitHub threads and outdated line threads. */
 	endLine: number | null;
 	/** Absent on local threads, which are always line-anchored. */
 	subjectType?: SubjectType;
+	/** An outdated line thread's frozen original anchor (hosted's `original_line`). */
+	originalLine?: number | null;
 }
 
 export function buildFileCommentCountsMap(
@@ -84,12 +86,18 @@ export function buildHunkRangeIndex(files: readonly HunkRangeSource[]): HunkRang
  * Mirrors hosted's `commentMatchesHunk` for the CLI's thread model: a line
  * thread's anchor (`endLine`, GitHub's `line`) must fall inside the hunk's
  * range on the thread's side. Whole-file threads are matched by path before
- * this runs (hosted's FILE branch), and the CLI drops outdated (line-less)
- * threads before they reach the wire, so hosted's `original_line` fallback
- * for those has no counterpart here.
+ * this runs (hosted's FILE branch). Outdated threads (GitHub nulled their
+ * `line` once the code moved) fall back to the frozen original anchor against
+ * the hunk's old-file range — hosted's `original_line` fallback.
  */
 function threadMatchesHunk(thread: CommentThreadLike, hunk: HunkRange): boolean {
-	if (thread.endLine === null) return false;
+	if (thread.endLine === null) {
+		return (
+			thread.originalLine != null &&
+			thread.originalLine >= hunk.oldStart &&
+			thread.originalLine < hunk.oldStart + hunk.oldLines
+		);
+	}
 	if (thread.side === DIFF_SIDE.DELETIONS) {
 		return thread.endLine >= hunk.oldStart && thread.endLine < hunk.oldStart + hunk.oldLines;
 	}

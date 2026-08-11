@@ -21,6 +21,17 @@ function fileThread(filePath: string): CommentThreadLike {
 	return { filePath, side: DIFF_SIDE.ADDITIONS, endLine: null, subjectType: SUBJECT_TYPE.FILE };
 }
 
+/** An outdated line thread: GitHub nulled its live anchor, leaving the original one. */
+function outdatedThread(filePath: string, originalLine: number): CommentThreadLike {
+	return {
+		filePath,
+		side: DIFF_SIDE.ADDITIONS,
+		endLine: null,
+		subjectType: SUBJECT_TYPE.LINE,
+		originalLine,
+	};
+}
+
 interface HunkSpec {
 	oldStart: number;
 	oldLines: number;
@@ -178,6 +189,35 @@ describe("buildChapterCommentCountsMap", () => {
 		]);
 
 		expect(counts.get("ch-1")).toBe(1);
+	});
+
+	it("matches an outdated thread by its original line against the old-file range", () => {
+		// Hosted's original_line fallback in commentMatchesHunk: an outdated
+		// comment (line=null) matches when its frozen anchor falls in the
+		// hunk's old-file range, regardless of side.
+		const index = buildHunkRangeIndex([
+			makeFile("src/app.ts", [{ oldStart: 10, oldLines: 5, newStart: 20, newLines: 8 }]),
+		]);
+		const chapter = { id: "ch-1", hunkRefs: [{ filePath: "src/app.ts", oldStart: 10 }] };
+
+		const counts = buildChapterCommentCountsMap([chapter], index, [
+			outdatedThread("src/app.ts", 12),
+		]);
+
+		expect(counts.get("ch-1")).toBe(1);
+	});
+
+	it("does not count an outdated thread whose original line misses the old-file range", () => {
+		const index = buildHunkRangeIndex([
+			makeFile("src/app.ts", [{ oldStart: 10, oldLines: 5, newStart: 20, newLines: 8 }]),
+		]);
+		const chapter = { id: "ch-1", hunkRefs: [{ filePath: "src/app.ts", oldStart: 10 }] };
+
+		const counts = buildChapterCommentCountsMap([chapter], index, [
+			outdatedThread("src/app.ts", 22),
+		]);
+
+		expect(counts.get("ch-1")).toBe(0);
 	});
 
 	it("returns zero for a thread on a file no chapter references", () => {
