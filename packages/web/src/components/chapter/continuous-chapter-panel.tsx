@@ -1,15 +1,11 @@
 import type { Chapter } from "@stagereview/types/chapters";
-import { Circle, CircleCheck } from "lucide-react";
 import type { CSSProperties } from "react";
-import { ShortcutTooltip } from "@/components/shared/shortcut-tooltip";
-import { Button } from "@/components/ui/button";
 import { useChapterContext } from "@/lib/chapter-context";
 import type { PullRequestFile } from "@/lib/diff-types";
-import { SHORTCUT_KEY } from "@/lib/keyboard-shortcuts";
 import { PANEL_POSITION, type PanelPosition } from "@/lib/use-chapter-settings";
 import { cn } from "@/lib/utils";
-import { ChapterActionsMenu } from "./chapter-actions-menu";
 import { ChapterFileList } from "./chapter-file-list";
+import { ChapterNavigator } from "./chapter-navigator";
 import { ChapterSummary } from "./chapter-summary";
 import { ChapterTitleBlock } from "./chapter-title-block";
 
@@ -17,8 +13,6 @@ interface ContinuousChapterPanelProps {
 	chapter: Chapter;
 	files: PullRequestFile[];
 	chapterNumber: number;
-	totalChapters: number;
-	isActive: boolean;
 	position: PanelPosition;
 	focusedFilePath: string | undefined;
 	viewedChapterIds: ReadonlySet<string>;
@@ -31,10 +25,7 @@ interface ContinuousChapterPanelProps {
 	onFocusKeyChange: (keyChangeId: string | null) => void;
 	onSelectFile: (filePath: string) => void;
 	onCopyChapter: () => void;
-}
-
-function formatChapterOrdinal(value: number): string {
-	return String(value).padStart(2, "0");
+	onNavigateToChapter: (chapterNumber: number) => void;
 }
 
 /**
@@ -47,8 +38,6 @@ export function ContinuousChapterPanel({
 	chapter,
 	files,
 	chapterNumber,
-	totalChapters,
-	isActive,
 	position,
 	focusedFilePath,
 	viewedChapterIds,
@@ -61,51 +50,24 @@ export function ContinuousChapterPanel({
 	onFocusKeyChange,
 	onSelectFile,
 	onCopyChapter,
+	onNavigateToChapter,
 }: ContinuousChapterPanelProps) {
 	const { chapterLineCountsMap, chapterCommentCounts } = useChapterContext();
 
 	const counts = chapterLineCountsMap.get(chapter.id) ?? null;
 	const commentCount = chapterCommentCounts.get(chapter.id) ?? 0;
-	const isViewed = viewedChapterIds.has(chapter.externalId);
-
-	const viewedToggle = (
-		<Button
-			variant="ghost"
-			size="sm"
-			className={cn(
-				"h-7 shrink-0 cursor-pointer gap-1.5 px-2",
-				isViewed
-					? "text-green-600 hover:text-green-700 dark:text-green-500 dark:hover:text-green-400"
-					: "text-muted-foreground hover:text-foreground",
-			)}
-			onClick={() => onToggleChapterViewed(chapter)}
-			aria-label={isViewed ? "Unmark as viewed" : "Mark as viewed"}
-		>
-			{isViewed ? <CircleCheck className="size-4" /> : <Circle className="size-4" />}
-			Reviewed
-		</Button>
-	);
 
 	const header = (
 		<div className="shrink-0 border-border border-b">
-			<div className="flex items-center gap-1 py-3 pl-[var(--panel-pl,2rem)] pr-[var(--panel-pr,1rem)]">
-				<span className="font-medium text-muted-foreground text-xs tabular-nums">
-					{formatChapterOrdinal(chapterNumber)}/{formatChapterOrdinal(totalChapters)}
-				</span>
-				<div className="-mr-1.5 ml-auto flex items-center gap-1">
-					{isActive ? (
-						<ShortcutTooltip
-							shortcutKey={SHORTCUT_KEY.MARK_CHAPTER_AS_VIEWED}
-							label={isViewed ? "Unmark as viewed" : "Mark as viewed"}
-						>
-							{viewedToggle}
-						</ShortcutTooltip>
-					) : (
-						viewedToggle
-					)}
-					<ChapterActionsMenu onCopyChapter={onCopyChapter} />
-				</div>
-			</div>
+			<ChapterNavigator
+				chapter={chapter}
+				chapterIndex={chapterNumber - 1}
+				viewedChapterIds={viewedChapterIds}
+				chapterCommentCounts={chapterCommentCounts}
+				onToggleViewed={() => onToggleChapterViewed(chapter)}
+				onCopyChapter={onCopyChapter}
+				onNavigateToChapter={onNavigateToChapter}
+			/>
 			<ChapterTitleBlock chapter={chapter} counts={counts} commentCount={commentCount} />
 		</div>
 	);
@@ -150,7 +112,7 @@ export function ContinuousChapterPanel({
 		<div
 			data-chapter-panel
 			className={cn(
-				"sticky top-[var(--content-top)] flex max-h-[calc(var(--main-height)_-_var(--content-top))] w-[clamp(280px,30vw,50vw)] shrink-0 flex-col bg-card/30",
+				"sticky top-[var(--content-top)] flex max-h-[calc(var(--main-height)_-_var(--content-top))] w-[clamp(280px,30vw,50vw)] shrink-0 flex-col",
 				isRight ? "border-border border-l" : "border-border border-r",
 			)}
 			style={

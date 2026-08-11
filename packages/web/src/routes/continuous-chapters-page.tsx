@@ -118,6 +118,8 @@ interface SectionSharedProps {
 	onToggleKeyChangeChecked: (keyChangeId: string) => void;
 	onToggleFileViewed: (model: ChapterDiffModel, filePath: string) => void;
 	onActivate: (chapterNumber: number) => void;
+	/** Scrolls the stream to a chapter (the panel navigator's in-page navigation). */
+	onNavigateToChapter: (chapterNumber: number) => void;
 }
 
 interface ContinuousChaptersContentProps {
@@ -470,6 +472,7 @@ function ContinuousChaptersContent({
 			onToggleKeyChangeChecked: handleToggleKeyChangeChecked,
 			onToggleFileViewed: handleToggleFileViewed,
 			onActivate: setActiveChapterNumber,
+			onNavigateToChapter: navigateToChapter,
 		};
 	}, [
 		runId,
@@ -486,6 +489,7 @@ function ContinuousChaptersContent({
 		handleToggleChapterViewed,
 		handleToggleKeyChangeChecked,
 		handleToggleFileViewed,
+		navigateToChapter,
 	]);
 
 	const isTop = panelPosition === PANEL_POSITION.TOP;
@@ -528,6 +532,7 @@ function ContinuousChaptersContent({
 interface ContinuousChapterSectionProps {
 	model: ChapterDiffModel;
 	chapterNumber: number;
+	/** Gates the collapse-actions registration to the chapter on screen. */
 	isActive: boolean;
 	shared: SectionSharedProps;
 }
@@ -697,8 +702,6 @@ const ContinuousChapterSection = memo(function ContinuousChapterSection({
 			chapter={chapter}
 			files={files}
 			chapterNumber={chapterNumber}
-			totalChapters={shared.totalChapters}
-			isActive={isActive}
 			position={shared.position}
 			focusedFilePath={focusedFilePath}
 			viewedChapterIds={view.chapterIdSet}
@@ -711,6 +714,7 @@ const ContinuousChapterSection = memo(function ContinuousChapterSection({
 			onFocusKeyChange={shared.onFocusKeyChange}
 			onSelectFile={handleSelectFile}
 			onCopyChapter={handleCopyChapter}
+			onNavigateToChapter={shared.onNavigateToChapter}
 		/>
 	);
 

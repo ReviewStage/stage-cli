@@ -32,7 +32,16 @@ interface ChapterNavigatorProps {
 	chapterCommentCounts: ReadonlyMap<string, number>;
 	onToggleViewed: (externalId: string) => void;
 	onCopyChapter: () => void;
+	/**
+	 * Overrides router navigation. The continuous reader navigates by scrolling
+	 * its stream in place — a `/chapters/N` link there would remount the whole
+	 * reader through the normalizing redirect.
+	 */
+	onNavigateToChapter?: (chapterNumber: number) => void;
 }
+
+const CHAPTER_STEP_CLASS =
+	"inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
 
 export function ChapterNavigator({
 	chapter,
@@ -41,12 +50,17 @@ export function ChapterNavigator({
 	chapterCommentCounts,
 	onToggleViewed,
 	onCopyChapter,
+	onNavigateToChapter,
 }: ChapterNavigatorProps) {
 	const { runId, chapters: allChapters, chapterLineCountsMap } = useChapterContext();
 	const navigate = useNavigate();
 	// Dropdown items navigate via onClick — rendering a Link here
 	// would nest the Markdown title's anchors inside another anchor.
 	const navigateToChapter = (chapterNumber: number) => {
+		if (onNavigateToChapter) {
+			onNavigateToChapter(chapterNumber);
+			return;
+		}
 		void navigate({
 			to: "/runs/$runId/chapters/$chapterNumber",
 			params: { runId, chapterNumber: String(chapterNumber) },
@@ -83,14 +97,25 @@ export function ChapterNavigator({
 
 				{prevChapter ? (
 					<ShortcutTooltip shortcutKey={SHORTCUT_KEY.PREV_CHAPTER} label="Previous chapter">
-						<Link
-							to="/runs/$runId/chapters/$chapterNumber"
-							params={{ runId, chapterNumber: String(prevChapter.order + 1) }}
-							resetScroll={false}
-							className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-						>
-							<ChevronLeft className="size-4" />
-						</Link>
+						{onNavigateToChapter ? (
+							<button
+								type="button"
+								onClick={() => onNavigateToChapter(prevChapter.order + 1)}
+								className={CHAPTER_STEP_CLASS}
+								aria-label="Previous chapter"
+							>
+								<ChevronLeft className="size-4" />
+							</button>
+						) : (
+							<Link
+								to="/runs/$runId/chapters/$chapterNumber"
+								params={{ runId, chapterNumber: String(prevChapter.order + 1) }}
+								resetScroll={false}
+								className={CHAPTER_STEP_CLASS}
+							>
+								<ChevronLeft className="size-4" />
+							</Link>
+						)}
 					</ShortcutTooltip>
 				) : (
 					<span className="invisible inline-flex size-7" aria-hidden="true" />
@@ -174,14 +199,25 @@ export function ChapterNavigator({
 
 				{nextChapter ? (
 					<ShortcutTooltip shortcutKey={SHORTCUT_KEY.NEXT_CHAPTER} label="Next chapter">
-						<Link
-							to="/runs/$runId/chapters/$chapterNumber"
-							params={{ runId, chapterNumber: String(nextChapter.order + 1) }}
-							resetScroll={false}
-							className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-						>
-							<ChevronRight className="size-4" />
-						</Link>
+						{onNavigateToChapter ? (
+							<button
+								type="button"
+								onClick={() => onNavigateToChapter(nextChapter.order + 1)}
+								className={CHAPTER_STEP_CLASS}
+								aria-label="Next chapter"
+							>
+								<ChevronRight className="size-4" />
+							</button>
+						) : (
+							<Link
+								to="/runs/$runId/chapters/$chapterNumber"
+								params={{ runId, chapterNumber: String(nextChapter.order + 1) }}
+								resetScroll={false}
+								className={CHAPTER_STEP_CLASS}
+							>
+								<ChevronRight className="size-4" />
+							</Link>
+						)}
 					</ShortcutTooltip>
 				) : (
 					<span className="invisible inline-flex size-7" aria-hidden="true" />
