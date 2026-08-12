@@ -37,6 +37,15 @@ Then add the skill to your agent:
 npx skills add ReviewStage/stage-cli
 ```
 
+### Requirements
+
+- Node.js 20 or newer
+- A Git repository to review
+- An AI agent that supports skills
+- GitHub CLI (`gh`) installed and authenticated when reviewing GitHub pull requests
+
+Stage runs locally and opens its review UI in your browser. It does not upload your source code.
+
 ## Uninstall
 
 ```bash
@@ -54,6 +63,11 @@ In your AI agent, run:
 
 This organizes your local changes into reviewable chapters and opens a browser UI. Everything happens on your machine.
 
+Stage groups related changes into chapters, adds a prologue and risk context, and provides a
+file-by-file review surface with inline comments. The UI also supports full-file previews,
+image diffs, syntax themes, typography settings, continuous chapter review, and keyboard
+navigation.
+
 ### Options
 
 | Flag | Description |
@@ -62,6 +76,7 @@ This organizes your local changes into reviewable chapters and opens a browser U
 | `--compare <ref>` | Compare ref to diff against `--base` |
 | `--ref <mode>` | Diff scope: `work` (staged + unstaged + untracked), `staged`, or `unstaged` (default: auto-detect) |
 | `--pr <number-or-url>` | Review a GitHub pull request by number or URL (requires `gh`) |
+| `--instructions <text>` | One-off instructions for chapter generation (up to 1000 characters; `prep` command) |
 
 Examples:
 
@@ -81,6 +96,28 @@ Examples:
 /stage-chapters --pr 123
 /stage-chapters --pr https://github.com/owner/repo/pull/123
 ```
+
+### Review a GitHub pull request
+
+With `gh` authenticated and a GitHub `origin` remote configured, use `--pr` to review a pull
+request without checking out its branch. Stage loads the PR's changes and exposes its review
+timeline, comments, labels, viewed-file state, merge status, and stacked-PR navigation when
+available. GitHub actions such as submitting comments, marking files viewed, and merging remain
+subject to your GitHub permissions.
+
+### Additional instructions
+
+Use `.stageinstructions` in the repository root for persistent review guidance, such as project
+conventions or areas that deserve extra attention. For a one-off request, pass
+`--instructions` to `stagereview prep`:
+
+```bash
+echo "Pay special attention to backward compatibility." > .stageinstructions
+stagereview prep --instructions "Focus on changes to the public API."
+```
+
+Both sources are included in the chapter-generation prompt; the one-off instructions apply only
+to that run.
 
 ### `.stageignore`
 
