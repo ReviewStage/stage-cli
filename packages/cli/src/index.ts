@@ -5,7 +5,7 @@ import { z } from "zod";
 import { runPrep } from "./prep.js";
 import { WORKING_TREE_REF } from "./schema.js";
 import type { DiffScopeOptions } from "./scope.js";
-import { show } from "./show.js";
+import { show, validate } from "./show.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -28,6 +28,7 @@ interface DiffCommandOptions {
 	ref?: string;
 	pr?: string;
 	instructions?: string;
+	validate?: boolean;
 }
 
 /**
@@ -79,9 +80,14 @@ program
 	.option("--base <ref>", "Base ref to diff against (default: auto-detect main/master)")
 	.option("--compare <ref>", "Compare ref to diff against --base")
 	.option("--pr <ref>", "Review a GitHub pull request by number or URL")
+	.option("--validate", "Validate chapters without starting the server or opening the browser")
 	.addOption(refOption)
 	.action(async (jsonPath: string, refs: string[], opts: DiffCommandOptions) => {
-		await show(jsonPath, toDiffScopeOptions(refs, opts));
+		if (opts.validate) {
+			await validate(jsonPath, toDiffScopeOptions(refs, opts));
+		} else {
+			await show(jsonPath, toDiffScopeOptions(refs, opts));
+		}
 	});
 
 program.parseAsync(process.argv).catch((err) => {

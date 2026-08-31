@@ -79,6 +79,10 @@ export async function show(jsonPath: string, options: DiffScopeOptions): Promise
 	closeDb();
 }
 
+export async function validate(jsonPath: string, options: DiffScopeOptions): Promise<void> {
+	await buildChaptersFile(jsonPath, options);
+}
+
 interface BuiltChaptersFile {
 	chaptersFile: ChaptersFile;
 	/** The reviewed PR's number when `--pr` was used, else null. */
