@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { CreateCommentThreadBody } from "@stagereview/types/comments";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { formatThreadLine } from "../comments/command.js";
+import { commentsCommand, formatThreadLine } from "../comments/command.js";
 import { CommentsCli } from "../comments/comments-cli.js";
 import { closeDb, getDb, type StageDb } from "../db/client.js";
 import { commentThread } from "../db/schema/index.js";
@@ -182,5 +182,17 @@ describe("comments CLI — human-readable listing", () => {
 
 		expect(preview).toHaveLength(72);
 		expect(preview?.endsWith("…")).toBe(true);
+	});
+});
+
+describe("comments CLI — argument validation", () => {
+	it.each([
+		["create", "--file", "src/foo.ts", "--line", "3", "--body", "   "],
+		["reply", "abcdef-thread", "--body", "\n\t"],
+		["resolve", "abcdef-thread", "--body", " "],
+	])("rejects a whitespace-only --body for %s before touching git or the database", async (...argv) => {
+		await expect(commentsCommand().parseAsync(argv, { from: "user" })).rejects.toThrow(
+			"--body must not be empty.",
+		);
 	});
 });

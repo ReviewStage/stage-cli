@@ -31,13 +31,18 @@ interface CreateCommandOptions extends DiffCommandOptions {
 
 const positiveInt = z.coerce.number().int().positive();
 
+/** Text for `--body`; whitespace-only input is as empty as no input. */
+const commentBody = z
+	.string()
+	.refine((value) => value.trim().length > 0, "--body must not be empty.");
+
 /** Commander hands us strings; coerce and validate them at the CLI boundary. */
 const CreateCommandOptionsSchema = z.object({
 	file: z.string().min(1),
 	line: positiveInt,
 	endLine: positiveInt.optional(),
 	side: z.enum(DIFF_SIDE),
-	body: z.string().min(1),
+	body: commentBody,
 });
 
 const SHORT_ID_LENGTH = 8;
@@ -174,8 +179,9 @@ function parseCreateInput(opts: CreateCommandOptions) {
 }
 
 function requireBody(body: string): string {
-	if (body.trim().length === 0) throw new Error("--body must not be empty.");
-	return body;
+	const parsed = commentBody.safeParse(body);
+	if (!parsed.success) throw new Error(z.prettifyError(parsed.error));
+	return parsed.data;
 }
 
 function printJson(value: unknown): void {
