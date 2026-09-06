@@ -537,3 +537,13 @@ stagereview show "$AGENT_OUTPUT"
 `stagereview show` auto-detects the agent output format, independently computes the scope and "Other changes" chapter for filtered files, validates the JSON, inserts the run into the local SQLite database, boots a loopback HTTP server, and opens the browser.
 
 **The command blocks until the user presses Ctrl+C.** If your harness requires non-blocking execution, run it in the background (e.g., `run_in_background` in Claude Code). Invoke it as the final command in the workflow.
+
+## After the review — acting on comments
+
+The user can leave line-anchored comments on the diff in the Stage UI. Those comments are stored locally and are readable from the command line without the server running:
+
+```bash
+stagereview comments list --status open --json   # pass the same refs/--pr/--base/--ref you used above
+```
+
+To work through them — make the requested changes, answer questions, and resolve each thread — run the `/stage-resolve` skill (or follow its steps). Replies and resolutions made through `stagereview comments` appear in the browser automatically and are badged as agent-authored.
