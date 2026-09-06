@@ -4,8 +4,8 @@ import path from "node:path";
 import { getDb, type StageDb } from "../db/client.js";
 import { chapter, chapterRun, keyChange } from "../db/schema/index.js";
 import { type RepoContext, readRepoContext } from "../git.js";
-import { type ChaptersFile, ChaptersFileSchema, SCOPE_KIND } from "../schema.js";
-import { deriveScopeKey } from "./scope-key.js";
+import { type ChaptersFile, ChaptersFileSchema } from "../schema.js";
+import { deriveScopeKey, scopeKeyParts } from "./scope-key.js";
 
 export interface ImportChaptersResult {
 	runId: string;
@@ -38,11 +38,7 @@ export function insertChaptersFile(
 			originUrl: repo.originUrl,
 			prNumber,
 			headRef: repo.headRef,
-			scopeKind: file.scope.kind,
-			workingTreeRef: file.scope.kind === SCOPE_KIND.WORKING_TREE ? file.scope.ref : null,
-			baseSha: file.scope.baseSha,
-			headSha: file.scope.headSha,
-			mergeBaseSha: file.scope.mergeBaseSha,
+			...scopeKeyParts(file.scope),
 			generatedAt: new Date(file.generatedAt),
 			prologue: file.prologue ?? null,
 		};
