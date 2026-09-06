@@ -1,4 +1,5 @@
 import type {
+	CommentAuthorType,
 	Comment as CommentDto,
 	CommentThread as CommentThreadDto,
 	CreateCommentThreadBody,
@@ -108,7 +109,11 @@ export class LocalCommentThreadStore {
 	}
 
 	/** Create a thread and its root comment atomically. */
-	create(scopeKey: string, input: CreateCommentThreadBody): LocalThreadRecord {
+	create(
+		scopeKey: string,
+		input: CreateCommentThreadBody,
+		authorType: CommentAuthorType,
+	): LocalThreadRecord {
 		return this.db.transaction((tx) => {
 			const [threadRow] = tx
 				.insert(commentThread)
@@ -124,7 +129,7 @@ export class LocalCommentThreadStore {
 			if (!threadRow) throw new Error("comment_thread insert returned no row");
 			const [commentRow] = tx
 				.insert(comment)
-				.values({ threadId: threadRow.id, authorId: LOCAL_USER_ID, body: input.body })
+				.values({ threadId: threadRow.id, authorId: LOCAL_USER_ID, authorType, body: input.body })
 				.returning()
 				.all();
 			if (!commentRow) throw new Error("comment insert returned no row");
@@ -133,11 +138,11 @@ export class LocalCommentThreadStore {
 	}
 
 	/** Append a reply to an existing thread and bump the thread's activity timestamp. */
-	reply(threadId: string, body: string): CommentRow {
+	reply(threadId: string, body: string, authorType: CommentAuthorType): CommentRow {
 		return this.db.transaction((tx) => {
 			const [commentRow] = tx
 				.insert(comment)
-				.values({ threadId, authorId: LOCAL_USER_ID, body })
+				.values({ threadId, authorId: LOCAL_USER_ID, authorType, body })
 				.returning()
 				.all();
 			if (!commentRow) throw new Error("comment insert returned no row");
@@ -180,6 +185,7 @@ export function toCommentDto(row: CommentRow): CommentDto {
 		id: row.id,
 		body: row.body,
 		authorId: row.authorId,
+		authorType: row.authorType,
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};

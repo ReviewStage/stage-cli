@@ -144,6 +144,7 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 					(c): LocalReviewCommentDto => ({
 						id: c.id,
 						state: COMMENT_STATE.LOCAL,
+						authorType: c.authorType,
 						body: c.body,
 						bodyHtml: null,
 						author: null,

@@ -1,6 +1,14 @@
 import { z } from "zod";
 import { DIFF_SIDE } from "./chapters.ts";
 
+// Who wrote a local comment: the human reviewing in the browser (`user`) or a
+// coding agent acting through the `stagereview comments` CLI (`agent`).
+export const COMMENT_AUTHOR_TYPE = {
+	USER: "user",
+	AGENT: "agent",
+} as const;
+export type CommentAuthorType = (typeof COMMENT_AUTHOR_TYPE)[keyof typeof COMMENT_AUTHOR_TYPE];
+
 // A single authored comment. Replies are sibling comments sharing a thread, so a
 // comment carries no positional data of its own — the thread owns the anchor.
 // These are CLI-local comments; GitHub review comments use the `review` wire model.
@@ -8,6 +16,7 @@ export const CommentSchema = z.object({
 	id: z.string(),
 	body: z.string(),
 	authorId: z.string(),
+	authorType: z.enum(COMMENT_AUTHOR_TYPE),
 	createdAt: z.string(),
 	updatedAt: z.string(),
 });

@@ -1,4 +1,5 @@
 import {
+	COMMENT_AUTHOR_TYPE,
 	CommentBodySchema,
 	CreateCommentThreadBodySchema,
 	ResolveThreadBodySchema,
@@ -50,7 +51,7 @@ export function commentRoutes(db: StageDb): Route[] {
 				}
 				const body = await parseJsonBody(req, res, CreateCommentThreadBodySchema);
 				if (!body) return;
-				writeJson(res, 201, toThreadDto(store.create(scopeKey, body)));
+				writeJson(res, 201, toThreadDto(store.create(scopeKey, body, COMMENT_AUTHOR_TYPE.USER)));
 			},
 		},
 		{
@@ -75,7 +76,11 @@ export function commentRoutes(db: StageDb): Route[] {
 						writeJson(res, 404, { error: `Thread ${threadId} not found` });
 						return;
 					}
-					writeJson(res, 201, toCommentDto(store.reply(threadId, body.body)));
+					writeJson(
+						res,
+						201,
+						toCommentDto(store.reply(threadId, body.body, COMMENT_AUTHOR_TYPE.USER)),
+					);
 				});
 			},
 		},

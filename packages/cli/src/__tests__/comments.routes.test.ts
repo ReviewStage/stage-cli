@@ -57,7 +57,11 @@ describe("comment threads API — reads and updates", () => {
 			resolvedAt: null,
 		});
 		expect(thread.comments).toHaveLength(1);
-		expect(thread.comments[0]).toMatchObject({ body: "First!", authorId: "local" });
+		expect(thread.comments[0]).toMatchObject({
+			body: "First!",
+			authorId: "local",
+			authorType: "user",
+		});
 		expect(harness.db.select().from(commentThread).all()).toHaveLength(1);
 		expect(harness.db.select().from(comment).all()).toHaveLength(1);
 	});
@@ -70,9 +74,10 @@ describe("comment threads API — reads and updates", () => {
 		);
 
 		const thread = await harness.createThread(port, runId);
-		await harness.request(port, "POST", `/api/comment-threads/${thread.id}/replies`, {
+		const reply = await harness.request(port, "POST", `/api/comment-threads/${thread.id}/replies`, {
 			body: "A reply",
 		});
+		expect(reply.body).toMatchObject({ authorType: "user" });
 
 		const response = await harness.request(port, "GET", `/api/runs/${runId}/comment-threads`);
 		const threads = response.body as CommentThread[];

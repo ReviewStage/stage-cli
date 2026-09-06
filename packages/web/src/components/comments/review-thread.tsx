@@ -1,3 +1,4 @@
+import { COMMENT_AUTHOR_TYPE } from "@stagereview/types/comments";
 import {
 	COMMENT_STATE,
 	type ReviewComment,
@@ -5,6 +6,7 @@ import {
 	THREAD_SOURCE,
 } from "@stagereview/types/review";
 import {
+	Bot,
 	ChevronRight,
 	Circle,
 	CircleCheck,
@@ -62,8 +64,11 @@ export function activeEditingCommentId(
 	return comment && canEditReviewComment(comment, canWriteToGitHub) ? editingId : null;
 }
 
-function StateBadge({ state }: { state: ReviewComment["state"] }) {
-	if (state === COMMENT_STATE.PENDING) {
+// Local comments carry a Local badge; ones a coding agent wrote through the
+// `stagereview comments` CLI also carry an Agent badge so the human can tell
+// their own notes from the agent's replies at a glance.
+function StateBadge({ comment }: { comment: ReviewComment }) {
+	if (comment.state === COMMENT_STATE.PENDING) {
 		return (
 			<Badge
 				variant="outline"
@@ -73,11 +78,19 @@ function StateBadge({ state }: { state: ReviewComment["state"] }) {
 			</Badge>
 		);
 	}
-	if (state === COMMENT_STATE.LOCAL) {
+	if (comment.state === COMMENT_STATE.LOCAL) {
 		return (
-			<Badge variant="secondary" className="shrink-0 text-[10px] leading-none">
-				Local
-			</Badge>
+			<>
+				<Badge variant="secondary" className="shrink-0 text-[10px] leading-none">
+					Local
+				</Badge>
+				{comment.authorType === COMMENT_AUTHOR_TYPE.AGENT && (
+					<Badge variant="outline" className="shrink-0 gap-1 text-[10px] leading-none">
+						<Bot className="size-3" aria-hidden="true" />
+						Agent
+					</Badge>
+				)}
+			</>
 		);
 	}
 	return null;
@@ -269,7 +282,7 @@ export function ReviewThreadView({ model }: { model: ReviewThreadViewModel }) {
 						<TooltipContent>{isOpen ? "Collapse thread" : "Expand thread"}</TooltipContent>
 					</Tooltip>
 					<Byline comment={root} />
-					<StateBadge state={root.state} />
+					<StateBadge comment={root} />
 					<div className="flex shrink-0 items-center gap-0.5">
 						<ResolveButton
 							isResolved={thread.isResolved}
@@ -543,7 +556,7 @@ function ReplyItem({
 		<div className="space-y-1.5">
 			<div className="flex items-center gap-2">
 				<Byline comment={reply} />
-				<StateBadge state={reply.state} />
+				<StateBadge comment={reply} />
 				{idle && canEditReviewComment(reply, canWriteToGitHub) && (
 					<CommentActions onEdit={onEdit} onDelete={onDelete} />
 				)}

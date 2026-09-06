@@ -19,6 +19,7 @@ const LOCAL_THREAD: ReviewThread = {
 		{
 			id: "COMMENT_local",
 			state: "local",
+			authorType: "user",
 			body: "Promote me",
 			bodyHtml: null,
 			author: null,
