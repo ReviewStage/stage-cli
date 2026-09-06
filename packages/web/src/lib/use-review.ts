@@ -20,6 +20,13 @@ export { GITHUB_REVIEW_STATUS };
 
 const REVIEW_ROOT = "review";
 
+// Coding agents resolve and reply to local threads through the `stagereview
+// comments` CLI, which writes straight to SQLite, so the browser polls to pick
+// those changes up. Local-only runs are a cheap DB read; GitHub-backed runs hit
+// the GitHub API on every fetch, so they poll less often.
+const LOCAL_REVIEW_REFETCH_MS = 3_000;
+const GITHUB_REVIEW_REFETCH_MS = 15_000;
+
 interface ReviewMutationOrigin {
 	runId: string;
 	queryKey: readonly unknown[];
@@ -83,6 +90,10 @@ export function useReview(runId: string): UseReviewResult {
 		queryKey,
 		queryFn: () => fetchReview(runId),
 		enabled: runId !== "",
+		refetchInterval: (query) =>
+			query.state.data?.github === GITHUB_REVIEW_STATUS.NONE
+				? LOCAL_REVIEW_REFETCH_MS
+				: GITHUB_REVIEW_REFETCH_MS,
 	});
 
 	const threads = useMemo(() => data?.threads ?? [], [data]);

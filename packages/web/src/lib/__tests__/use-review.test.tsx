@@ -58,6 +58,7 @@ const LOCAL_REVIEW_THREAD: ReviewThread = {
 		{
 			id: "COMMENT_local",
 			state: "local",
+			authorType: "user",
 			body: "Local comment",
 			bodyHtml: null,
 			author: null,
@@ -87,6 +88,7 @@ const LOCAL_THREAD: CommentThread = {
 			id: "COMMENT_local",
 			body: "Local comment",
 			authorId: "local",
+			authorType: "user",
 			createdAt: "2026-01-02T00:00:00Z",
 			updatedAt: "2026-01-02T00:00:00Z",
 		},

@@ -48,7 +48,7 @@ import {
 	updateReviewComment,
 } from "../github/review.js";
 import { DIFF_SIDE, type DiffSide, SCOPE_KIND } from "../schema.js";
-import { loadLocalThreadRecords } from "./local-comment-threads.js";
+import { LocalCommentThreadStore } from "./local-comment-threads.js";
 import { REVIEW_ACTION_SCOPE, reviewActions } from "./review-action-queue.js";
 import { deriveScopeKey } from "./scope-key.js";
 
@@ -128,8 +128,9 @@ function requirePendingComment(review: GitHubReview, nodeId: string): GitHubApiR
 // ─── Read: merged local + GitHub review ─────────────────────────────────────────
 
 function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
-	return loadLocalThreadRecords(db, deriveScopeKey(run)).map(
-		({ thread, comments }): LocalReviewThreadDto => {
+	return new LocalCommentThreadStore(db)
+		.listByScope(deriveScopeKey(run))
+		.map(({ thread, comments }): LocalReviewThreadDto => {
 			return {
 				id: thread.id,
 				source: THREAD_SOURCE.LOCAL,
@@ -143,6 +144,7 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 					(c): LocalReviewCommentDto => ({
 						id: c.id,
 						state: COMMENT_STATE.LOCAL,
+						authorType: c.authorType,
 						body: c.body,
 						bodyHtml: null,
 						author: null,
@@ -152,8 +154,7 @@ function loadLocalThreads(db: StageDb, run: ChapterRunRow): ReviewThreadDto[] {
 					}),
 				),
 			};
-		},
-	);
+		});
 }
 
 function toGitHubCommentDto(c: GitHubApiReviewComment): GitHubReviewCommentDto {

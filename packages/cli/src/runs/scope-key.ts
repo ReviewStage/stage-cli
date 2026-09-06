@@ -1,4 +1,4 @@
-import { SCOPE_KIND, type ScopeKind, type WorkingTreeRef } from "../schema.js";
+import { SCOPE_KIND, type Scope, type ScopeKind, type WorkingTreeRef } from "../schema.js";
 
 export interface ScopeKeyParts {
 	scopeKind: ScopeKind;
@@ -21,4 +21,15 @@ export function deriveScopeKey(parts: ScopeKeyParts): string {
 		return `committed:${baseSha}:${headSha}:${mergeBaseSha}`;
 	}
 	return `workingTree:${workingTreeRef}:${baseSha}:${headSha}:${mergeBaseSha}`;
+}
+
+/** Flatten a chapters-file scope into the column shape `chapter_run` stores. */
+export function scopeKeyParts(scope: Scope): ScopeKeyParts {
+	return {
+		scopeKind: scope.kind,
+		workingTreeRef: scope.kind === SCOPE_KIND.WORKING_TREE ? scope.ref : null,
+		baseSha: scope.baseSha,
+		headSha: scope.headSha,
+		mergeBaseSha: scope.mergeBaseSha,
+	};
 }
