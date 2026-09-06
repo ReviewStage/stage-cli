@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createRequire } from "node:module";
 import { Command } from "commander";
+import { commentsCommand } from "./comments/command.js";
 import {
 	addDiffScopeOptions,
 	type DiffCommandOptions,
@@ -48,6 +49,8 @@ addDiffScopeOptions(
 ).action(async (jsonPath: string, refs: string[], opts: DiffCommandOptions) => {
 	await show(jsonPath, toDiffScopeOptions(refs, opts));
 });
+
+program.addCommand(commentsCommand());
 
 program.parseAsync(process.argv).catch((err) => {
 	process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
