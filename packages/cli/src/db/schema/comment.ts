@@ -1,3 +1,4 @@
+import { COMMENT_AUTHOR_TYPE } from "@stagereview/types/comments";
 import { sql } from "drizzle-orm";
 import { index, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { LOCAL_USER_ID } from "../local-user.js";
@@ -14,6 +15,11 @@ export const comment = sqliteTable(
 			.notNull()
 			.references(() => commentThread.id, { onDelete: "cascade" }),
 		authorId: text().notNull().default(LOCAL_USER_ID),
+		// Distinguishes the human reviewing in the browser from a coding agent
+		// writing through the `stagereview comments` CLI.
+		authorType: text({ enum: [COMMENT_AUTHOR_TYPE.USER, COMMENT_AUTHOR_TYPE.AGENT] })
+			.notNull()
+			.default(COMMENT_AUTHOR_TYPE.USER),
 		body: text().notNull(),
 	},
 	(table) => [index("comment_thread_id_idx").on(table.threadId)],

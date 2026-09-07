@@ -97,6 +97,30 @@ Examples:
 /stage-chapters --pr https://github.com/owner/repo/pull/123
 ```
 
+### Let your agent act on your comments
+
+Leave comments on the diff in the Stage UI, then hand them to your coding agent:
+
+```
+/stage-resolve
+```
+
+The agent reads every open thread, makes the requested change (or answers the question), and
+resolves the thread with a short summary. Its replies show up in the browser automatically with an
+"Agent" badge. Pass the same refs or `--pr` you used for `/stage-chapters` so the agent looks at the
+same diff.
+
+Under the hood this uses `stagereview comments`, which works without the review server running:
+
+```bash
+stagereview comments list --status open --json      # threads for the current diff scope
+stagereview comments show <threadId>                # one thread in full (ID or 6+ char prefix)
+stagereview comments reply <threadId> --body "..."  # add a reply
+stagereview comments resolve <threadId> --body "Fixed: ..."
+stagereview comments reopen <threadId>
+stagereview comments create --file src/foo.ts --line 12 --end-line 14 --body "..."
+```
+
 ### Review a GitHub pull request
 
 With `gh` authenticated and a GitHub `origin` remote configured, use `--pr` to review a pull
