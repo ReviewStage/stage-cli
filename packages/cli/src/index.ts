@@ -28,7 +28,6 @@ interface DiffCommandOptions {
 	ref?: string;
 	pr?: string;
 	instructions?: string;
-	validate?: boolean;
 }
 
 /**
@@ -82,7 +81,7 @@ program
 	.option("--pr <ref>", "Review a GitHub pull request by number or URL")
 	.option("--validate", "Validate chapters without starting the server or opening the browser")
 	.addOption(refOption)
-	.action(async (jsonPath: string, refs: string[], opts: DiffCommandOptions) => {
+	.action(async (jsonPath: string, refs: string[], opts: DiffCommandOptions & { validate?: boolean }) => {
 		if (opts.validate) {
 			await validate(jsonPath, toDiffScopeOptions(refs, opts));
 		} else {
