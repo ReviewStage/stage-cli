@@ -8,7 +8,7 @@ import {
 	toDiffScopeOptions,
 } from "./diff-scope-options.js";
 import { runPrep } from "./prep.js";
-import { show } from "./show.js";
+import { show, validate } from "./show.js";
 
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json") as { version: string };
@@ -45,10 +45,17 @@ addDiffScopeOptions(
 	program
 		.command("show")
 		.description("Load a chapters.json file and open it in a local browser")
-		.argument("<path>", "Path to a chapters.json file"),
-).action(async (jsonPath: string, refs: string[], opts: DiffCommandOptions) => {
-	await show(jsonPath, toDiffScopeOptions(refs, opts));
-});
+		.argument("<path>", "Path to a chapters.json file")
+		.option("--validate", "Validate chapters without starting the server or opening the browser"),
+).action(
+	async (jsonPath: string, refs: string[], opts: DiffCommandOptions & { validate?: boolean }) => {
+		if (opts.validate) {
+			await validate(jsonPath, toDiffScopeOptions(refs, opts));
+		} else {
+			await show(jsonPath, toDiffScopeOptions(refs, opts));
+		}
+	},
+);
 
 program.addCommand(commentsCommand());
 

@@ -76,6 +76,7 @@ navigation.
 | `--compare <ref>` | Compare ref to diff against `--base` |
 | `--ref <mode>` | Diff scope: `work` (staged + unstaged + untracked), `staged`, or `unstaged` (default: auto-detect) |
 | `--pr <number-or-url>` | Review a GitHub pull request by number or URL (requires `gh`) |
+| `--validate` | Validate chapters without starting the server or opening the browser |
 | `--instructions <text>` | One-off instructions for chapter generation (up to 1000 characters; `prep` command) |
 
 Examples:
