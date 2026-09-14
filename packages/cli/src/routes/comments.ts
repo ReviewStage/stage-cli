@@ -1,22 +1,17 @@
 import {
+	COMMENT_AUTHOR_TYPE,
 	CommentBodySchema,
-	type Comment as CommentDto,
-	type CommentThread as CommentThreadDto,
 	CreateCommentThreadBodySchema,
 	ResolveThreadBodySchema,
 } from "@stagereview/types/comments";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { StageDb } from "../db/client.js";
-import { LOCAL_USER_ID } from "../db/local-user.js";
+import { chapterRun, comment, commentThread } from "../db/schema/index.js";
 import {
-	type CommentRow,
-	type CommentThreadRow,
-	chapterRun,
-	comment,
-	commentInsertionOrder,
-	commentThread,
-} from "../db/schema/index.js";
-import { loadLocalThreadRecords } from "../runs/local-comment-threads.js";
+	LocalCommentThreadStore,
+	toCommentDto,
+	toThreadDto,
+} from "../runs/local-comment-threads.js";
 import { isLocalThreadPromotionInFlight } from "../runs/review.js";
 import { REVIEW_ACTION_SCOPE, reviewActions } from "../runs/review-action-queue.js";
 import { deriveScopeKey } from "../runs/scope-key.js";
@@ -27,6 +22,7 @@ import { enforceSameOrigin } from "./pull-request-shared.js";
 const THREAD_PROMOTION_IN_PROGRESS = "This comment thread is being added to the review.";
 
 export function commentRoutes(db: StageDb): Route[] {
+	const store = new LocalCommentThreadStore(db);
 	return [
 		// Threads are anchored to a diff scope rather than a single run, so
 		// comments survive re-imports of the same diff.
@@ -40,7 +36,7 @@ export function commentRoutes(db: StageDb): Route[] {
 					writeJson(res, 404, { error: `Run ${params.runId} not found` });
 					return;
 				}
-				writeJson(res, 200, listThreads(db, scopeKey));
+				writeJson(res, 200, store.listByScope(scopeKey).map(toThreadDto));
 			},
 		},
 		{
@@ -55,29 +51,7 @@ export function commentRoutes(db: StageDb): Route[] {
 				}
 				const body = await parseJsonBody(req, res, CreateCommentThreadBodySchema);
 				if (!body) return;
-
-				const created = db.transaction((tx) => {
-					const [threadRow] = tx
-						.insert(commentThread)
-						.values({
-							scopeKey,
-							filePath: body.filePath,
-							side: body.side,
-							startLine: body.startLine,
-							endLine: body.endLine,
-						})
-						.returning()
-						.all();
-					if (!threadRow) throw new Error("comment_thread insert returned no row");
-					const [commentRow] = tx
-						.insert(comment)
-						.values({ threadId: threadRow.id, authorId: LOCAL_USER_ID, body: body.body })
-						.returning()
-						.all();
-					if (!commentRow) throw new Error("comment insert returned no row");
-					return toThreadDto(threadRow, [commentRow]);
-				});
-				writeJson(res, 201, created);
+				writeJson(res, 201, toThreadDto(store.create(scopeKey, body, COMMENT_AUTHOR_TYPE.USER)));
 			},
 		},
 		{
@@ -98,25 +72,15 @@ export function commentRoutes(db: StageDb): Route[] {
 				}
 
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
-					if (!threadExists(db, threadId)) {
+					if (!store.exists(threadId)) {
 						writeJson(res, 404, { error: `Thread ${threadId} not found` });
 						return;
 					}
-					const created = db.transaction((tx) => {
-						const [commentRow] = tx
-							.insert(comment)
-							.values({ threadId, authorId: LOCAL_USER_ID, body: body.body })
-							.returning()
-							.all();
-						if (!commentRow) throw new Error("comment insert returned no row");
-						// Bump the thread so its updatedAt reflects the latest activity.
-						tx.update(commentThread)
-							.set({ updatedAt: new Date() })
-							.where(eq(commentThread.id, threadId))
-							.run();
-						return toCommentDto(commentRow);
-					});
-					writeJson(res, 201, created);
+					writeJson(
+						res,
+						201,
+						toCommentDto(store.reply(threadId, body.body, COMMENT_AUTHOR_TYPE.USER)),
+					);
 				});
 			},
 		},
@@ -140,17 +104,12 @@ export function commentRoutes(db: StageDb): Route[] {
 				}
 
 				await reviewActions.run({ kind: REVIEW_ACTION_SCOPE.LOCAL_THREAD, threadId }, async () => {
-					const [updated] = db
-						.update(commentThread)
-						.set({ resolvedAt: body.resolved ? new Date() : null })
-						.where(eq(commentThread.id, threadId))
-						.returning()
-						.all();
+					const updated = store.setResolved(threadId, body.resolved);
 					if (!updated) {
 						writeJson(res, 404, { error: `Thread ${threadId} not found` });
 						return;
 					}
-					writeJson(res, 200, toThreadDto(updated, threadComments(db, threadId)));
+					writeJson(res, 200, toThreadDto({ thread: updated, comments: store.comments(threadId) }));
 				});
 			},
 		},
@@ -286,54 +245,4 @@ function resolveRunScopeKey(db: StageDb, runId: string | undefined): string | nu
 		.all();
 	if (!run) return null;
 	return deriveScopeKey(run);
-}
-
-function listThreads(db: StageDb, scopeKey: string): CommentThreadDto[] {
-	return loadLocalThreadRecords(db, scopeKey).map(({ thread, comments }) =>
-		toThreadDto(thread, comments),
-	);
-}
-
-function threadComments(db: StageDb, threadId: string): CommentRow[] {
-	return db
-		.select()
-		.from(comment)
-		.where(eq(comment.threadId, threadId))
-		.orderBy(asc(commentInsertionOrder))
-		.all();
-}
-
-function threadExists(db: StageDb, threadId: string): boolean {
-	return (
-		db
-			.select({ id: commentThread.id })
-			.from(commentThread)
-			.where(eq(commentThread.id, threadId))
-			.limit(1)
-			.all().length > 0
-	);
-}
-
-function toThreadDto(thread: CommentThreadRow, comments: CommentRow[]): CommentThreadDto {
-	return {
-		id: thread.id,
-		filePath: thread.filePath,
-		side: thread.side,
-		startLine: thread.startLine,
-		endLine: thread.endLine,
-		resolvedAt: thread.resolvedAt?.toISOString() ?? null,
-		createdAt: thread.createdAt.toISOString(),
-		updatedAt: thread.updatedAt.toISOString(),
-		comments: comments.map(toCommentDto),
-	};
-}
-
-function toCommentDto(row: CommentRow): CommentDto {
-	return {
-		id: row.id,
-		body: row.body,
-		authorId: row.authorId,
-		createdAt: row.createdAt.toISOString(),
-		updatedAt: row.updatedAt.toISOString(),
-	};
 }

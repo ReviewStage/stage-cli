@@ -1,0 +1,1 @@
+ALTER TABLE `comment` ADD `authorType` text DEFAULT 'user' NOT NULL;
