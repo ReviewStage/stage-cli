@@ -72,12 +72,25 @@ The chapter progress strip shows which chapters are reviewed, visited, or not ye
 Click a segment to open that chapter; in Scroll view, it scrolls to the chapter in place.
 Visiting a chapter does not mark it reviewed. Review progress follows the existing **Mark as
 viewed** controls: mark a chapter, or mark every file in it, to count it as reviewed.
-Visited chapters are tracked for the current run while it is open; review marks remain saved.
+Visited state resets when you reload or switch runs; review marks remain saved.
 
 Under **Display → Chapter progress**, choose **Compact** (the default) or **With titles**.
 Compact shows chapter numbers, with the full title and status on hover or keyboard focus.
 With titles adds truncated chapter titles on wider screens. The display preference is saved
 between sessions, and both layouts use the same review state.
+
+<details>
+<summary>Chapter progress layouts</summary>
+
+Compact:
+
+![Compact chapter progress](assets/chapter-progress-compact.png)
+
+With titles:
+
+![Chapter progress with titles](assets/chapter-progress-with-titles.png)
+
+</details>
 
 ### Options
 
