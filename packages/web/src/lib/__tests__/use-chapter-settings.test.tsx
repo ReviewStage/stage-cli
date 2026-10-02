@@ -9,15 +9,18 @@ beforeEach(() => window.localStorage.clear());
 afterEach(cleanup);
 
 describe("chapter progress preference", () => {
-	it("restores the selected mode after the provider remounts", () => {
+	it.each([
+		CHAPTER_PROGRESS_MODE.WITH_TITLES,
+		CHAPTER_PROGRESS_MODE.HIDDEN,
+	])("restores %s after the provider remounts", (mode) => {
 		const first = renderHook(useChapterSettings, { wrapper: ChapterSettingsProvider });
 		expect(first.result.current.chapterProgressMode).toBe(CHAPTER_PROGRESS_MODE.COMPACT);
 
-		act(() => first.result.current.setChapterProgressMode(CHAPTER_PROGRESS_MODE.WITH_TITLES));
+		act(() => first.result.current.setChapterProgressMode(mode));
 		first.unmount();
 		const second = renderHook(useChapterSettings, { wrapper: ChapterSettingsProvider });
 
-		expect(second.result.current.chapterProgressMode).toBe(CHAPTER_PROGRESS_MODE.WITH_TITLES);
+		expect(second.result.current.chapterProgressMode).toBe(mode);
 	});
 
 	it.each([

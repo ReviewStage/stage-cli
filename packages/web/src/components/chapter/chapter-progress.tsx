@@ -36,6 +36,7 @@ export function ChapterProgress({
 	error,
 }: ChapterProgressProps) {
 	const { chapterProgressMode } = useChapterSettings();
+	if (chapterProgressMode === CHAPTER_PROGRESS_MODE.HIDDEN) return null;
 	const { items, reviewedCount } = buildChapterProgress(chapters, viewState);
 	if (items.length === 0) return null;
 	const activeItem = items.find(({ chapter }) => chapter.order + 1 === activeChapterNumber);

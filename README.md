@@ -74,10 +74,11 @@ Visiting a chapter does not mark it reviewed. Review progress follows the existi
 viewed** controls: mark a chapter, or mark every file in it, to count it as reviewed.
 Visited state resets when you reload or switch runs; review marks remain saved.
 
-Under **Display → Chapter progress**, choose **Compact** (the default) or **With titles**.
+Under **Display → Chapter progress**, choose **Compact** (the default), **With titles**, or **Hidden**.
 Compact shows chapter numbers, with the full title and status on hover or keyboard focus.
-With titles adds truncated chapter titles on wider screens. The display preference is saved
-between sessions, and both layouts use the same review state.
+With titles adds truncated chapter titles on wider screens. Hidden removes the entire progress
+strip, including its counters and navigation. The display preference is saved between sessions;
+showing the strip again preserves your review progress.
 
 <details>
 <summary>Chapter progress layouts</summary>

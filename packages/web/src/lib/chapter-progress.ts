@@ -3,6 +3,7 @@ import type { Chapter } from "@stagereview/types/chapters";
 export const CHAPTER_PROGRESS_MODE = {
 	COMPACT: "compact",
 	WITH_TITLES: "with-titles",
+	HIDDEN: "hidden",
 } as const;
 export type ChapterProgressMode =
 	(typeof CHAPTER_PROGRESS_MODE)[keyof typeof CHAPTER_PROGRESS_MODE];
@@ -10,6 +11,7 @@ export type ChapterProgressMode =
 export const CHAPTER_PROGRESS_MODE_OPTIONS: { value: ChapterProgressMode; label: string }[] = [
 	{ value: CHAPTER_PROGRESS_MODE.COMPACT, label: "Compact" },
 	{ value: CHAPTER_PROGRESS_MODE.WITH_TITLES, label: "With titles" },
+	{ value: CHAPTER_PROGRESS_MODE.HIDDEN, label: "Hidden" },
 ];
 
 export const CHAPTER_PROGRESS_MODE_STORAGE_KEY = "chapter-progressMode";
