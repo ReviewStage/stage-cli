@@ -326,6 +326,14 @@ function ContinuousChaptersContent({
 		},
 		[scrollToChapter],
 	);
+	const continuousChapterNavigationRef = chapterViewState?.continuousChapterNavigationRef;
+	useLayoutEffect(() => {
+		if (!continuousChapterNavigationRef) return;
+		continuousChapterNavigationRef.current = navigateToChapter;
+		return () => {
+			continuousChapterNavigationRef.current = null;
+		};
+	}, [continuousChapterNavigationRef, navigateToChapter]);
 
 	// Chapter navigation keys step the stream to the previous/next chapter
 	// (parity with the paged view's shortcuts).

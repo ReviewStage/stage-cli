@@ -2,12 +2,8 @@
 
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-	CHAPTER_PROGRESS_MODE,
-	CHAPTER_PROGRESS_MODE_STORAGE_KEY,
-	ChapterSettingsProvider,
-	useChapterSettings,
-} from "../use-chapter-settings";
+import { CHAPTER_PROGRESS_MODE, CHAPTER_PROGRESS_MODE_STORAGE_KEY } from "../chapter-progress";
+import { ChapterSettingsProvider, useChapterSettings } from "../use-chapter-settings";
 
 beforeEach(() => window.localStorage.clear());
 afterEach(cleanup);

@@ -11,13 +11,13 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { CHAPTER_PROGRESS_MODE_OPTIONS } from "@/lib/chapter-progress";
 import { useChapterViewState } from "@/lib/chapter-view-state-context";
 import { DIFF_FONT_OPTIONS, FONT_SIZE_OPTIONS, LINE_HEIGHT_OPTIONS } from "@/lib/diff-typography";
 import { SYNTAX_THEME_OPTIONS_BY_APP_THEME } from "@/lib/syntax-themes";
 import { TEXT_SIZE_OPTIONS } from "@/lib/text-size";
 import { useTheme } from "@/lib/theme";
 import {
-	CHAPTER_PROGRESS_MODE_OPTIONS,
 	CHAPTER_VIEW_MODE,
 	CHAPTER_VIEW_MODE_OPTIONS,
 	type ChapterViewMode,
@@ -82,6 +82,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 			chapterViewMode === CHAPTER_VIEW_MODE.CONTINUOUS &&
 			value === CHAPTER_VIEW_MODE.PAGED &&
 			chapterViewState &&
+			chapterViewState.activeContinuousChapterNumber !== null &&
 			typeof runId === "string" &&
 			matchRoute({ to: "/runs/$runId/chapters" })
 		) {
@@ -149,6 +150,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 
 			<SettingRow label="Chapter progress" compact={compact}>
 				<SettingSelect
+					ariaLabel="Chapter progress"
 					value={chapterProgressMode}
 					onValueChange={setChapterProgressMode}
 					options={CHAPTER_PROGRESS_MODE_OPTIONS}
@@ -288,10 +290,12 @@ function SettingRow({
 }
 
 function SettingSelect<T extends string>({
+	ariaLabel,
 	value,
 	onValueChange,
 	options,
 }: {
+	ariaLabel?: string;
 	value: T;
 	onValueChange: (value: T) => void;
 	options: { value: T; label: string; description?: string }[];
@@ -309,7 +313,7 @@ function SettingSelect<T extends string>({
 				}
 			}}
 		>
-			<SelectTrigger size="sm" className="w-[160px]">
+			<SelectTrigger aria-label={ariaLabel} size="sm" className="w-[160px]">
 				<SelectValue />
 			</SelectTrigger>
 			<SelectContent>

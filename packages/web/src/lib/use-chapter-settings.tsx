@@ -1,6 +1,12 @@
 import { BookOpen, PanelLeft, PanelRight, PanelTop, Rows3 } from "lucide-react";
 import type { ReactNode } from "react";
 import { createContext, useContext, useMemo } from "react";
+import {
+	CHAPTER_PROGRESS_MODE,
+	CHAPTER_PROGRESS_MODE_STORAGE_KEY,
+	type ChapterProgressMode,
+	isChapterProgressMode,
+} from "./chapter-progress";
 import { useLocalStorage } from "./use-local-storage";
 
 export const CHAPTER_VIEW_MODE = {
@@ -8,26 +14,6 @@ export const CHAPTER_VIEW_MODE = {
 	CONTINUOUS: "continuous",
 } as const;
 export type ChapterViewMode = (typeof CHAPTER_VIEW_MODE)[keyof typeof CHAPTER_VIEW_MODE];
-
-export const CHAPTER_PROGRESS_MODE = {
-	COMPACT: "compact",
-	WITH_TITLES: "with-titles",
-} as const;
-export type ChapterProgressMode =
-	(typeof CHAPTER_PROGRESS_MODE)[keyof typeof CHAPTER_PROGRESS_MODE];
-
-export const CHAPTER_PROGRESS_MODE_OPTIONS: { value: ChapterProgressMode; label: string }[] = [
-	{ value: CHAPTER_PROGRESS_MODE.COMPACT, label: "Compact" },
-	{ value: CHAPTER_PROGRESS_MODE.WITH_TITLES, label: "With titles" },
-];
-
-export const CHAPTER_PROGRESS_MODE_STORAGE_KEY = "chapter-progressMode";
-
-const CHAPTER_PROGRESS_MODES = new Set<string>(Object.values(CHAPTER_PROGRESS_MODE));
-
-function isChapterProgressMode(value: string): value is ChapterProgressMode {
-	return CHAPTER_PROGRESS_MODES.has(value);
-}
 
 export const PANEL_POSITION = {
 	LEFT: "left",
