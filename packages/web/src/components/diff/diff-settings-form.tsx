@@ -1,4 +1,3 @@
-import { useMatchRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { Columns2, Rows3 } from "lucide-react";
 import { ShortcutLabel } from "@/components/keyboard/shortcut-label";
 import { SegmentedToggle } from "@/components/shared/segmented-toggle";
@@ -12,13 +11,11 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { CHAPTER_PROGRESS_MODE_OPTIONS } from "@/lib/chapter-progress";
-import { useChapterViewState } from "@/lib/chapter-view-state-context";
 import { DIFF_FONT_OPTIONS, FONT_SIZE_OPTIONS, LINE_HEIGHT_OPTIONS } from "@/lib/diff-typography";
 import { SYNTAX_THEME_OPTIONS_BY_APP_THEME } from "@/lib/syntax-themes";
 import { TEXT_SIZE_OPTIONS } from "@/lib/text-size";
 import { useTheme } from "@/lib/theme";
 import {
-	CHAPTER_VIEW_MODE,
 	CHAPTER_VIEW_MODE_OPTIONS,
 	type ChapterViewMode,
 	useChapterSettings,
@@ -69,35 +66,6 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 	const { textSize, setTextSize } = useTextSize();
 	const { chapterViewMode, setChapterViewMode, chapterProgressMode, setChapterProgressMode } =
 		useChapterSettings();
-	const navigate = useNavigate();
-	const matchRoute = useMatchRoute();
-	const params = useParams({ strict: false });
-	const chapterViewState = useChapterViewState();
-
-	// When leaving continuous mode from the chapters reader, land on the
-	// chapter that was active in the stream.
-	const updateChapterViewMode = (value: ChapterViewMode) => {
-		const runId = params.runId;
-		if (
-			chapterViewMode === CHAPTER_VIEW_MODE.CONTINUOUS &&
-			value === CHAPTER_VIEW_MODE.PAGED &&
-			chapterViewState &&
-			chapterViewState.activeContinuousChapterNumber !== null &&
-			typeof runId === "string" &&
-			matchRoute({ to: "/runs/$runId/chapters" })
-		) {
-			void navigate({
-				to: "/runs/$runId/chapters/$chapterNumber",
-				params: {
-					runId,
-					chapterNumber: String(chapterViewState.activeContinuousChapterNumber),
-				},
-				replace: true,
-				resetScroll: false,
-			});
-		}
-		setChapterViewMode(value);
-	};
 	const {
 		viewMode,
 		setViewMode,
@@ -142,7 +110,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 				<div className="w-[160px]">
 					<SegmentedToggle<ChapterViewMode>
 						value={chapterViewMode}
-						onChange={updateChapterViewMode}
+						onChange={setChapterViewMode}
 						options={CHAPTER_VIEW_MODE_OPTIONS}
 					/>
 				</div>

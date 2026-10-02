@@ -61,7 +61,7 @@ function ChaptersLayout() {
 		return <ContinuousChaptersPage runId={runId} initialChapterNumber={initialChapterNumber} />;
 	}
 
-	// In paged mode a bare /chapters URL always matches the index child route,
-	// which redirects to the run overview — the Outlet covers both children.
+	// The index child resumes the active continuous chapter when switching
+	// to Page mode, or redirects a fresh bare link to the run overview.
 	return <Outlet />;
 }
