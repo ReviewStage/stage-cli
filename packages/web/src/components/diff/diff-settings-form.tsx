@@ -17,6 +17,7 @@ import { SYNTAX_THEME_OPTIONS_BY_APP_THEME } from "@/lib/syntax-themes";
 import { TEXT_SIZE_OPTIONS } from "@/lib/text-size";
 import { useTheme } from "@/lib/theme";
 import {
+	CHAPTER_PROGRESS_MODE_OPTIONS,
 	CHAPTER_VIEW_MODE,
 	CHAPTER_VIEW_MODE_OPTIONS,
 	type ChapterViewMode,
@@ -66,7 +67,8 @@ const LINE_DIFF_OPTIONS: { value: LineDiffType; label: string; description: stri
 export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 	const { appTheme } = useTheme();
 	const { textSize, setTextSize } = useTextSize();
-	const { chapterViewMode, setChapterViewMode } = useChapterSettings();
+	const { chapterViewMode, setChapterViewMode, chapterProgressMode, setChapterProgressMode } =
+		useChapterSettings();
 	const navigate = useNavigate();
 	const matchRoute = useMatchRoute();
 	const params = useParams({ strict: false });
@@ -143,6 +145,14 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 						options={CHAPTER_VIEW_MODE_OPTIONS}
 					/>
 				</div>
+			</SettingRow>
+
+			<SettingRow label="Chapter progress" compact={compact}>
+				<SettingSelect
+					value={chapterProgressMode}
+					onValueChange={setChapterProgressMode}
+					options={CHAPTER_PROGRESS_MODE_OPTIONS}
+				/>
 			</SettingRow>
 
 			{/* Syntax theme follows the app's resolved light/dark mode */}
