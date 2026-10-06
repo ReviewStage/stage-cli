@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChapterContext } from "@/lib/chapter-context";
+import { clampChapterNumber } from "@/lib/chapter-number";
 import { usePublishContinuousChapterReader } from "@/lib/chapter-view-state-context";
 import { useProvideCollapseActions } from "@/lib/collapse-actions-context";
 import { FILE_STATUS } from "@/lib/diff-types";
@@ -72,7 +73,7 @@ export const ContinuousChaptersPage = memo(function ContinuousChaptersPage({
 	if (isLoading) {
 		const pendingChapterNumber =
 			chapters.length > 0
-				? Math.min(Math.max(initialChapterNumber ?? 1, 1), chapters.length)
+				? clampChapterNumber(initialChapterNumber ?? 1, chapters.length)
 				: (initialChapterNumber ?? 1);
 		return <LoadingState pendingChapterNumber={pendingChapterNumber} />;
 	}
@@ -160,7 +161,7 @@ function ContinuousChaptersContent({
 	// Clamp deep-linked numbers so an out-of-range link can't publish an
 	// invalid active chapter (switching to paged mode would 404 on it).
 	const [activeChapterNumber, setActiveChapterNumber] = useState(() =>
-		Math.min(Math.max(initialChapterNumber ?? 1, 1), Math.max(allChapters.length, 1)),
+		clampChapterNumber(initialChapterNumber ?? 1, allChapters.length),
 	);
 	const activeChapter = allChapters[activeChapterNumber - 1];
 
