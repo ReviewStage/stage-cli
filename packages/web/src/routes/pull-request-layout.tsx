@@ -223,7 +223,8 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		},
 	});
 
-	const { chapterIdSet, filePathSet } = useViewStateData(runId);
+	const viewStateData = useViewStateData(runId);
+	const { chapterIdSet, filePathSet } = viewStateData;
 	const chapters = data?.chapters;
 	const viewedChapterCount = useMemo(
 		() => countViewedChapters(chapters, chapterIdSet),
@@ -460,7 +461,7 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 							</div>
 						</nav>
 						{activeTab === PR_TAB.CHAPTERS && chapters && (
-							<RunChapterProgress runId={runId} chapters={chapters} />
+							<RunChapterProgress runId={runId} chapters={chapters} viewState={viewStateData} />
 						)}
 					</div>
 					<ChapterProvider runId={runId}>

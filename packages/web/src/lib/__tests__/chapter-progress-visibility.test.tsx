@@ -6,9 +6,10 @@ import { ChapterProgress } from "@/components/chapter/chapter-progress";
 import {
 	CHAPTER_PROGRESS_MODE,
 	CHAPTER_PROGRESS_MODE_OPTIONS,
+	ChapterSettingsProvider,
 	isChapterProgressMode,
-} from "../chapter-progress";
-import { ChapterSettingsProvider, useChapterSettings } from "../use-chapter-settings";
+	useChapterSettings,
+} from "../use-chapter-settings";
 
 beforeEach(() => window.localStorage.clear());
 afterEach(cleanup);

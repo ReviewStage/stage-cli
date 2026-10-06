@@ -1,21 +1,31 @@
-import type { ReactNode, RefObject } from "react";
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import type { Context, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-interface ChapterViewStateContextValue {
-	activeContinuousChapterNumber: number | null;
-	setActiveContinuousChapterNumber: (chapterNumber: number) => void;
-	continuousChapterNavigationRef: RefObject<((chapterNumber: number) => void) | null>;
+/**
+ * The mounted continuous reader's position. `navigateToChapter` is null while
+ * the reader is still loading — the position is already known (the deep-linked
+ * chapter) but there is no stream to scroll yet.
+ */
+export interface ContinuousChapterReader {
+	activeChapterNumber: number;
+	navigateToChapter: ((chapterNumber: number) => void) | null;
+}
+
+interface ChapterVisits {
 	visitedChapterIds: ReadonlySet<string>;
 	markChapterVisited: (externalId: string) => void;
 }
 
-const ChapterViewStateContext = createContext<ChapterViewStateContextValue | null>(null);
+const ContinuousChapterReaderContext = createContext<ContinuousChapterReader | null>(null);
+// The setter lives in its own context so the publishing reader doesn't
+// re-render every time its own published position changes.
+const PublishContinuousChapterReaderContext = createContext<
+	((reader: ContinuousChapterReader | null) => void) | null
+>(null);
+const ChapterVisitsContext = createContext<ChapterVisits | null>(null);
 
 export function ChapterViewStateProvider({ children }: { children: ReactNode }) {
-	const [activeContinuousChapterNumber, setActiveContinuousChapterNumber] = useState<number | null>(
-		null,
-	);
-	const continuousChapterNavigationRef = useRef<((chapterNumber: number) => void) | null>(null);
+	const [continuousReader, setContinuousReader] = useState<ContinuousChapterReader | null>(null);
 	const [visitedChapterIds, setVisitedChapterIds] = useState<ReadonlySet<string>>(new Set());
 	const markChapterVisited = useCallback((externalId: string) => {
 		setVisitedChapterIds((previous) => {
@@ -23,20 +33,46 @@ export function ChapterViewStateProvider({ children }: { children: ReactNode }) 
 			return new Set([...previous, externalId]);
 		});
 	}, []);
-	const value = useMemo(
-		() => ({
-			activeContinuousChapterNumber,
-			setActiveContinuousChapterNumber,
-			continuousChapterNavigationRef,
-			visitedChapterIds,
-			markChapterVisited,
-		}),
-		[activeContinuousChapterNumber, visitedChapterIds, markChapterVisited],
+	const visits = useMemo(
+		() => ({ visitedChapterIds, markChapterVisited }),
+		[visitedChapterIds, markChapterVisited],
 	);
 
-	return <ChapterViewStateContext value={value}>{children}</ChapterViewStateContext>;
+	return (
+		<PublishContinuousChapterReaderContext value={setContinuousReader}>
+			<ContinuousChapterReaderContext value={continuousReader}>
+				<ChapterVisitsContext value={visits}>{children}</ChapterVisitsContext>
+			</ContinuousChapterReaderContext>
+		</PublishContinuousChapterReaderContext>
+	);
 }
 
-export function useChapterViewState(): ChapterViewStateContextValue | null {
-	return useContext(ChapterViewStateContext);
+function useRequiredContext<T>(context: Context<T | null>, hookName: string): T {
+	const value = useContext(context);
+	if (value === null) {
+		throw new Error(`${hookName} must be used within a ChapterViewStateProvider`);
+	}
+	return value;
+}
+
+/** The mounted continuous reader, or null when no continuous reader is mounted. */
+export function useContinuousChapterReader(): ContinuousChapterReader | null {
+	useRequiredContext(PublishContinuousChapterReaderContext, "useContinuousChapterReader");
+	return useContext(ContinuousChapterReaderContext);
+}
+
+/** Publishes the calling reader's position for as long as it stays mounted. */
+export function usePublishContinuousChapterReader(reader: ContinuousChapterReader) {
+	const publish = useRequiredContext(
+		PublishContinuousChapterReaderContext,
+		"usePublishContinuousChapterReader",
+	);
+	useEffect(() => {
+		publish(reader);
+		return () => publish(null);
+	}, [publish, reader]);
+}
+
+export function useChapterVisits(): ChapterVisits {
+	return useRequiredContext(ChapterVisitsContext, "useChapterVisits");
 }

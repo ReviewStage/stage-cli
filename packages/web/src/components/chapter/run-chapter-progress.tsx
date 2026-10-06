@@ -1,60 +1,60 @@
-import { useMatchRoute, useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { parseChapterNumber } from "@/lib/chapter-number";
 import type { ProgressChapter } from "@/lib/chapter-progress";
-import { useChapterViewState } from "@/lib/chapter-view-state-context";
-import { useViewStateData } from "@/lib/use-view-state";
+import { useChapterVisits, useContinuousChapterReader } from "@/lib/chapter-view-state-context";
+import { CHAPTER_VIEW_MODE, useChapterSettings } from "@/lib/use-chapter-settings";
+import type { UseViewStateDataResult } from "@/lib/use-view-state";
 import { ChapterProgress } from "./chapter-progress";
 
-export function RunChapterProgress({
-	runId,
-	chapters,
-}: {
+interface RunChapterProgressProps {
 	runId: string;
 	chapters: readonly ProgressChapter[];
-}) {
-	const chapterViewState = useChapterViewState();
-	if (!chapterViewState) {
-		throw new Error("RunChapterProgress must be used within a ChapterViewStateProvider");
-	}
-	const { visitedChapterIds, markChapterVisited, continuousChapterNavigationRef } =
-		chapterViewState;
-	const { chapterIdSet, isLoading, error } = useViewStateData(runId);
+	viewState: UseViewStateDataResult;
+}
+
+export function RunChapterProgress({ runId, chapters, viewState }: RunChapterProgressProps) {
+	const { visitedChapterIds, markChapterVisited } = useChapterVisits();
+	const { chapterViewMode } = useChapterSettings();
+	const continuousReader = useContinuousChapterReader();
 	const params = useParams({ strict: false });
-	const matchRoute = useMatchRoute();
 	const navigate = useNavigate();
-	const isContinuousReader = Boolean(matchRoute({ to: "/runs/$runId/chapters" }));
-	const activeChapterNumber = isContinuousReader
-		? chapterViewState.activeContinuousChapterNumber
+
+	const isContinuous = chapterViewMode === CHAPTER_VIEW_MODE.CONTINUOUS;
+	const activeChapterNumber = isContinuous
+		? (continuousReader?.activeChapterNumber ?? null)
 		: params.chapterNumber === undefined
 			? null
-			: Number.parseInt(params.chapterNumber, 10);
-	const activeChapter = chapters.find((chapter) => chapter.order + 1 === activeChapterNumber);
-	const activeExternalId = activeChapter?.externalId;
+			: parseChapterNumber(params.chapterNumber);
+	const activeExternalId = chapters.find(
+		(chapter) => chapter.order + 1 === activeChapterNumber,
+	)?.externalId;
 
 	useEffect(() => {
 		if (activeExternalId !== undefined) markChapterVisited(activeExternalId);
 	}, [activeExternalId, markChapterVisited]);
 
-	const navigateToChapter = (chapterNumber: number) => {
-		if (isContinuousReader && continuousChapterNavigationRef.current) {
-			continuousChapterNavigationRef.current(chapterNumber);
-			return;
-		}
-		void navigate({
-			to: "/runs/$runId/chapters/$chapterNumber",
-			params: { runId, chapterNumber: String(chapterNumber) },
-			resetScroll: false,
-		});
-	};
+	// Continuous mode steers the mounted stream in place; routing to
+	// /chapters/N there would remount the whole reader. Until the stream has
+	// loaded there is nothing to steer, so the strip is not navigable yet.
+	const navigateToChapter = isContinuous
+		? (continuousReader?.navigateToChapter ?? null)
+		: (chapterNumber: number) => {
+				void navigate({
+					to: "/runs/$runId/chapters/$chapterNumber",
+					params: { runId, chapterNumber: String(chapterNumber) },
+					resetScroll: false,
+				});
+			};
 
 	return (
 		<ChapterProgress
 			chapters={chapters}
-			viewState={{ reviewedChapterIds: chapterIdSet, visitedChapterIds }}
+			viewState={{ reviewedChapterIds: viewState.chapterIdSet, visitedChapterIds }}
 			activeChapterNumber={activeChapterNumber}
 			onNavigateToChapter={navigateToChapter}
-			isLoading={isLoading}
-			error={error}
+			isLoading={viewState.isLoading}
+			error={viewState.error}
 		/>
 	);
 }

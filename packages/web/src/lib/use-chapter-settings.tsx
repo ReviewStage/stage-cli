@@ -1,13 +1,8 @@
 import { BookOpen, PanelLeft, PanelRight, PanelTop, Rows3 } from "lucide-react";
 import type { ReactNode } from "react";
 import { createContext, useContext, useMemo } from "react";
-import {
-	CHAPTER_PROGRESS_MODE,
-	CHAPTER_PROGRESS_MODE_STORAGE_KEY,
-	type ChapterProgressMode,
-	isChapterProgressMode,
-} from "./chapter-progress";
 import { useLocalStorage } from "./use-local-storage";
+import { createValueSetGuard } from "./value-set-guard";
 
 export const CHAPTER_VIEW_MODE = {
 	PAGED: "paged",
@@ -21,6 +16,14 @@ export const PANEL_POSITION = {
 	RIGHT: "right",
 } as const;
 export type PanelPosition = (typeof PANEL_POSITION)[keyof typeof PANEL_POSITION];
+
+export const CHAPTER_PROGRESS_MODE = {
+	COMPACT: "compact",
+	WITH_TITLES: "with-titles",
+	HIDDEN: "hidden",
+} as const;
+export type ChapterProgressMode =
+	(typeof CHAPTER_PROGRESS_MODE)[keyof typeof CHAPTER_PROGRESS_MODE];
 
 const DEFAULT_CHAPTER_VIEW_MODE: ChapterViewMode = CHAPTER_VIEW_MODE.PAGED;
 
@@ -37,6 +40,7 @@ export const PANEL_POSITION_OPTIONS: {
 
 const CHAPTER_PANEL_POSITION_STORAGE_KEY = "chapter-panelPosition";
 const CHAPTER_SHOW_WHAT_TO_REVIEW_STORAGE_KEY = "chapter-showWhatToReview";
+export const CHAPTER_PROGRESS_MODE_STORAGE_KEY = "chapter-progressMode";
 
 export const CHAPTER_VIEW_MODE_OPTIONS: {
 	value: ChapterViewMode;
@@ -58,17 +62,15 @@ export const CHAPTER_VIEW_MODE_OPTIONS: {
 	},
 ];
 
-const CHAPTER_VIEW_MODES = new Set<string>(Object.values(CHAPTER_VIEW_MODE));
+export const CHAPTER_PROGRESS_MODE_OPTIONS: { value: ChapterProgressMode; label: string }[] = [
+	{ value: CHAPTER_PROGRESS_MODE.COMPACT, label: "Compact" },
+	{ value: CHAPTER_PROGRESS_MODE.WITH_TITLES, label: "With titles" },
+	{ value: CHAPTER_PROGRESS_MODE.HIDDEN, label: "Hidden" },
+];
 
-function isChapterViewMode(value: string): value is ChapterViewMode {
-	return CHAPTER_VIEW_MODES.has(value);
-}
-
-const PANEL_POSITIONS = new Set<string>(Object.values(PANEL_POSITION));
-
-function isPanelPosition(value: string): value is PanelPosition {
-	return PANEL_POSITIONS.has(value);
-}
+const isChapterViewMode = createValueSetGuard(CHAPTER_VIEW_MODE);
+const isPanelPosition = createValueSetGuard(PANEL_POSITION);
+export const isChapterProgressMode = createValueSetGuard(CHAPTER_PROGRESS_MODE);
 
 interface ChapterSettingsContextValue {
 	panelPosition: PanelPosition;

@@ -10,12 +10,12 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { CHAPTER_PROGRESS_MODE_OPTIONS } from "@/lib/chapter-progress";
 import { DIFF_FONT_OPTIONS, FONT_SIZE_OPTIONS, LINE_HEIGHT_OPTIONS } from "@/lib/diff-typography";
 import { SYNTAX_THEME_OPTIONS_BY_APP_THEME } from "@/lib/syntax-themes";
 import { TEXT_SIZE_OPTIONS } from "@/lib/text-size";
 import { useTheme } from "@/lib/theme";
 import {
+	CHAPTER_PROGRESS_MODE_OPTIONS,
 	CHAPTER_VIEW_MODE_OPTIONS,
 	type ChapterViewMode,
 	useChapterSettings,

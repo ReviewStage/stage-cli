@@ -3,13 +3,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
 	buildChapterProgress,
 	CHAPTER_PROGRESS_LABELS,
-	CHAPTER_PROGRESS_MODE,
 	CHAPTER_PROGRESS_STATUS,
 	type ChapterProgressStatus,
 	type ChapterProgressViewState,
 	type ProgressChapter,
 } from "@/lib/chapter-progress";
-import { useChapterSettings } from "@/lib/use-chapter-settings";
+import { CHAPTER_PROGRESS_MODE, useChapterSettings } from "@/lib/use-chapter-settings";
 import { cn } from "@/lib/utils";
 
 const STATUS_STYLES = {
@@ -17,12 +16,15 @@ const STATUS_STYLES = {
 	[CHAPTER_PROGRESS_STATUS.VISITED]: { bar: "bg-muted-foreground/50", icon: CircleDot },
 	[CHAPTER_PROGRESS_STATUS.REVIEWED]: { bar: "bg-green-600 dark:bg-green-500", icon: Check },
 } as const satisfies Record<ChapterProgressStatus, { bar: string; icon: typeof Circle }>;
+// Without saved review marks a chapter's status is unknown, not "not started".
+const UNKNOWN_STATUS_STYLE = { bar: "bg-muted", icon: Circle } as const;
 
 interface ChapterProgressProps {
 	chapters: readonly ProgressChapter[];
 	viewState: ChapterProgressViewState;
 	activeChapterNumber: number | null;
-	onNavigateToChapter: (chapterNumber: number) => void;
+	/** Null while chapters can't be navigated to yet; the strip renders disabled. */
+	onNavigateToChapter: ((chapterNumber: number) => void) | null;
 	isLoading: boolean;
 	error: unknown;
 }
@@ -41,6 +43,7 @@ export function ChapterProgress({
 	if (items.length === 0) return null;
 	const activeItem = items.find(({ chapter }) => chapter.order + 1 === activeChapterNumber);
 	const withTitles = chapterProgressMode === CHAPTER_PROGRESS_MODE.WITH_TITLES;
+	const isReviewStatusKnown = !error && !isLoading;
 
 	return (
 		<section aria-label="Chapter progress" className="w-full min-w-0 py-2">
@@ -58,22 +61,28 @@ export function ChapterProgress({
 					</span>
 				)}
 			</div>
-			<nav aria-label="Chapter navigation" className="flex flex-wrap gap-x-2 gap-y-1">
+			<nav aria-label="Chapter navigation" className="-m-1 flex gap-2 overflow-x-auto p-1">
 				{items.map(({ chapter, status }) => {
 					const chapterNumber = chapter.order + 1;
 					const isActive = chapterNumber === activeChapterNumber;
-					const { bar, icon: StatusIcon } = STATUS_STYLES[status];
-					const statusLabel =
-						error || isLoading ? "Review status unavailable" : CHAPTER_PROGRESS_LABELS[status];
+					const { bar, icon: StatusIcon } = isReviewStatusKnown
+						? STATUS_STYLES[status]
+						: UNKNOWN_STATUS_STYLE;
+					const statusLabel = isReviewStatusKnown
+						? CHAPTER_PROGRESS_LABELS[status]
+						: "Review status unavailable";
 					return (
 						<Tooltip key={chapter.id} delayDuration={200}>
 							<TooltipTrigger asChild>
 								<button
 									type="button"
-									onClick={() => onNavigateToChapter(chapterNumber)}
+									disabled={onNavigateToChapter === null}
+									onClick={
+										onNavigateToChapter ? () => onNavigateToChapter(chapterNumber) : undefined
+									}
 									aria-current={isActive ? "step" : undefined}
 									aria-label={`Chapter ${chapterNumber}: ${chapter.title}. ${statusLabel}`}
-									className="group/progress min-w-10 max-w-full flex-1 basis-0 cursor-pointer rounded-sm py-2 text-left outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring [@media(pointer:coarse)]:min-h-11"
+									className="group/progress min-w-10 max-w-full flex-1 basis-0 cursor-pointer rounded-sm disabled:cursor-default py-2 text-left outline-offset-2 focus-visible:outline-2 focus-visible:outline-ring [@media(pointer:coarse)]:min-h-11"
 								>
 									<span
 										aria-hidden="true"

@@ -1,26 +1,5 @@
 import type { Chapter } from "@stagereview/types/chapters";
-
-export const CHAPTER_PROGRESS_MODE = {
-	COMPACT: "compact",
-	WITH_TITLES: "with-titles",
-	HIDDEN: "hidden",
-} as const;
-export type ChapterProgressMode =
-	(typeof CHAPTER_PROGRESS_MODE)[keyof typeof CHAPTER_PROGRESS_MODE];
-
-export const CHAPTER_PROGRESS_MODE_OPTIONS: { value: ChapterProgressMode; label: string }[] = [
-	{ value: CHAPTER_PROGRESS_MODE.COMPACT, label: "Compact" },
-	{ value: CHAPTER_PROGRESS_MODE.WITH_TITLES, label: "With titles" },
-	{ value: CHAPTER_PROGRESS_MODE.HIDDEN, label: "Hidden" },
-];
-
-export const CHAPTER_PROGRESS_MODE_STORAGE_KEY = "chapter-progressMode";
-
-const CHAPTER_PROGRESS_MODES = new Set<string>(Object.values(CHAPTER_PROGRESS_MODE));
-
-export function isChapterProgressMode(value: string): value is ChapterProgressMode {
-	return CHAPTER_PROGRESS_MODES.has(value);
-}
+import { countViewedChapters } from "./use-view-state";
 
 export const CHAPTER_PROGRESS_STATUS = {
 	NOT_STARTED: "not-started",
@@ -47,18 +26,15 @@ export function buildChapterProgress(
 	chapters: readonly ProgressChapter[],
 	viewState: ChapterProgressViewState,
 ) {
-	let reviewedCount = 0;
 	const items = [...chapters]
 		.sort((a, b) => a.order - b.order)
 		.map((chapter) => {
-			const isReviewed = viewState.reviewedChapterIds.has(chapter.externalId);
-			if (isReviewed) reviewedCount++;
-			const status = isReviewed
+			const status = viewState.reviewedChapterIds.has(chapter.externalId)
 				? CHAPTER_PROGRESS_STATUS.REVIEWED
 				: viewState.visitedChapterIds.has(chapter.externalId)
 					? CHAPTER_PROGRESS_STATUS.VISITED
 					: CHAPTER_PROGRESS_STATUS.NOT_STARTED;
 			return { chapter, status };
 		});
-	return { items, reviewedCount };
+	return { items, reviewedCount: countViewedChapters(chapters, viewState.reviewedChapterIds) };
 }
