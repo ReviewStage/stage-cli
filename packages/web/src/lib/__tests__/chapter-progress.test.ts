@@ -2,14 +2,22 @@ import { describe, expect, it } from "vitest";
 import { buildChapterProgress, CHAPTER_PROGRESS_STATUS } from "../chapter-progress";
 
 function makeChapter(order: number) {
-	return { id: String(order), externalId: String(order), order, title: `Chapter ${order + 1}` };
+	return {
+		id: `database-${order}`,
+		externalId: `chapter-${order}`,
+		order,
+		title: `Chapter ${order + 1}`,
+	};
 }
 
 describe("chapter progress", () => {
 	it("keeps visits separate from reviewed chapters and follows chapter order", () => {
-		const progress = buildChapterProgress([makeChapter(2), makeChapter(0), makeChapter(1)], {
-			reviewedChapterIds: new Set(["1", "stale"]),
-			visitedChapterIds: new Set(["0", "1"]),
+		const first = makeChapter(0);
+		const second = makeChapter(1);
+		const third = makeChapter(2);
+		const progress = buildChapterProgress([third, first, second], {
+			reviewedChapterIds: new Set([second.externalId, third.id, "stale"]),
+			visitedChapterIds: new Set([first.externalId, second.externalId]),
 		});
 
 		expect(progress.items.map((item) => item.status)).toEqual([
@@ -21,8 +29,9 @@ describe("chapter progress", () => {
 	});
 
 	it("counts saved review marks even when the chapter has not been visited this session", () => {
-		const progress = buildChapterProgress([makeChapter(0)], {
-			reviewedChapterIds: new Set(["0"]),
+		const chapter = makeChapter(0);
+		const progress = buildChapterProgress([chapter], {
+			reviewedChapterIds: new Set([chapter.externalId]),
 			visitedChapterIds: new Set(),
 		});
 
@@ -31,9 +40,10 @@ describe("chapter progress", () => {
 	});
 
 	it("returns to visited when a review mark is removed", () => {
-		const progress = buildChapterProgress([makeChapter(0)], {
+		const chapter = makeChapter(0);
+		const progress = buildChapterProgress([chapter], {
 			reviewedChapterIds: new Set(),
-			visitedChapterIds: new Set(["0"]),
+			visitedChapterIds: new Set([chapter.externalId]),
 		});
 
 		expect(progress.items[0]?.status).toBe(CHAPTER_PROGRESS_STATUS.VISITED);
