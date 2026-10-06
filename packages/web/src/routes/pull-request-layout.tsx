@@ -8,6 +8,7 @@ import {
 	UnfoldVertical,
 } from "lucide-react";
 import { type CSSProperties, useCallback, useMemo, useRef, useState } from "react";
+import { RunChapterProgress } from "@/components/chapter/run-chapter-progress";
 import { isDiscussionEvent } from "@/components/conversation";
 import { DiffSettingsForm } from "@/components/diff/diff-settings-form";
 import { PullRequestHeader } from "@/components/pull-request/pull-request-header";
@@ -222,7 +223,8 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 		},
 	});
 
-	const { chapterIdSet, filePathSet } = useViewStateData(runId);
+	const viewStateData = useViewStateData(runId);
+	const { chapterIdSet, filePathSet } = viewStateData;
 	const chapters = data?.chapters;
 	const viewedChapterCount = useMemo(
 		() => countViewedChapters(chapters, chapterIdSet),
@@ -393,70 +395,75 @@ export function PullRequestLayout({ runId }: { runId: string }) {
 							</header>
 						)}
 					</div>
-					<nav
+					<div
 						ref={navRef}
 						className={cn(
-							"z-20 flex items-center justify-between gap-4 py-2",
+							"z-20 flex flex-col py-2",
 							usesPageScroll
 								? "-mx-6 lg:-mx-8 sticky top-12 mb-6 bg-background px-6 lg:px-8"
 								: "mb-6 shrink-0",
 						)}
 					>
-						<div className="flex shrink-0 items-center gap-1">
-							{visibleTabs.map((tab) => (
-								<TabLink
-									key={tab.id}
-									tab={tab}
-									runId={runId}
-									isActive={tab.id === activeTab}
-									countLabel={
-										tab.id === PR_TAB.CHAPTERS
-											? chapterCountLabel
-											: tab.id === PR_TAB.ACTIVITY
-												? activityCountLabel
-												: tab.id === PR_TAB.FILES
-													? fileCountLabel
-													: undefined
-									}
-								/>
-							))}
-						</div>
-						<div className="flex shrink-0 items-center gap-3 text-sm @xl:gap-6">
-							<CollapseExpandAllButton />
-							<ReviewPanel key={runId} />
-							<Popover>
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<PopoverTrigger asChild>
-											<Button
-												variant="outline"
-												size="sm"
-												className="h-7 cursor-pointer px-2"
-												aria-label="Display settings"
-											>
-												<Settings2 className="size-3.5" />
-												<span className="ml-1 hidden text-xs @7xl:inline">Display</span>
-											</Button>
-										</PopoverTrigger>
-									</TooltipTrigger>
-									<TooltipContent>Display settings</TooltipContent>
-								</Tooltip>
-								<PopoverContent align="end" className="w-80">
-									<DiffSettingsForm compact />
-								</PopoverContent>
-							</Popover>
-							<div className="hidden items-center gap-3 @5xl:flex">
-								{headerLineCounts ? (
-									<HeaderLineCountsDisplay lineCounts={headerLineCounts} />
-								) : (
-									<>
-										<Skeleton className="h-4 w-12" />
-										<Skeleton className="h-4 w-12" />
-									</>
-								)}
+						<nav className="flex flex-wrap items-center justify-between gap-4">
+							<div className="flex shrink-0 items-center gap-1">
+								{visibleTabs.map((tab) => (
+									<TabLink
+										key={tab.id}
+										tab={tab}
+										runId={runId}
+										isActive={tab.id === activeTab}
+										countLabel={
+											tab.id === PR_TAB.CHAPTERS
+												? chapterCountLabel
+												: tab.id === PR_TAB.ACTIVITY
+													? activityCountLabel
+													: tab.id === PR_TAB.FILES
+														? fileCountLabel
+														: undefined
+										}
+									/>
+								))}
 							</div>
-						</div>
-					</nav>
+							<div className="flex shrink-0 items-center gap-3 text-sm @xl:gap-6">
+								<CollapseExpandAllButton />
+								<ReviewPanel key={runId} />
+								<Popover>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<PopoverTrigger asChild>
+												<Button
+													variant="outline"
+													size="sm"
+													className="h-7 cursor-pointer px-2"
+													aria-label="Display settings"
+												>
+													<Settings2 className="size-3.5" />
+													<span className="ml-1 hidden text-xs @7xl:inline">Display</span>
+												</Button>
+											</PopoverTrigger>
+										</TooltipTrigger>
+										<TooltipContent>Display settings</TooltipContent>
+									</Tooltip>
+									<PopoverContent align="end" className="w-80">
+										<DiffSettingsForm compact />
+									</PopoverContent>
+								</Popover>
+								<div className="hidden items-center gap-3 @5xl:flex">
+									{headerLineCounts ? (
+										<HeaderLineCountsDisplay lineCounts={headerLineCounts} />
+									) : (
+										<>
+											<Skeleton className="h-4 w-12" />
+											<Skeleton className="h-4 w-12" />
+										</>
+									)}
+								</div>
+							</div>
+						</nav>
+						{activeTab === PR_TAB.CHAPTERS && chapters && (
+							<RunChapterProgress runId={runId} chapters={chapters} viewState={viewStateData} />
+						)}
+					</div>
 					<ChapterProvider runId={runId}>
 						{usesPageScroll ? (
 							<div

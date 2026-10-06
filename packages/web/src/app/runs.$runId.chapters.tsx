@@ -6,6 +6,8 @@ import {
 	useRouterState,
 } from "@tanstack/react-router";
 import { useState } from "react";
+import { parseChapterNumber } from "@/lib/chapter-number";
+import { useContinuousChapterReader } from "@/lib/chapter-view-state-context";
 import { CHAPTER_VIEW_MODE, useChapterSettings } from "@/lib/use-chapter-settings";
 import { ContinuousChaptersPage } from "@/routes/continuous-chapters-page";
 
@@ -33,11 +35,8 @@ function ChaptersLayout() {
 		select: (state) => state.matches.some((match) => match.routeId === CHAPTER_DETAIL_ROUTE_ID),
 	});
 
-	// Same integer semantics as the chapter detail route, so paged and
-	// continuous deep links agree on what `/chapters/1e2` or `/chapters/1.5` mean.
-	const parsed =
-		params.chapterNumber === undefined ? Number.NaN : Number.parseInt(params.chapterNumber, 10);
-	const deepLinkedChapterNumber = Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+	const deepLinkedChapterNumber =
+		params.chapterNumber === undefined ? null : parseChapterNumber(params.chapterNumber);
 	const [initialChapterNumber, setInitialChapterNumber] = useState(deepLinkedChapterNumber);
 	// Render-time state sync ("adjusting state during render"): remember the
 	// latest deep-linked chapter so it survives the normalizing redirect below,
@@ -51,7 +50,26 @@ function ChaptersLayout() {
 	const [stateOwner, setStateOwner] = useState(runId);
 	if (stateOwner !== runId) {
 		setStateOwner(runId);
-		setInitialChapterNumber(isOnChapterDetailRoute ? deepLinkedChapterNumber : undefined);
+		setInitialChapterNumber(isOnChapterDetailRoute ? deepLinkedChapterNumber : null);
+	}
+
+	// Switching Scroll → Page while this layout is mounted resumes the reader's
+	// chapter. The reader is still mounted (and published) during the render
+	// that observes the switch, so capture its position now; a bare /chapters
+	// link opened in Page mode never sees a switch and goes to the overview.
+	const continuousReader = useContinuousChapterReader();
+	const [renderedViewMode, setRenderedViewMode] = useState(chapterViewMode);
+	const [pagedResumeChapterNumber, setPagedResumeChapterNumber] = useState<number | null>(null);
+	if (renderedViewMode !== chapterViewMode) {
+		setRenderedViewMode(chapterViewMode);
+		setPagedResumeChapterNumber(
+			chapterViewMode === CHAPTER_VIEW_MODE.PAGED && continuousReader
+				? continuousReader.activeChapterNumber
+				: null,
+		);
+	}
+	if (isOnChapterDetailRoute && pagedResumeChapterNumber !== null) {
+		setPagedResumeChapterNumber(null);
 	}
 
 	if (chapterViewMode === CHAPTER_VIEW_MODE.CONTINUOUS) {
@@ -59,6 +77,17 @@ function ChaptersLayout() {
 			return <Navigate to="/runs/$runId/chapters" params={{ runId }} replace />;
 		}
 		return <ContinuousChaptersPage runId={runId} initialChapterNumber={initialChapterNumber} />;
+	}
+
+	if (pagedResumeChapterNumber !== null && !isOnChapterDetailRoute) {
+		return (
+			<Navigate
+				to="/runs/$runId/chapters/$chapterNumber"
+				params={{ runId, chapterNumber: String(pagedResumeChapterNumber) }}
+				replace
+				resetScroll={false}
+			/>
+		);
 	}
 
 	// In paged mode a bare /chapters URL always matches the index child route,

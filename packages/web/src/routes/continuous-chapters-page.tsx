@@ -19,7 +19,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChapterContext } from "@/lib/chapter-context";
-import { useChapterViewState } from "@/lib/chapter-view-state-context";
+import { clampChapterNumber } from "@/lib/chapter-number";
+import { usePublishContinuousChapterReader } from "@/lib/chapter-view-state-context";
 import { useProvideCollapseActions } from "@/lib/collapse-actions-context";
 import { FILE_STATUS } from "@/lib/diff-types";
 import { filterFilesForChapter } from "@/lib/filter-files-for-chapter";
@@ -44,7 +45,7 @@ import { cn } from "@/lib/utils";
 interface ContinuousChaptersPageProps {
 	runId: string;
 	/** Chapter to scroll to on mount (from a normalized `/chapters/N` deep link). */
-	initialChapterNumber?: number;
+	initialChapterNumber: number | null;
 }
 
 /**
@@ -55,7 +56,9 @@ interface ContinuousChaptersPageProps {
  * the window), this page renders inside the pull-request layout's contained
  * scroll area, so all scroll work targets that container.
  */
-export function ContinuousChaptersPage({
+// Memoized: the chapters layout re-renders whenever the reader publishes a new
+// position, and the stream must not re-render for its own position updates.
+export const ContinuousChaptersPage = memo(function ContinuousChaptersPage({
 	runId,
 	initialChapterNumber,
 }: ContinuousChaptersPageProps) {
@@ -67,7 +70,13 @@ export function ContinuousChaptersPage({
 	const error = chaptersError ?? patchError;
 
 	if (error) return <ErrorState runId={runId} error={error} />;
-	if (isLoading) return <LoadingState />;
+	if (isLoading) {
+		const pendingChapterNumber =
+			chapters.length > 0
+				? clampChapterNumber(initialChapterNumber ?? 1, chapters.length)
+				: (initialChapterNumber ?? 1);
+		return <LoadingState pendingChapterNumber={pendingChapterNumber} />;
+	}
 	if (diffData === undefined) {
 		return <ErrorState runId={runId} error={new Error("Diff patch unavailable")} />;
 	}
@@ -83,7 +92,7 @@ export function ContinuousChaptersPage({
 			fileContents={diffData.fileContents}
 		/>
 	);
-}
+});
 
 interface ChapterDiffModel {
 	chapter: Chapter;
@@ -123,7 +132,7 @@ interface SectionSharedProps {
 }
 
 interface ContinuousChaptersContentProps {
-	initialChapterNumber?: number;
+	initialChapterNumber: number | null;
 	patch: string;
 	fileContents: FileContentsMap;
 }
@@ -152,17 +161,9 @@ function ContinuousChaptersContent({
 	// Clamp deep-linked numbers so an out-of-range link can't publish an
 	// invalid active chapter (switching to paged mode would 404 on it).
 	const [activeChapterNumber, setActiveChapterNumber] = useState(() =>
-		Math.min(Math.max(initialChapterNumber ?? 1, 1), Math.max(allChapters.length, 1)),
+		clampChapterNumber(initialChapterNumber ?? 1, allChapters.length),
 	);
 	const activeChapter = allChapters[activeChapterNumber - 1];
-
-	// Report the active chapter so the settings form can preserve it when
-	// switching back to paged mode.
-	const chapterViewState = useChapterViewState();
-	const setActiveContinuousChapterNumber = chapterViewState?.setActiveContinuousChapterNumber;
-	useEffect(() => {
-		setActiveContinuousChapterNumber?.(activeChapterNumber);
-	}, [setActiveContinuousChapterNumber, activeChapterNumber]);
 
 	// The pull-request layout owns the contained scroll area this page renders
 	// into; resolve it from the DOM since the layout doesn't expose it.
@@ -217,7 +218,7 @@ function ContinuousChaptersContent({
 	const lastAppliedInitialScrollRef = useRef<number | null>(null);
 	const initialScrollRequestRef = useRef(0);
 	useLayoutEffect(() => {
-		if (initialChapterNumber === undefined) return;
+		if (initialChapterNumber === null) return;
 		if (initialChapterNumber < 1 || initialChapterNumber > totalChapters) return;
 		if (lastAppliedInitialScrollRef.current === initialChapterNumber) return;
 
@@ -325,6 +326,14 @@ function ContinuousChaptersContent({
 			scrollToChapter(chapterNumber);
 		},
 		[scrollToChapter],
+	);
+	// Publish the position so the progress strip can follow and steer the
+	// stream, and so switching to paged mode resumes the active chapter.
+	usePublishContinuousChapterReader(
+		useMemo(
+			() => ({ activeChapterNumber, navigateToChapter }),
+			[activeChapterNumber, navigateToChapter],
+		),
 	);
 
 	// Chapter navigation keys step the stream to the previous/next chapter
@@ -813,7 +822,17 @@ function findFileContainer(chapterId: string, filePath: string): HTMLElement | n
 	);
 }
 
-function LoadingState() {
+/**
+ * While the stream loads, its position is the chapter it will open at, so
+ * switching to paged mode mid-load still lands on the deep-linked chapter.
+ */
+function LoadingState({ pendingChapterNumber }: { pendingChapterNumber: number }) {
+	usePublishContinuousChapterReader(
+		useMemo(
+			() => ({ activeChapterNumber: pendingChapterNumber, navigateToChapter: null }),
+			[pendingChapterNumber],
+		),
+	);
 	return (
 		<div className="flex">
 			<div className="w-80 shrink-0 border-border border-r p-4">

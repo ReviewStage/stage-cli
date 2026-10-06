@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { parseChapterNumber } from "@/lib/chapter-number";
 import { ChapterDetailPage } from "@/routes/chapter-detail-page";
 
 export const Route = createFileRoute("/runs/$runId/chapters/$chapterNumber")({
@@ -7,7 +8,5 @@ export const Route = createFileRoute("/runs/$runId/chapters/$chapterNumber")({
 
 function ChapterRoute() {
 	const { runId, chapterNumber } = Route.useParams();
-	const parsed = Number.parseInt(chapterNumber, 10);
-	const valid = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-	return <ChapterDetailPage runId={runId} chapterNumber={valid} />;
+	return <ChapterDetailPage runId={runId} chapterNumber={parseChapterNumber(chapterNumber)} />;
 }
