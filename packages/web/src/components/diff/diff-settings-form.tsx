@@ -101,7 +101,12 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 
 			{/* Text size — scales the whole app; the diff keeps its own size below */}
 			<SettingRow label="Text size" compact={compact}>
-				<SettingSelect value={textSize} onValueChange={setTextSize} options={TEXT_SIZE_OPTIONS} />
+				<SettingSelect
+					ariaLabel="Text size"
+					value={textSize}
+					onValueChange={setTextSize}
+					options={TEXT_SIZE_OPTIONS}
+				/>
 			</SettingRow>
 
 			<GroupLabel>Diff display</GroupLabel>
@@ -128,6 +133,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 			{/* Syntax theme follows the app's resolved light/dark mode */}
 			<SettingRow label="Syntax theme" compact={compact}>
 				<SettingSelect
+					ariaLabel="Syntax theme"
 					value={syntaxTheme}
 					onValueChange={setSyntaxTheme}
 					options={SYNTAX_THEME_OPTIONS_BY_APP_THEME[appTheme]}
@@ -137,6 +143,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 			{/* Diff font */}
 			<SettingRow label="Font" compact={compact}>
 				<SettingSelect
+					ariaLabel="Font"
 					value={diffFontFamily}
 					onValueChange={setDiffFontFamily}
 					options={DIFF_FONT_OPTIONS}
@@ -146,6 +153,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 			{/* Font size */}
 			<SettingRow label="Font size" compact={compact}>
 				<SettingSelect
+					ariaLabel="Font size"
 					value={diffFontSize}
 					onValueChange={setDiffFontSize}
 					options={FONT_SIZE_OPTIONS}
@@ -155,6 +163,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 			{/* Line height — scales with the font size */}
 			<SettingRow label="Line height" compact={compact}>
 				<SettingSelect
+					ariaLabel="Line height"
 					value={diffLineHeight}
 					onValueChange={setDiffLineHeight}
 					options={LINE_HEIGHT_OPTIONS}
@@ -183,6 +192,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 			{/* Diff indicators */}
 			<SettingRow label="Indicators" compact={compact}>
 				<SettingSelect
+					ariaLabel="Indicators"
 					value={diffIndicators}
 					onValueChange={setDiffIndicators}
 					options={INDICATOR_OPTIONS}
@@ -192,6 +202,7 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 			{/* Inline diff type */}
 			<SettingRow label="Inline diffs" compact={compact}>
 				<SettingSelect
+					ariaLabel="Inline diffs"
 					value={lineDiffType}
 					onValueChange={setLineDiffType}
 					options={LINE_DIFF_OPTIONS}
@@ -263,7 +274,7 @@ function SettingSelect<T extends string>({
 	onValueChange,
 	options,
 }: {
-	ariaLabel?: string;
+	ariaLabel: string;
 	value: T;
 	onValueChange: (value: T) => void;
 	options: { value: T; label: string; description?: string }[];
