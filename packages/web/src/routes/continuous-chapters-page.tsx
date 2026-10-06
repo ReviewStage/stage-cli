@@ -69,7 +69,13 @@ export const ContinuousChaptersPage = memo(function ContinuousChaptersPage({
 	const error = chaptersError ?? patchError;
 
 	if (error) return <ErrorState runId={runId} error={error} />;
-	if (isLoading) return <LoadingState pendingChapterNumber={initialChapterNumber ?? 1} />;
+	if (isLoading) {
+		const pendingChapterNumber =
+			chapters.length > 0
+				? Math.min(Math.max(initialChapterNumber ?? 1, 1), chapters.length)
+				: (initialChapterNumber ?? 1);
+		return <LoadingState pendingChapterNumber={pendingChapterNumber} />;
+	}
 	if (diffData === undefined) {
 		return <ErrorState runId={runId} error={new Error("Diff patch unavailable")} />;
 	}
