@@ -1,4 +1,5 @@
 import { Columns2, Rows3 } from "lucide-react";
+import { useId } from "react";
 import { ShortcutLabel } from "@/components/keyboard/shortcut-label";
 import { SegmentedToggle } from "@/components/shared/segmented-toggle";
 import { Label } from "@/components/ui/label";
@@ -100,14 +101,13 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 			<GroupLabel>Appearance</GroupLabel>
 
 			{/* Text size — scales the whole app; the diff keeps its own size below */}
-			<SettingRow label="Text size" compact={compact}>
-				<SettingSelect
-					ariaLabel="Text size"
-					value={textSize}
-					onValueChange={setTextSize}
-					options={TEXT_SIZE_OPTIONS}
-				/>
-			</SettingRow>
+			<SettingSelectRow
+				label="Text size"
+				compact={compact}
+				value={textSize}
+				onValueChange={setTextSize}
+				options={TEXT_SIZE_OPTIONS}
+			/>
 
 			<GroupLabel>Diff display</GroupLabel>
 
@@ -121,54 +121,49 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 				</div>
 			</SettingRow>
 
-			<SettingRow label="Chapter progress" compact={compact}>
-				<SettingSelect
-					ariaLabel="Chapter progress"
-					value={chapterProgressMode}
-					onValueChange={setChapterProgressMode}
-					options={CHAPTER_PROGRESS_MODE_OPTIONS}
-				/>
-			</SettingRow>
+			<SettingSelectRow
+				label="Chapter progress"
+				compact={compact}
+				value={chapterProgressMode}
+				onValueChange={setChapterProgressMode}
+				options={CHAPTER_PROGRESS_MODE_OPTIONS}
+			/>
 
 			{/* Syntax theme follows the app's resolved light/dark mode */}
-			<SettingRow label="Syntax theme" compact={compact}>
-				<SettingSelect
-					ariaLabel="Syntax theme"
-					value={syntaxTheme}
-					onValueChange={setSyntaxTheme}
-					options={SYNTAX_THEME_OPTIONS_BY_APP_THEME[appTheme]}
-				/>
-			</SettingRow>
+			<SettingSelectRow
+				label="Syntax theme"
+				compact={compact}
+				value={syntaxTheme}
+				onValueChange={setSyntaxTheme}
+				options={SYNTAX_THEME_OPTIONS_BY_APP_THEME[appTheme]}
+			/>
 
 			{/* Diff font */}
-			<SettingRow label="Font" compact={compact}>
-				<SettingSelect
-					ariaLabel="Font"
-					value={diffFontFamily}
-					onValueChange={setDiffFontFamily}
-					options={DIFF_FONT_OPTIONS}
-				/>
-			</SettingRow>
+			<SettingSelectRow
+				label="Font"
+				compact={compact}
+				value={diffFontFamily}
+				onValueChange={setDiffFontFamily}
+				options={DIFF_FONT_OPTIONS}
+			/>
 
 			{/* Font size */}
-			<SettingRow label="Font size" compact={compact}>
-				<SettingSelect
-					ariaLabel="Font size"
-					value={diffFontSize}
-					onValueChange={setDiffFontSize}
-					options={FONT_SIZE_OPTIONS}
-				/>
-			</SettingRow>
+			<SettingSelectRow
+				label="Font size"
+				compact={compact}
+				value={diffFontSize}
+				onValueChange={setDiffFontSize}
+				options={FONT_SIZE_OPTIONS}
+			/>
 
 			{/* Line height — scales with the font size */}
-			<SettingRow label="Line height" compact={compact}>
-				<SettingSelect
-					ariaLabel="Line height"
-					value={diffLineHeight}
-					onValueChange={setDiffLineHeight}
-					options={LINE_HEIGHT_OPTIONS}
-				/>
-			</SettingRow>
+			<SettingSelectRow
+				label="Line height"
+				compact={compact}
+				value={diffLineHeight}
+				onValueChange={setDiffLineHeight}
+				options={LINE_HEIGHT_OPTIONS}
+			/>
 
 			{/* Ligatures */}
 			<SettingRow label="Ligatures" compact={compact}>
@@ -190,24 +185,22 @@ export function DiffSettingsForm({ compact }: DiffSettingsFormProps) {
 			</SettingRow>
 
 			{/* Diff indicators */}
-			<SettingRow label="Indicators" compact={compact}>
-				<SettingSelect
-					ariaLabel="Indicators"
-					value={diffIndicators}
-					onValueChange={setDiffIndicators}
-					options={INDICATOR_OPTIONS}
-				/>
-			</SettingRow>
+			<SettingSelectRow
+				label="Indicators"
+				compact={compact}
+				value={diffIndicators}
+				onValueChange={setDiffIndicators}
+				options={INDICATOR_OPTIONS}
+			/>
 
 			{/* Inline diff type */}
-			<SettingRow label="Inline diffs" compact={compact}>
-				<SettingSelect
-					ariaLabel="Inline diffs"
-					value={lineDiffType}
-					onValueChange={setLineDiffType}
-					options={LINE_DIFF_OPTIONS}
-				/>
-			</SettingRow>
+			<SettingSelectRow
+				label="Inline diffs"
+				compact={compact}
+				value={lineDiffType}
+				onValueChange={setLineDiffType}
+				options={LINE_DIFF_OPTIONS}
+			/>
 
 			{/* Backgrounds */}
 			<SettingRow label="Backgrounds" compact={compact}>
@@ -253,55 +246,65 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 
 function SettingRow({
 	label,
+	labelFor,
 	compact,
 	children,
 }: {
 	label: React.ReactNode;
+	/** Id of the control the label names, when that control is a single labelable element. */
+	labelFor?: string;
 	compact?: boolean;
 	children: React.ReactNode;
 }) {
 	return (
 		<div className={cn("flex min-h-8 items-center justify-between", compact ? "gap-4" : "gap-6")}>
-			<Label className="text-sm font-medium">{label}</Label>
+			<Label htmlFor={labelFor} className="text-sm font-medium">
+				{label}
+			</Label>
 			{children}
 		</div>
 	);
 }
 
-function SettingSelect<T extends string>({
-	ariaLabel,
+function SettingSelectRow<T extends string>({
+	label,
+	compact,
 	value,
 	onValueChange,
 	options,
 }: {
-	ariaLabel: string;
+	label: string;
+	compact?: boolean;
 	value: T;
 	onValueChange: (value: T) => void;
 	options: { value: T; label: string; description?: string }[];
 }) {
+	const triggerId = useId();
 	function isValidOption(v: string): v is T {
 		return options.some((opt) => opt.value === v);
 	}
 
 	return (
-		<Select
-			value={value}
-			onValueChange={(v) => {
-				if (isValidOption(v)) {
-					onValueChange(v);
-				}
-			}}
-		>
-			<SelectTrigger aria-label={ariaLabel} size="sm" className="w-[160px]">
-				<SelectValue />
-			</SelectTrigger>
-			<SelectContent>
-				{options.map((opt) => (
-					<SelectItem key={opt.value} value={opt.value} description={opt.description}>
-						{opt.label}
-					</SelectItem>
-				))}
-			</SelectContent>
-		</Select>
+		<SettingRow label={label} labelFor={triggerId} compact={compact}>
+			<Select
+				value={value}
+				onValueChange={(v) => {
+					if (isValidOption(v)) {
+						onValueChange(v);
+					}
+				}}
+			>
+				<SelectTrigger id={triggerId} size="sm" className="w-[160px]">
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					{options.map((opt) => (
+						<SelectItem key={opt.value} value={opt.value} description={opt.description}>
+							{opt.label}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+		</SettingRow>
 	);
 }
